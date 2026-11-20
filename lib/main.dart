@@ -40,7 +40,6 @@ class PhotoItem {
   final int width;
   final int height;
   final int fileSize;
-  final String? camera;
   final List<String> albums;
 
   PhotoItem({
@@ -52,7 +51,6 @@ class PhotoItem {
     required this.width,
     required this.height,
     required this.fileSize,
-    this.camera,
     required this.albums,
   });
 
@@ -66,31 +64,36 @@ class PhotoItem {
       width: json['w'] as int? ?? 0,
       height: json['h'] as int? ?? 0,
       fileSize: json['s'] as int? ?? 0,
-      camera: json['c'] as String?,
       albums: (json['al'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [],
     );
   }
 }
 
-class AlbumItem {
+class AlbumNode {
   final String id;
   final String name;
   final String? parentId;
-  final int count;
+  final bool isFolder;
+  final int directCount;
+  final int totalCount;
 
-  AlbumItem({
+  AlbumNode({
     required this.id,
     required this.name,
     this.parentId,
-    required this.count,
+    required this.isFolder,
+    required this.directCount,
+    required this.totalCount,
   });
 
-  factory AlbumItem.fromJson(Map<String, dynamic> json) {
-    return AlbumItem(
+  factory AlbumNode.fromJson(Map<String, dynamic> json) {
+    return AlbumNode(
       id: json['id'] as String,
       name: json['name'] as String,
       parentId: json['parent_id'] as String?,
-      count: json['photo_count'] as int? ?? 0,
+      isFolder: json['is_folder'] as bool? ?? false,
+      directCount: json['direct_count'] as int? ?? 0,
+      totalCount: json['count'] as int? ?? 0,
     );
   }
 }
@@ -120,11 +123,14 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _isLoading = true;
   String _gdriveUrl = "https://drive.google.com/drive/folders/1w_szSK4yKM_j0Trk8lT5Zcpcxae_0_iO";
   List<PhotoItem> _allPhotos = [];
-  List<AlbumItem> _albums = [];
+  Map<String, AlbumNode> _nodesById = {};
+  Map<String?, List<AlbumNode>> _childrenByParent = {};
   List<YearItem> _years = [];
-  Map<String, String> _albumNames = {};
 
   int _currentIndex = 0;
+  
+  // Tree navigation state
+  final List<AlbumNode> _navHistory = [];
   String _albumSearch = '';
   final TextEditingController _albumSearchController = TextEditingController();
 
@@ -140,10 +146,25 @@ class _HomeScreenState extends State<HomeScreen> {
       final data = json.decode(jsonString) as Map<String, dynamic>;
 
       _gdriveUrl = data['gdrive_url'] ?? _gdriveUrl;
-      
+
       final rawAlbums = data['albums'] as List<dynamic>;
-      _albums = rawAlbums.map((e) => AlbumItem.fromJson(e)).toList();
-      _albumNames = {for (var a in _albums) a.id: a.name};
+      final albumsList = rawAlbums.map((e) => AlbumNode.fromJson(e)).toList();
+
+      _nodesById = {for (var a in albumsList) a.id: a};
+      _childrenByParent = {};
+      for (var a in albumsList) {
+        _childrenByParent.putIfAbsent(a.parentId, () => []).add(a);
+      }
+
+      // Sort children alphabetically and folders first
+      for (var list in _childrenByParent.values) {
+        list.sort((a, b) {
+          if (a.isFolder != b.isFolder) {
+            return a.isFolder ? -1 : 1;
+          }
+          return a.name.toLowerCase().compareTo(b.name.toLowerCase());
+        });
+      }
 
       final rawYears = data['years'] as List<dynamic>;
       _years = rawYears.map((e) => YearItem.fromJson(e)).toList();
@@ -216,18 +237,18 @@ class _HomeScreenState extends State<HomeScreen> {
         onDestinationSelected: (idx) => setState(() => _currentIndex = idx),
         backgroundColor: const Color(0xFF0F172A),
         indicatorColor: const Color(0xFF0284C7).withValues(alpha: 0.3),
-        destinations: [
+        destinations: const [
           NavigationDestination(
-            icon: const Icon(Icons.bookmark_outline),
-            selectedIcon: const Icon(Icons.bookmark, color: Color(0xFF38BDF8)),
-            label: "Albums (${_albums.length})",
+            icon: Icon(Icons.folder_outlined),
+            selectedIcon: Icon(Icons.folder, color: Color(0xFF38BDF8)),
+            label: "Albums & Dossiers",
           ),
-          const NavigationDestination(
+          NavigationDestination(
             icon: Icon(Icons.calendar_today_outlined),
             selectedIcon: Icon(Icons.calendar_today, color: Color(0xFF38BDF8)),
             label: "Années",
           ),
-          const NavigationDestination(
+          NavigationDestination(
             icon: Icon(Icons.search),
             selectedIcon: Icon(Icons.search, color: Color(0xFF38BDF8)),
             label: "Recherche",
@@ -238,18 +259,82 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildAlbumsTab() {
+    // Current folder
+    final currentParentId = _navHistory.isEmpty ? null : _navHistory.last.id;
+    final currentChildren = _childrenByParent[currentParentId] ?? [];
+
     final filtered = _albumSearch.isEmpty
-        ? _albums
-        : _albums.where((a) => a.name.toLowerCase().contains(_albumSearch.toLowerCase())).toList();
+        ? currentChildren
+        : _nodesById.values.where((a) => a.name.toLowerCase().contains(_albumSearch.toLowerCase())).toList();
 
     return Column(
       children: [
+        // Breadcrumb bar
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          color: const Color(0xFF0F172A),
+          child: Row(
+            children: [
+              if (_navHistory.isNotEmpty)
+                IconButton(
+                  icon: const Icon(Icons.arrow_back, size: 20, color: Color(0xFF38BDF8)),
+                  onPressed: () => setState(() => _navHistory.removeLast()),
+                  tooltip: "Retour au dossier parent",
+                ),
+              Expanded(
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: [
+                      InkWell(
+                        onTap: () => setState(() => _navHistory.clear()),
+                        child: Text(
+                          "Racine",
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: _navHistory.isEmpty ? FontWeight.bold : FontWeight.normal,
+                            color: _navHistory.isEmpty ? const Color(0xFF38BDF8) : Colors.white60,
+                          ),
+                        ),
+                      ),
+                      for (int i = 0; i < _navHistory.length; i++) ...[
+                        const Padding(
+                          padding: EdgeInsets.symmetric(horizontal: 4),
+                          child: Icon(Icons.chevron_right, size: 16, color: Colors.white30),
+                        ),
+                        InkWell(
+                          onTap: () => setState(() {
+                            while (_navHistory.length > i + 1) {
+                              _navHistory.removeLast();
+                            }
+                          }),
+                          child: Text(
+                            _navHistory[i].name,
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: i == _navHistory.length - 1 ? FontWeight.bold : FontWeight.normal,
+                              color: i == _navHistory.length - 1 ? const Color(0xFF38BDF8) : Colors.white60,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+
+        // Search in albums
         Padding(
           padding: const EdgeInsets.all(12),
           child: TextField(
             controller: _albumSearchController,
             decoration: InputDecoration(
-              hintText: "Filtrer les albums...",
+              hintText: _albumSearch.isEmpty && _navHistory.isNotEmpty
+                  ? "Filtrer dans ${_navHistory.last.name}..."
+                  : "Rechercher un dossier ou album...",
               prefixIcon: const Icon(Icons.search, size: 20),
               suffixIcon: _albumSearch.isNotEmpty
                   ? IconButton(
@@ -268,49 +353,110 @@ class _HomeScreenState extends State<HomeScreen> {
             onChanged: (val) => setState(() => _albumSearch = val),
           ),
         ),
+
+        // Option to view all photos of current folder if inside a folder
+        if (_navHistory.isNotEmpty && _navHistory.last.totalCount > 0 && _albumSearch.isEmpty)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+            child: InkWell(
+              onTap: () => _openPhotosForNode(_navHistory.last),
+              borderRadius: BorderRadius.circular(8),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF0284C7).withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: const Color(0xFF0284C7).withValues(alpha: 0.3)),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.photo_library, size: 18, color: Color(0xFF38BDF8)),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        "Afficher toutes les photos de ${_navHistory.last.name}",
+                        style: const TextStyle(fontSize: 12, color: Color(0xFF38BDF8), fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                    Text(
+                      "${_navHistory.last.totalCount} photos",
+                      style: const TextStyle(fontSize: 11, color: Colors.white70),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+
+        // List of folders and albums
         Expanded(
           child: ListView.builder(
             itemCount: filtered.length,
             itemBuilder: (context, idx) {
-              final album = filtered[idx];
+              final node = filtered[idx];
+              final isFolder = node.isFolder;
+
               return ListTile(
                 leading: Container(
                   width: 42,
                   height: 42,
                   decoration: BoxDecoration(
-                    color: const Color(0xFF1E293B),
+                    color: isFolder
+                        ? const Color(0xFF0284C7).withValues(alpha: 0.15)
+                        : const Color(0xFF1E293B),
                     borderRadius: BorderRadius.circular(8),
                   ),
-                  child: const Icon(Icons.photo_album_outlined, color: Color(0xFF38BDF8), size: 22),
-                ),
-                title: Text(album.name, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
-                trailing: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF1E293B),
-                    borderRadius: BorderRadius.circular(12),
+                  child: Icon(
+                    isFolder ? Icons.folder : Icons.photo_album_outlined,
+                    color: isFolder ? const Color(0xFF38BDF8) : Colors.white70,
+                    size: 22,
                   ),
-                  child: Text("${album.count}", style: const TextStyle(fontSize: 11, color: Colors.white70)),
                 ),
-                onTap: () {
-                  final albumPhotos = _allPhotos.where((p) => p.albums.contains(album.id)).toList();
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => PhotoGridScreen(
-                        title: album.name,
-                        photos: albumPhotos,
-                        albumNames: _albumNames,
-                        gdriveUrl: _gdriveUrl,
+                title: Text(node.name, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+                subtitle: isFolder
+                    ? Text("Dossier (${node.totalCount} photos)", style: const TextStyle(fontSize: 11, color: Colors.white54))
+                    : Text("Album (${node.directCount} photos)", style: const TextStyle(fontSize: 11, color: Colors.white54)),
+                trailing: isFolder
+                    ? const Icon(Icons.chevron_right, size: 18, color: Colors.white30)
+                    : Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF1E293B),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Text("${node.totalCount}", style: const TextStyle(fontSize: 11, color: Colors.white70)),
                       ),
-                    ),
-                  );
+                onTap: () {
+                  if (isFolder) {
+                    setState(() {
+                      _navHistory.add(node);
+                      _albumSearch = '';
+                      _albumSearchController.clear();
+                    });
+                  } else {
+                    _openPhotosForNode(node);
+                  }
                 },
               );
             },
           ),
         ),
       ],
+    );
+  }
+
+  void _openPhotosForNode(AlbumNode node) {
+    final albumPhotos = _allPhotos.where((p) => p.albums.contains(node.id)).toList();
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => PhotoGridScreen(
+          title: node.name,
+          photos: albumPhotos,
+          nodesById: _nodesById,
+          gdriveUrl: _gdriveUrl,
+        ),
+      ),
     );
   }
 
@@ -347,7 +493,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 builder: (_) => PhotoGridScreen(
                   title: label,
                   photos: yearPhotos,
-                  albumNames: _albumNames,
+                  nodesById: _nodesById,
                   gdriveUrl: _gdriveUrl,
                 ),
               ),
@@ -361,7 +507,7 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget _buildSearchTab() {
     return PhotoSearchScreen(
       allPhotos: _allPhotos,
-      albumNames: _albumNames,
+      nodesById: _nodesById,
       gdriveUrl: _gdriveUrl,
     );
   }
@@ -370,14 +516,14 @@ class _HomeScreenState extends State<HomeScreen> {
 class PhotoGridScreen extends StatelessWidget {
   final String title;
   final List<PhotoItem> photos;
-  final Map<String, String> albumNames;
+  final Map<String, AlbumNode> nodesById;
   final String gdriveUrl;
 
   const PhotoGridScreen({
     super.key,
     required this.title,
     required this.photos,
-    required this.albumNames,
+    required this.nodesById,
     required this.gdriveUrl,
   });
 
@@ -458,7 +604,11 @@ class PhotoGridScreen extends StatelessWidget {
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
       builder: (context) {
-        final photoAlbumNames = photo.albums.map((id) => albumNames[id] ?? id).toList();
+        final photoAlbumNames = photo.albums
+            .map((id) => nodesById[id]?.name)
+            .where((name) => name != null)
+            .cast<String>()
+            .toList();
         final sizeMo = (photo.fileSize / (1024 * 1024)).toStringAsFixed(1);
 
         return DraggableScrollableSheet(
@@ -486,12 +636,10 @@ class PhotoGridScreen extends StatelessWidget {
                 const SizedBox(height: 8),
                 Text("Date : ${photo.captureDate.isNotEmpty ? photo.captureDate : 'Non renseignée'}",
                     style: const TextStyle(fontSize: 12, color: Colors.white70)),
-                if (photo.camera != null)
-                  Text("Appareil : ${photo.camera}", style: const TextStyle(fontSize: 12, color: Colors.white70)),
-                Text("Résolution : ${photo.width} × ${photo.height} px ($sizeMo Mo)",
+                Text("Dimensions : ${photo.width} × ${photo.height} px ($sizeMo Mo)",
                     style: const TextStyle(fontSize: 12, color: Colors.white70)),
                 const SizedBox(height: 16),
-                const Text("Albums Lightroom :", style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white70)),
+                const Text("Dossiers & Albums Lightroom :", style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white70)),
                 const SizedBox(height: 8),
                 Wrap(
                   spacing: 6,
@@ -534,13 +682,13 @@ class PhotoGridScreen extends StatelessWidget {
 
 class PhotoSearchScreen extends StatefulWidget {
   final List<PhotoItem> allPhotos;
-  final Map<String, String> albumNames;
+  final Map<String, AlbumNode> nodesById;
   final String gdriveUrl;
 
   const PhotoSearchScreen({
     super.key,
     required this.allPhotos,
-    required this.albumNames,
+    required this.nodesById,
     required this.gdriveUrl,
   });
 
@@ -562,10 +710,9 @@ class _PhotoSearchScreenState extends State<PhotoSearchScreen> {
           if (p.filename.toLowerCase().contains(_query)) return true;
           if (p.year.contains(_query)) return true;
           if (p.dateFolder.toLowerCase().contains(_query)) return true;
-          if (p.camera != null && p.camera!.toLowerCase().contains(_query)) return true;
           for (var albId in p.albums) {
-            final albName = widget.albumNames[albId];
-            if (albName != null && albName.toLowerCase().contains(_query)) return true;
+            final albNode = widget.nodesById[albId];
+            if (albNode != null && albNode.name.toLowerCase().contains(_query)) return true;
           }
           return false;
         }).take(200).toList();
@@ -581,7 +728,7 @@ class _PhotoSearchScreenState extends State<PhotoSearchScreen> {
           padding: const EdgeInsets.all(12),
           child: TextField(
             decoration: InputDecoration(
-              hintText: "Recherche (mot-clé, album, date, Canon...)",
+              hintText: "Recherche globale (Espagne, Chloé, 2024, Mariage...)",
               prefixIcon: const Icon(Icons.search),
               filled: true,
               fillColor: const Color(0xFF1E293B),
@@ -609,7 +756,7 @@ class _PhotoSearchScreenState extends State<PhotoSearchScreen> {
                   : PhotoGridScreen(
                       title: "Recherche : $_query",
                       photos: _results,
-                      albumNames: widget.albumNames,
+                      nodesById: widget.nodesById,
                       gdriveUrl: widget.gdriveUrl,
                     ),
         ),
