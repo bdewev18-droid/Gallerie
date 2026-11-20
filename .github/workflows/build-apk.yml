@@ -1,0 +1,81 @@
+name: Build APK
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      run_analyze:
+        description: Run the full Dart analyzer before the APK build
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: write
+
+concurrency:
+  group: gallerie-apk
+  cancel-in-progress: true
+
+jobs:
+  apk:
+    name: Release APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: "3.44.5"
+          cache: true
+
+      - name: Flutter pub get
+        run: timeout 90s flutter pub get
+
+      - name: Analyze (optional)
+        if: ${{ inputs.run_analyze == true }}
+        run: timeout 120s flutter analyze --no-pub
+
+      - name: Build release APK
+        run: timeout 900s flutter build apk --release --no-pub
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: gallerie-release-apk
+          path: build/app/outputs/flutter-apk/app-release.apk
+          if-no-files-found: error
+
+      - name: Extract version from pubspec.yaml
+        id: get_version
+        run: |
+          VERSION=$(grep '^version:' pubspec.yaml | sed 's/version: //')
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Publish to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest
+          name: "Gallerie v${{ steps.get_version.outputs.version }}"
+          body: |
+            Release automatique pour l'application mobile Gallerie.
+            Version : **v${{ steps.get_version.outputs.version }}**
+            
+            Téléchargement direct de l'APK Android : [app-release.apk](https://github.com/bdewev18-droid/Gallerie/releases/latest/download/app-release.apk)
+          files: build/app/outputs/flutter-apk/app-release.apk
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

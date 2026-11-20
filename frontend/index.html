@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="fr" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Lightroom Gallery & Drive</title>
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50: '#f0f9ff',
+              400: '#38bdf8',
+              500: '#0ea5e9',
+              600: '#0284c7',
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <style>
+    /* Custom scrollbar */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: #0f172a; }
+    ::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: #475569; }
+    .photo-card { transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s ease; }
+    .photo-card:hover { transform: translateY(-3px); }
+  </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col font-sans antialiased overflow-hidden">
+
+  <!-- Top Navbar -->
+  <header class="h-16 border-b border-slate-800 bg-slate-900/80 backdrop-blur px-5 flex items-center justify-between shrink-0 z-20">
+    <div class="flex items-center gap-3">
+      <div class="w-9 h-9 rounded-lg bg-brand-500/20 text-brand-400 flex items-center justify-center font-bold">
+        <i data-lucide="camera" class="w-5 h-5"></i>
+      </div>
+      <div>
+        <h1 class="font-bold text-base leading-tight">Lightroom Gallery</h1>
+        <p class="text-xs text-slate-400"><span id="headerTotalPhotos">25 221</span> photos indexées</p>
+      </div>
+    </div>
+
+    <!-- Search Bar -->
+    <div class="relative w-96 max-w-md hidden sm:block">
+      <i data-lucide="search" class="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2"></i>
+      <input type="text" id="searchInput" placeholder="Rechercher (ex: Barcelone, Chloé, 2024, Canon...)"
+        class="w-full bg-slate-800/80 border border-slate-700/80 rounded-full pl-9 pr-9 py-1.5 text-sm focus:outline-none focus:border-brand-500 text-slate-200 placeholder-slate-400 transition" />
+      <button id="clearSearchBtn" class="hidden absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-200">
+        <i data-lucide="x" class="w-4 h-4"></i>
+      </button>
+    </div>
+
+    <!-- Right Actions -->
+    <div class="flex items-center gap-3">
+      <a id="gdriveHeaderBtn" href="https://drive.google.com/drive/folders/1w_szSK4yKM_j0Trk8lT5Zcpcxae_0_iO" target="_blank"
+        class="flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-medium text-slate-200 transition">
+        <i data-lucide="hard-drive" class="w-3.5 h-3.5 text-brand-400"></i>
+        <span>Google Drive HD</span>
+      </a>
+    </div>
+  </header>
+
+  <!-- Main Body Layout -->
+  <div class="flex flex-1 overflow-hidden relative">
+
+    <!-- Left Sidebar: Explorer -->
+    <aside class="w-72 border-r border-slate-800 bg-slate-900 flex flex-col shrink-0">
+      
+      <!-- Tabs (Albums vs Années) -->
+      <div class="flex border-b border-slate-800 p-1.5 bg-slate-950/40">
+        <button id="tabAlbumsBtn" class="flex-1 py-1.5 text-xs font-semibold rounded-md transition text-brand-400 bg-slate-800 flex items-center justify-center gap-1.5">
+          <i data-lucide="bookmark" class="w-3.5 h-3.5"></i>
+          <span>Albums (527)</span>
+        </button>
+        <button id="tabYearsBtn" class="flex-1 py-1.5 text-xs font-medium rounded-md transition text-slate-400 hover:text-slate-200 flex items-center justify-center gap-1.5">
+          <i data-lucide="calendar" class="w-3.5 h-3.5"></i>
+          <span>Années</span>
+        </button>
+      </div>
+
+      <!-- Tree / List Container -->
+      <div id="sidebarList" class="flex-1 overflow-y-auto p-2 space-y-0.5 text-sm">
+        <!-- Rendered by JS -->
+      </div>
+    </aside>
+
+    <!-- Main Gallery Canvas -->
+    <main class="flex-1 flex flex-col overflow-hidden bg-slate-950">
+
+      <!-- Gallery Toolbar -->
+      <div class="px-6 py-3 border-b border-slate-800/80 flex items-center justify-between bg-slate-900/40 shrink-0">
+        <div class="flex items-center gap-3">
+          <h2 id="galleryTitle" class="text-lg font-bold text-white">Toutes les photos</h2>
+          <span id="galleryCount" class="text-xs px-2.5 py-0.5 rounded-full bg-slate-800 text-slate-300 font-mono">0 photo</span>
+          <span id="activeFilterBadge" class="hidden text-xs px-2.5 py-0.5 rounded-full bg-brand-500/20 text-brand-400 border border-brand-500/30 flex items-center gap-1">
+            <span id="filterLabel">Filtre</span>
+            <button id="removeFilterBtn" class="hover:text-white"><i data-lucide="x" class="w-3 h-3"></i></button>
+          </span>
+        </div>
+
+        <!-- Pagination Controls -->
+        <div class="flex items-center gap-2 text-xs">
+          <button id="prevPageBtn" class="p-1.5 rounded-lg border border-slate-700 bg-slate-800 hover:bg-slate-700 disabled:opacity-40 disabled:hover:bg-slate-800 transition">
+            <i data-lucide="chevron-left" class="w-4 h-4"></i>
+          </button>
+          <span id="pageIndicator" class="text-slate-400 font-mono">Page 1 / 1</span>
+          <button id="nextPageBtn" class="p-1.5 rounded-lg border border-slate-700 bg-slate-800 hover:bg-slate-700 disabled:opacity-40 disabled:hover:bg-slate-800 transition">
+            <i data-lucide="chevron-right" class="w-4 h-4"></i>
+          </button>
+        </div>
+      </div>
+
+      <!-- Photos Grid Container -->
+      <div id="galleryContainer" class="flex-1 overflow-y-auto p-6">
+        <div id="photosGrid" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
+          <!-- Rendered by JS -->
+        </div>
+
+        <!-- Empty State -->
+        <div id="emptyState" class="hidden flex flex-col items-center justify-center h-64 text-slate-500 space-y-2">
+          <i data-lucide="image-off" class="w-10 h-10"></i>
+          <p class="text-sm">Aucune photo ne correspond à votre sélection.</p>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <!-- Fullscreen Lightbox Modal -->
+  <div id="lightboxModal" class="hidden fixed inset-0 bg-slate-950/95 z-50 flex items-center justify-between p-4 backdrop-blur-md">
+    
+    <!-- Close & Actions -->
+    <div class="absolute top-4 right-4 flex items-center gap-2 z-10">
+      <a id="lightboxDriveBtn" href="#" target="_blank" class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-medium text-brand-400 flex items-center gap-1.5">
+        <i data-lucide="external-link" class="w-3.5 h-3.5"></i>
+        <span>Voir sur Drive HD</span>
+      </a>
+      <button id="closeLightboxBtn" class="p-2 rounded-lg bg-slate-800/80 hover:bg-slate-700 text-slate-300">
+        <i data-lucide="x" class="w-5 h-5"></i>
+      </button>
+    </div>
+
+    <!-- Prev Button -->
+    <button id="lightboxPrevBtn" class="p-3 rounded-full bg-slate-800/60 hover:bg-slate-800 text-slate-200 transition z-10">
+      <i data-lucide="chevron-left" class="w-6 h-6"></i>
+    </button>
+
+    <!-- Main Image -->
+    <div class="flex-1 h-full flex flex-col items-center justify-center p-4 overflow-hidden relative">
+      <img id="lightboxImg" src="" alt="" class="max-h-[85vh] max-w-[80vw] object-contain rounded shadow-2xl transition duration-200 select-none" />
+      <div id="lightboxCaption" class="mt-3 text-xs text-slate-400 text-center font-mono"></div>
+    </div>
+
+    <!-- Next Button -->
+    <button id="lightboxNextBtn" class="p-3 rounded-full bg-slate-800/60 hover:bg-slate-800 text-slate-200 transition z-10">
+      <i data-lucide="chevron-right" class="w-6 h-6"></i>
+    </button>
+
+    <!-- Metadata Panel (Collapsible) -->
+    <div id="lightboxMetaPanel" class="w-72 bg-slate-900 border-l border-slate-800 h-full p-5 overflow-y-auto text-xs space-y-4">
+      <h3 class="font-bold text-slate-200 text-sm">Informations</h3>
+      
+      <div>
+        <p class="text-slate-500 uppercase tracking-wider text-[10px] font-semibold">Nom du fichier</p>
+        <p id="metaFilename" class="text-slate-300 font-mono break-all mt-0.5"></p>
+      </div>
+
+      <div>
+        <p class="text-slate-500 uppercase tracking-wider text-[10px] font-semibold">Date de prise de vue</p>
+        <p id="metaDate" class="text-slate-300 font-mono mt-0.5"></p>
+      </div>
+
+      <div>
+        <p class="text-slate-500 uppercase tracking-wider text-[10px] font-semibold">Appareil</p>
+        <p id="metaCamera" class="text-slate-300 font-mono mt-0.5"></p>
+      </div>
+
+      <div>
+        <p class="text-slate-500 uppercase tracking-wider text-[10px] font-semibold">Dimensions & Poids</p>
+        <p id="metaDimSize" class="text-slate-300 font-mono mt-0.5"></p>
+      </div>
+
+      <div>
+        <p class="text-slate-500 uppercase tracking-wider text-[10px] font-semibold">Chemin local</p>
+        <p id="metaPath" class="text-slate-400 font-mono break-all mt-0.5"></p>
+      </div>
+
+      <div>
+        <p class="text-slate-500 uppercase tracking-wider text-[10px] font-semibold">Albums Lightroom</p>
+        <div id="metaAlbums" class="flex flex-wrap gap-1 mt-1"></div>
+      </div>
+    </div>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
