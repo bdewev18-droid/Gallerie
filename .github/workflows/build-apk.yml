@@ -1,16 +1,10 @@
-name: Build APK
+name: Build Android APK
 
 on:
   push:
     branches:
       - main
   workflow_dispatch:
-    inputs:
-      run_analyze:
-        description: Run the full Dart analyzer before the APK build
-        required: false
-        default: false
-        type: boolean
 
 permissions:
   contents: write
@@ -20,23 +14,20 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  apk:
-    name: Release APK
+  build-apk:
+    name: Build & Release APK
     runs-on: ubuntu-latest
     timeout-minutes: 45
 
     steps:
-      - name: Checkout
+      - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Setup Java
+      - name: Setup Java JDK
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: "17"
-
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v4
 
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
@@ -45,39 +36,39 @@ jobs:
           flutter-version: "3.44.9"
           cache: true
 
-      - name: Flutter pub get
-        run: timeout 90s flutter pub get
+      - name: Precache Flutter Android Artifacts
+        run: flutter precache --android
 
-      - name: Analyze (optional)
-        if: ${{ inputs.run_analyze == true }}
-        run: timeout 120s flutter analyze --no-pub
+      - name: Flutter Dependencies
+        run: flutter pub get
 
-      - name: Build release APK
-        run: timeout 900s flutter build apk --release --no-pub
+      - name: Build Release APK
+        run: flutter build apk --release
 
-      - name: Upload APK artifact
+      - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: gallerie-release-apk
-          path: build/app/outputs/flutter-apk/app-release.apk
+          name: MediasFamilly-Release-APK
+          path: build/app/outputs/flutter-apk/*.apk
           if-no-files-found: error
 
-      - name: Extract version from pubspec.yaml
+      - name: Extract Version
         id: get_version
         run: |
           VERSION=$(grep '^version:' pubspec.yaml | sed 's/version: //')
           echo "version=$VERSION" >> $GITHUB_OUTPUT
 
-      - name: Publish to GitHub Release
+      - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
+        continue-on-error: true
         with:
           tag_name: latest
-          name: "Gallerie v${{ steps.get_version.outputs.version }}"
+          name: "Medias Familly v${{ steps.get_version.outputs.version }}"
           body: |
-            Release automatique pour l'application mobile Gallerie.
+            Application mobile Android pour Medias Familly.
             Version : **v${{ steps.get_version.outputs.version }}**
             
-            Téléchargement direct de l'APK Android : [app-release.apk](https://github.com/bdewev18-droid/Gallerie/releases/latest/download/app-release.apk)
+            Téléchargement direct de l'APK : [app-release.apk](https://github.com/bdewev18-droid/Gallerie/releases/latest/download/app-release.apk)
           files: build/app/outputs/flutter-apk/app-release.apk
           prerelease: false
         env:

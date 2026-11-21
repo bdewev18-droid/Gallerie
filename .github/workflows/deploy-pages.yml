@@ -44,7 +44,7 @@ jobs:
         run: timeout 120s flutter analyze --no-pub
 
       - name: Build web
-        run: timeout 600s flutter build web --release --base-href '/Gallerie/' --no-pub
+        run: flutter build web --release --base-href '/Gallerie/'
 
       - name: Publish to gh-pages branch
         uses: peaceiris/actions-gh-pages@v4
