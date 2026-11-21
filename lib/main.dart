@@ -41,6 +41,9 @@ class PhotoItem {
   final int fileSize;
   final bool isVideo;
   final String? driveId;
+  final String? cameraModel;
+  final String? country;
+  final String? city;
   final List<String> albums;
 
   PhotoItem({
@@ -54,6 +57,9 @@ class PhotoItem {
     required this.fileSize,
     required this.isVideo,
     this.driveId,
+    this.cameraModel,
+    this.country,
+    this.city,
     required this.albums,
   });
 
@@ -69,6 +75,9 @@ class PhotoItem {
       fileSize: json['s'] as int? ?? 0,
       isVideo: (json['m'] as String? ?? 'p') == 'v',
       driveId: json['gid'] as String?,
+      cameraModel: json['cam'] as String?,
+      country: json['co'] as String?,
+      city: json['ci'] as String?,
       albums: (json['al'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [],
     );
   }
@@ -755,6 +764,26 @@ class PhotoGridScreen extends StatelessWidget {
                             ),
                           ),
                         ),
+                      if (photo.driveId == null)
+                        Positioned(
+                          top: 4,
+                          left: 4,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFD97706).withValues(alpha: 0.9),
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: const Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.cloud_off, size: 10, color: Colors.white),
+                                SizedBox(width: 3),
+                                Text("En attente Drive", style: TextStyle(fontSize: 8, color: Colors.white, fontWeight: FontWeight.bold)),
+                              ],
+                            ),
+                          ),
+                        ),
                       Positioned(
                         bottom: 0,
                         left: 0,
@@ -866,6 +895,13 @@ class PhotoGridScreen extends StatelessWidget {
                     style: const TextStyle(fontSize: 12, color: Colors.white70)),
                 Text("Taille : $sizeMo Mo (${photo.width} × ${photo.height} px)",
                     style: const TextStyle(fontSize: 12, color: Colors.white70)),
+                if (photo.cameraModel != null && photo.cameraModel!.isNotEmpty)
+                  Text("Appareil : ${photo.cameraModel}", style: const TextStyle(fontSize: 12, color: Colors.white70)),
+                if (photo.country != null && photo.country!.isNotEmpty)
+                  Text("Lieu : ${photo.city != null && photo.city!.isNotEmpty ? '${photo.city}, ' : ''}${photo.country}",
+                      style: const TextStyle(fontSize: 12, color: Colors.white70)),
+                Text("Statut Drive : ${photo.driveId != null ? '✔ Synchronisé en HD' : '⏳ Non chargé sur Drive'}",
+                    style: TextStyle(fontSize: 12, color: photo.driveId != null ? const Color(0xFF4ADE80) : const Color(0xFFFBBF24))),
                 const SizedBox(height: 16),
                 if (!photo.isVideo) ...[
                   const Text("Dossiers & Albums Lightroom :", style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white70)),

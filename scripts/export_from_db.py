@@ -34,10 +34,16 @@ def export_catalog():
         photo_albums[r["photo_id"]].append(r["album_id"])
 
     print("Fetching photos from database...")
+    # Sorting so that valid recent dates (e.g. 2026 Maroc) appear first, and clock glitch dates (>2026) appear at the end
     cur.execute("""
-    SELECT id, filename, year, date_folder, capture_date, width, height, file_size, gdrive_file_id, media_type 
+    SELECT id, filename, year, date_folder, capture_date, width, height, file_size, 
+           gdrive_file_id, media_type, camera_model, country, city, deleted_at
     FROM photos 
-    ORDER BY id ASC;
+    WHERE deleted_at IS NULL
+    ORDER BY 
+        CASE WHEN capture_date <= '2026-12-31' THEN 0 ELSE 1 END ASC,
+        capture_date DESC,
+        id DESC;
     """)
     rows = cur.fetchall()
 
@@ -68,6 +74,13 @@ def export_catalog():
         }
         if r["gdrive_file_id"]:
             p["gid"] = r["gdrive_file_id"]
+        if r["camera_model"]:
+            p["cam"] = r["camera_model"]
+        if r["country"]:
+            p["co"] = r["country"]
+        if r["city"]:
+            p["ci"] = r["city"]
+
         photos.append(p)
 
     conn.close()
@@ -93,7 +106,7 @@ def export_catalog():
     size_mb = json_path.stat().st_size / (1024 * 1024)
     print(f"Done! Catalog size: {size_mb:.2f} MB")
     print(f"Total items: {len(photos)} (Photos: {len(photos) - sum(video_years_count.values())}, Videos: {sum(video_years_count.values())})")
-    print(f"Video years: {video_years}")
+    print(f"Top 3 photos: {[(p['id'], p['fn'], p['dt'], p.get('co'), p.get('cam')) for p in photos[:3]]}")
 
 if __name__ == "__main__":
     export_catalog()

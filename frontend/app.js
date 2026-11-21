@@ -1,15 +1,19 @@
 // Application State - Medias Familly
 const state = {
   mediaType: 'photo', // 'photo' | 'video'
-  activeTab: 'thematics', // 'thematics' | 'years' (for photos mode)
+  activeTab: 'thematics', // 'thematics' | 'years'
+  driveOnly: true, // Point 1: Se servir que de ce qui a dans drive par défaut!
+  inTrash: false, // Trash / Corbeille mode
+  filterCountry: '',
+  filterCamera: '',
   nodes: [],
   nodesById: {},
   childrenByParent: {},
   expandedFolders: new Set(),
   years: [],
   videoYears: [],
-  selectedNode: null, // current active thematic folder or album
-  breadcrumbTrail: [], // array of node objects
+  selectedNode: null,
+  breadcrumbTrail: [],
   selectedYear: null,
   selectedDate: null,
   searchQuery: '',
@@ -19,6 +23,8 @@ const state = {
   totalPhotos: 0,
   totalVideos: 0,
   photos: [],
+  selectedPhotoIds: new Set(),
+  isSelectMode: false,
   lightboxIndex: -1,
   gdriveBaseUrl: 'https://drive.google.com/drive/folders/1w_szSK4yKM_j0Trk8lT5Zcpcxae_0_iO'
 };
@@ -35,19 +41,62 @@ const videosHeader = document.getElementById('videosHeader');
 const videosTotalBadge = document.getElementById('videosTotalBadge');
 const tabThematicsBtn = document.getElementById('tabThematicsBtn');
 const tabYearsBtn = document.getElementById('tabYearsBtn');
+const openNewAlbumModalBtn = document.getElementById('openNewAlbumModalBtn');
 const sidebarList = document.getElementById('sidebarList');
+const openTrashBtn = document.getElementById('openTrashBtn');
+const trashCountBadge = document.getElementById('trashCountBadge');
+const trashNoticeBanner = document.getElementById('trashNoticeBanner');
+const restoreAllTrashBtn = document.getElementById('restoreAllTrashBtn');
+const purgeTrashBtn = document.getElementById('purgeTrashBtn');
 const breadcrumbBar = document.getElementById('breadcrumbBar');
 const galleryTitle = document.getElementById('galleryTitle');
 const galleryCount = document.getElementById('galleryCount');
 const activeFilterBadge = document.getElementById('activeFilterBadge');
 const filterLabel = document.getElementById('filterLabel');
 const removeFilterBtn = document.getElementById('removeFilterBtn');
+const toggleSelectModeBtn = document.getElementById('toggleSelectModeBtn');
+const selectModeLabel = document.getElementById('selectModeLabel');
 const photosGrid = document.getElementById('photosGrid');
 const emptyState = document.getElementById('emptyState');
 const prevPageBtn = document.getElementById('prevPageBtn');
 const nextPageBtn = document.getElementById('nextPageBtn');
 const pageIndicator = document.getElementById('pageIndicator');
 const headerTotalPhotos = document.getElementById('headerTotalPhotos');
+
+// Filter Drawer Elements
+const toggleFilterDrawerBtn = document.getElementById('toggleFilterDrawerBtn');
+const filterDrawer = document.getElementById('filterDrawer');
+const closeFilterDrawerBtn = document.getElementById('closeFilterDrawerBtn');
+const activeFiltersCountDot = document.getElementById('activeFiltersCountDot');
+const filterDriveOnly = document.getElementById('filterDriveOnly');
+const filterDrivePendingCount = document.getElementById('filterDrivePendingCount');
+const filterCountrySelect = document.getElementById('filterCountrySelect');
+const filterCameraSelect = document.getElementById('filterCameraSelect');
+const applyFiltersBtn = document.getElementById('applyFiltersBtn');
+const resetDrawerFiltersBtn = document.getElementById('resetDrawerFiltersBtn');
+
+// Batch Actions Elements
+const batchActionBar = document.getElementById('batchActionBar');
+const batchSelectedCount = document.getElementById('batchSelectedCount');
+const batchMoveBtn = document.getElementById('batchMoveBtn');
+const batchTrashBtn = document.getElementById('batchTrashBtn');
+const batchTrashLabel = document.getElementById('batchTrashLabel');
+const batchCancelBtn = document.getElementById('batchCancelBtn');
+
+// Modals
+const moveAlbumModal = document.getElementById('moveAlbumModal');
+const closeMoveModalBtn = document.getElementById('closeMoveModalBtn');
+const cancelMoveModalBtn = document.getElementById('cancelMoveModalBtn');
+const confirmMoveBtn = document.getElementById('confirmMoveBtn');
+const targetAlbumSelect = document.getElementById('targetAlbumSelect');
+
+const createAlbumModal = document.getElementById('createAlbumModal');
+const closeCreateModalBtn = document.getElementById('closeCreateModalBtn');
+const cancelCreateModalBtn = document.getElementById('cancelCreateModalBtn');
+const confirmCreateAlbumBtn = document.getElementById('confirmCreateAlbumBtn');
+const newAlbumNameInput = document.getElementById('newAlbumNameInput');
+const newAlbumParentSelect = document.getElementById('newAlbumParentSelect');
+const newAlbumIsFolder = document.getElementById('newAlbumIsFolder');
 
 // Lightbox Elements
 const lightboxModal = document.getElementById('lightboxModal');
@@ -60,15 +109,18 @@ const lightboxNextBtn = document.getElementById('lightboxNextBtn');
 const lightboxDriveBtn = document.getElementById('lightboxDriveBtn');
 const metaFilename = document.getElementById('metaFilename');
 const metaDate = document.getElementById('metaDate');
+const metaCamera = document.getElementById('metaCamera');
+const metaExif = document.getElementById('metaExif');
+const metaLocation = document.getElementById('metaLocation');
 const metaDimSize = document.getElementById('metaDimSize');
 const metaDriveStatus = document.getElementById('metaDriveStatus');
-const metaPath = document.getElementById('metaPath');
 const metaAlbums = document.getElementById('metaAlbums');
 
 // Initialize
 async function init() {
   lucide.createIcons();
   setupEventListeners();
+  await loadFiltersData();
   await loadThematics();
   await loadYears();
   await loadVideoYears();
@@ -83,6 +135,78 @@ function setupEventListeners() {
   tabThematicsBtn.addEventListener('click', () => switchTab('thematics'));
   tabYearsBtn.addEventListener('click', () => switchTab('years'));
 
+  openTrashBtn.addEventListener('click', toggleTrashView);
+  restoreAllTrashBtn.addEventListener('click', handleRestoreAllTrash);
+  purgeTrashBtn.addEventListener('click', handlePurgeTrash);
+
+  // Filter Drawer
+  toggleFilterDrawerBtn.addEventListener('click', () => {
+    filterDrawer.classList.toggle('hidden');
+    lucide.createIcons();
+  });
+  closeFilterDrawerBtn.addEventListener('click', () => filterDrawer.classList.add('hidden'));
+
+  applyFiltersBtn.addEventListener('click', () => {
+    state.driveOnly = filterDriveOnly.checked;
+    state.filterCountry = filterCountrySelect.value;
+    state.filterCamera = filterCameraSelect.value;
+    state.page = 1;
+    filterDrawer.classList.add('hidden');
+    updateFilterBadge();
+    loadPhotos();
+  });
+
+  resetDrawerFiltersBtn.addEventListener('click', () => {
+    filterDriveOnly.checked = true;
+    filterCountrySelect.value = '';
+    filterCameraSelect.value = '';
+    state.driveOnly = true;
+    state.filterCountry = '';
+    state.filterCamera = '';
+    state.page = 1;
+    updateFilterBadge();
+    loadPhotos();
+  });
+
+  // Multi-Selection Mode
+  toggleSelectModeBtn.addEventListener('click', () => {
+    state.isSelectMode = !state.isSelectMode;
+    if (!state.isSelectMode) {
+      state.selectedPhotoIds.clear();
+      batchActionBar.classList.add('hidden');
+      toggleSelectModeBtn.classList.remove('bg-brand-600', 'text-white', 'border-brand-500');
+      selectModeLabel.textContent = "Sélectionner";
+    } else {
+      toggleSelectModeBtn.classList.add('bg-brand-600', 'text-white', 'border-brand-500');
+      selectModeLabel.textContent = "Annuler sélection";
+    }
+    renderPhotosGrid();
+  });
+
+  batchCancelBtn.addEventListener('click', () => {
+    state.selectedPhotoIds.clear();
+    batchActionBar.classList.add('hidden');
+    state.isSelectMode = false;
+    toggleSelectModeBtn.classList.remove('bg-brand-600', 'text-white', 'border-brand-500');
+    selectModeLabel.textContent = "Sélectionner";
+    renderPhotosGrid();
+  });
+
+  batchTrashBtn.addEventListener('click', handleBatchTrash);
+  batchMoveBtn.addEventListener('click', openMoveModal);
+
+  // Move Modal
+  closeMoveModalBtn.addEventListener('click', () => moveAlbumModal.classList.add('hidden'));
+  cancelMoveModalBtn.addEventListener('click', () => moveAlbumModal.classList.add('hidden'));
+  confirmMoveBtn.addEventListener('click', handleConfirmMove);
+
+  // Create Album Modal
+  openNewAlbumModalBtn.addEventListener('click', openCreateModal);
+  closeCreateModalBtn.addEventListener('click', () => createAlbumModal.classList.add('hidden'));
+  cancelCreateModalBtn.addEventListener('click', () => createAlbumModal.classList.add('hidden'));
+  confirmCreateAlbumBtn.addEventListener('click', handleConfirmCreateAlbum);
+
+  // Search
   let searchTimeout = null;
   searchInput.addEventListener('input', (e) => {
     const val = e.target.value.trim();
@@ -139,9 +263,51 @@ function setupEventListeners() {
   });
 }
 
+function updateFilterBadge() {
+  let activeCount = 0;
+  if (!state.driveOnly) activeCount++;
+  if (state.filterCountry) activeCount++;
+  if (state.filterCamera) activeCount++;
+
+  activeFiltersCountDot.classList.toggle('hidden', activeCount === 0);
+}
+
+async function loadFiltersData() {
+  try {
+    const res = await fetch('/api/filters');
+    const data = await res.json();
+    
+    trashCountBadge.textContent = data.trash_count || 0;
+    filterDrivePendingCount.textContent = (data.drive_pending || 0).toLocaleString('fr-FR');
+    headerTotalPhotos.textContent = (data.drive_synced || 0).toLocaleString('fr-FR');
+
+    // Populate Countries
+    filterCountrySelect.innerHTML = `<option value="">Tous les pays</option>`;
+    (data.countries || []).forEach(c => {
+      const opt = document.createElement('option');
+      opt.value = c.name;
+      opt.textContent = `${c.name} (${c.count})`;
+      filterCountrySelect.appendChild(opt);
+    });
+
+    // Populate Cameras
+    filterCameraSelect.innerHTML = `<option value="">Tous les appareils</option>`;
+    (data.cameras || []).forEach(cam => {
+      const opt = document.createElement('option');
+      opt.value = cam.name;
+      opt.textContent = `${cam.name} (${cam.count})`;
+      filterCameraSelect.appendChild(opt);
+    });
+  } catch (err) {
+    console.error('Failed to load filter metadata', err);
+  }
+}
+
 function switchMediaType(type) {
-  if (state.mediaType === type) return;
+  if (state.mediaType === type && !state.inTrash) return;
   state.mediaType = type;
+  state.inTrash = false;
+  trashNoticeBanner.classList.add('hidden');
   state.selectedNode = null;
   state.selectedYear = null;
   state.selectedDate = null;
@@ -182,6 +348,161 @@ function switchTab(tab) {
   }
 }
 
+function toggleTrashView() {
+  state.inTrash = !state.inTrash;
+  state.selectedNode = null;
+  state.selectedYear = null;
+  state.selectedDate = null;
+  state.breadcrumbTrail = [{ name: "Corbeille" }];
+  state.page = 1;
+
+  trashNoticeBanner.classList.toggle('hidden', !state.inTrash);
+  batchTrashLabel.textContent = state.inTrash ? "Restaurer" : "Mettre à la corbeille";
+
+  updateFilterUI();
+  updateBreadcrumbs();
+  loadPhotos();
+}
+
+async function handleBatchTrash() {
+  if (state.selectedPhotoIds.size === 0) return;
+  const ids = Array.from(state.selectedPhotoIds);
+
+  const endpoint = state.inTrash ? '/api/photos/restore' : '/api/photos/trash';
+  try {
+    await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ photo_ids: ids })
+    });
+    state.selectedPhotoIds.clear();
+    batchActionBar.classList.add('hidden');
+    await loadFiltersData();
+    await loadPhotos();
+  } catch (err) {
+    console.error('Batch trash error', err);
+  }
+}
+
+async function handleRestoreAllTrash() {
+  try {
+    const res = await fetch('/api/photos?in_trash=true&limit=200');
+    const data = await res.json();
+    const ids = data.items.map(p => p.id);
+    if (ids.length > 0) {
+      await fetch('/api/photos/restore', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ photo_ids: ids })
+      });
+      await loadFiltersData();
+      await loadPhotos();
+    }
+  } catch (err) {
+    console.error(err);
+  }
+}
+
+async function handlePurgeTrash() {
+  if (!confirm("Voulez-vous vider définitivement la corbeille ? Cette action est irréversible.")) return;
+  try {
+    await fetch('/api/photos/purge', { method: 'POST' });
+    await loadFiltersData();
+    await loadPhotos();
+  } catch (err) {
+    console.error(err);
+  }
+}
+
+function openMoveModal() {
+  targetAlbumSelect.innerHTML = '';
+  state.nodes.forEach(n => {
+    if (!n.is_folder) {
+      const opt = document.createElement('option');
+      opt.value = n.id;
+      opt.textContent = n.name;
+      targetAlbumSelect.appendChild(opt);
+    }
+  });
+  moveAlbumModal.classList.remove('hidden');
+  lucide.createIcons();
+}
+
+async function handleConfirmMove() {
+  const targetId = targetAlbumSelect.value;
+  if (!targetId || state.selectedPhotoIds.size === 0) return;
+
+  try {
+    await fetch('/api/photos/move_album', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        photo_ids: Array.from(state.selectedPhotoIds),
+        target_album_id: targetId,
+        remove_from_current: false
+      })
+    });
+    moveAlbumModal.classList.add('hidden');
+    state.selectedPhotoIds.clear();
+    batchActionBar.classList.add('hidden');
+    await loadThematics();
+    await loadPhotos();
+  } catch (err) {
+    console.error(err);
+  }
+}
+
+function openCreateModal() {
+  newAlbumNameInput.value = '';
+  newAlbumIsFolder.checked = false;
+  newAlbumParentSelect.innerHTML = `<option value="">-- Racine (sans parent) --</option>`;
+  state.nodes.forEach(n => {
+    if (n.is_folder) {
+      const opt = document.createElement('option');
+      opt.value = n.id;
+      opt.textContent = `📁 ${n.name}`;
+      newAlbumParentSelect.appendChild(opt);
+    }
+  });
+  createAlbumModal.classList.remove('hidden');
+  lucide.createIcons();
+}
+
+async function handleConfirmCreateAlbum() {
+  const name = newAlbumNameInput.value.trim();
+  if (!name) return;
+
+  try {
+    await fetch('/api/albums', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: name,
+        parent_id: newAlbumParentSelect.value || null,
+        is_folder: newAlbumIsFolder.checked
+      })
+    });
+    createAlbumModal.classList.add('hidden');
+    await loadThematics();
+  } catch (err) {
+    console.error(err);
+  }
+}
+
+async function handleDeleteAlbum(albumId, albumName) {
+  if (!confirm(`Voulez-vous supprimer l'album "${albumName}" ? (Les photos d'origine ne seront pas effacées)`)) return;
+  try {
+    await fetch(`/api/albums/${albumId}`, { method: 'DELETE' });
+    if (state.selectedNode && state.selectedNode.id === albumId) {
+      resetFilters();
+    }
+    await loadThematics();
+    await loadPhotos();
+  } catch (err) {
+    console.error(err);
+  }
+}
+
 async function loadThematics() {
   try {
     const res = await fetch('/api/thematics?media_type=photo');
@@ -192,7 +513,6 @@ async function loadThematics() {
 
     badgePhotosCount.textContent = data.total_photos.toLocaleString('fr-FR');
     badgeVideosCount.textContent = data.total_videos.toLocaleString('fr-FR');
-    headerTotalPhotos.textContent = (data.total_photos + data.total_videos).toLocaleString('fr-FR');
     if (videosTotalBadge) videosTotalBadge.textContent = `${data.total_videos} vidéos`;
 
     state.nodesById = {};
@@ -204,11 +524,10 @@ async function loadThematics() {
       state.childrenByParent[pid].push(n);
     });
 
-    // Auto-expand main root folders initially
     const roots = state.childrenByParent[null] || [];
     roots.forEach(r => state.expandedFolders.add(r.id));
 
-    if (state.mediaType === 'photo' && state.activeTab === 'thematics') {
+    if (state.mediaType === 'photo' && state.activeTab === 'thematics' && !state.inTrash) {
       renderThematicsTree();
     }
   } catch (err) {
@@ -239,11 +558,10 @@ async function loadVideoYears() {
   }
 }
 
-// Hierarchical Tree Renderer (Photos only)
+// Tree Renderer
 function renderThematicsTree() {
   sidebarList.innerHTML = '';
 
-  // All Photos item
   const allItem = createSidebarRow({
     id: null,
     name: 'Toutes les photos',
@@ -252,7 +570,7 @@ function renderThematicsTree() {
     level: 0,
     hasChildren: false,
     isExpanded: false,
-    isSelected: !state.selectedNode && !state.selectedYear,
+    isSelected: !state.selectedNode && !state.selectedYear && !state.inTrash,
     onSelect: () => {
       resetFilters();
       loadPhotos();
@@ -286,7 +604,8 @@ function renderNodeAndChildren(node, level) {
       else state.expandedFolders.add(node.id);
       renderThematicsTree();
     },
-    onSelect: () => selectThematicNode(node)
+    onSelect: () => selectThematicNode(node),
+    onDelete: () => handleDeleteAlbum(node.id, node.name)
   });
 
   sidebarList.appendChild(row);
@@ -318,13 +637,25 @@ function createSidebarRow(opts) {
   const iconName = opts.isFolder ? 'folder' : (opts.id === null ? 'images' : 'bookmark');
   const iconColor = opts.isFolder ? 'text-amber-400' : 'text-sky-400';
 
+  let deleteBtnHtml = '';
+  if (opts.id && opts.onDelete) {
+    deleteBtnHtml = `
+      <button class="opacity-0 group-hover:opacity-100 p-1 hover:text-rose-400 transition delete-album-btn mr-1" title="Supprimer cet album">
+        <i data-lucide="trash-2" class="w-3 h-3 text-slate-500 hover:text-rose-400"></i>
+      </button>
+    `;
+  }
+
   div.innerHTML = `
     <div class="flex items-center gap-1.5 truncate pr-1">
       ${toggleBtn}
       <i data-lucide="${iconName}" class="w-3.5 h-3.5 shrink-0 ${iconColor}"></i>
       <span class="truncate text-xs">${opts.name}</span>
     </div>
-    <span class="text-[10px] font-mono px-1.5 py-0.5 rounded shrink-0 ${opts.isSelected ? 'bg-sky-500/20 text-sky-300' : 'bg-slate-800 text-slate-400'}">${opts.count}</span>
+    <div class="flex items-center shrink-0">
+      ${deleteBtnHtml}
+      <span class="text-[10px] font-mono px-1.5 py-0.5 rounded ${opts.isSelected ? 'bg-sky-500/20 text-sky-300' : 'bg-slate-800 text-slate-400'}">${opts.count}</span>
+    </div>
   `;
 
   const arrowBtn = div.querySelector('.toggle-folder');
@@ -332,6 +663,14 @@ function createSidebarRow(opts) {
     arrowBtn.addEventListener('click', (e) => {
       e.stopPropagation();
       opts.onToggleExpand();
+    });
+  }
+
+  const delBtn = div.querySelector('.delete-album-btn');
+  if (delBtn) {
+    delBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      opts.onDelete();
     });
   }
 
@@ -343,6 +682,8 @@ function selectThematicNode(node) {
   state.selectedNode = node;
   state.selectedYear = null;
   state.selectedDate = null;
+  state.inTrash = false;
+  trashNoticeBanner.classList.add('hidden');
   state.page = 1;
 
   const trail = [node];
@@ -359,7 +700,6 @@ function selectThematicNode(node) {
   loadPhotos();
 }
 
-// Years List Renderer (Photos)
 function renderYearsList() {
   sidebarList.innerHTML = '';
 
@@ -371,7 +711,7 @@ function renderYearsList() {
     level: 0,
     hasChildren: false,
     isExpanded: false,
-    isSelected: !state.selectedNode && !state.selectedYear,
+    isSelected: !state.selectedNode && !state.selectedYear && !state.inTrash,
     onSelect: () => {
       resetFilters();
       loadPhotos();
@@ -400,6 +740,8 @@ function renderYearsList() {
       state.selectedYear = y.year;
       state.selectedNode = null;
       state.selectedDate = null;
+      state.inTrash = false;
+      trashNoticeBanner.classList.add('hidden');
       state.page = 1;
       state.breadcrumbTrail = [{ name: `Année ${y.year}` }];
       updateFilterUI();
@@ -412,12 +754,10 @@ function renderYearsList() {
   lucide.createIcons();
 }
 
-// Videos List Renderer (Organized strictly by year!)
 function renderVideoYearsList() {
   sidebarList.innerHTML = '';
 
-  // All Videos item
-  const isAllSelected = !state.selectedYear;
+  const isAllSelected = !state.selectedYear && !state.inTrash;
   const allVideosDiv = document.createElement('div');
   allVideosDiv.className = `flex items-center justify-between px-3 py-2 rounded-lg cursor-pointer transition select-none ${
     isAllSelected 
@@ -433,6 +773,8 @@ function renderVideoYearsList() {
   `;
   allVideosDiv.addEventListener('click', () => {
     state.selectedYear = null;
+    state.inTrash = false;
+    trashNoticeBanner.classList.add('hidden');
     state.breadcrumbTrail = [];
     state.page = 1;
     updateFilterUI();
@@ -441,7 +783,6 @@ function renderVideoYearsList() {
   });
   sidebarList.appendChild(allVideosDiv);
 
-  // Grouped by year
   state.videoYears.forEach(vy => {
     const isSelected = state.selectedYear === vy.year;
     const div = document.createElement('div');
@@ -464,6 +805,8 @@ function renderVideoYearsList() {
       state.selectedYear = vy.year;
       state.selectedNode = null;
       state.selectedDate = null;
+      state.inTrash = false;
+      trashNoticeBanner.classList.add('hidden');
       state.page = 1;
       state.breadcrumbTrail = [{ name: label }];
       updateFilterUI();
@@ -488,7 +831,20 @@ function updateBreadcrumbs() {
   });
   breadcrumbBar.appendChild(rootBtn);
 
-  // Add media type crumb
+  if (state.inTrash) {
+    const sep = document.createElement('span');
+    sep.className = "text-slate-600";
+    sep.textContent = "/";
+    breadcrumbBar.appendChild(sep);
+
+    const trashCrumb = document.createElement('span');
+    trashCrumb.className = "text-rose-400 font-bold flex items-center gap-1";
+    trashCrumb.innerHTML = `<i data-lucide="trash-2" class="w-3 h-3"></i><span>Corbeille</span>`;
+    breadcrumbBar.appendChild(trashCrumb);
+    lucide.createIcons();
+    return;
+  }
+
   const mediaCrumbSep = document.createElement('span');
   mediaCrumbSep.className = "text-slate-600";
   mediaCrumbSep.textContent = "/";
@@ -530,7 +886,9 @@ function updateBreadcrumbs() {
 }
 
 function updateFilterUI() {
-  let title = state.mediaType === 'photo' ? 'Toutes les photos' : 'Toutes les vidéos';
+  let title = state.inTrash 
+    ? 'Corbeille (Conservation 30 jours)'
+    : (state.mediaType === 'photo' ? 'Derniers ajouts (Maroc 10/2026)' : 'Toutes les vidéos');
   let badgeText = '';
 
   if (state.searchQuery) {
@@ -544,6 +902,12 @@ function updateFilterUI() {
       ? (state.mediaType === 'photo' ? 'Photos sans date' : 'Vidéos sans date')
       : `${state.mediaType === 'photo' ? 'Année' : 'Vidéos'} ${state.selectedYear}`;
     badgeText = `Année: ${state.selectedYear}`;
+  } else if (state.filterCountry) {
+    title = `Photos : ${state.filterCountry}`;
+    badgeText = `Pays: ${state.filterCountry}`;
+  } else if (state.filterCamera) {
+    title = `Appareil : ${state.filterCamera}`;
+    badgeText = `Appareil: ${state.filterCamera}`;
   }
 
   galleryTitle.textContent = title;
@@ -555,10 +919,10 @@ function updateFilterUI() {
     activeFilterBadge.classList.add('hidden');
   }
 
-  if (state.mediaType === 'photo') {
+  if (state.mediaType === 'photo' && !state.inTrash) {
     if (state.activeTab === 'thematics') renderThematicsTree();
     else renderYearsList();
-  } else {
+  } else if (state.mediaType === 'video' && !state.inTrash) {
     renderVideoYearsList();
   }
 }
@@ -567,11 +931,16 @@ function resetFilters() {
   state.selectedNode = null;
   state.selectedYear = null;
   state.selectedDate = null;
+  state.filterCountry = '';
+  state.filterCamera = '';
+  state.inTrash = false;
+  trashNoticeBanner.classList.add('hidden');
   state.breadcrumbTrail = [];
   state.searchQuery = '';
   searchInput.value = '';
   clearSearchBtn.classList.add('hidden');
   state.page = 1;
+  updateFilterBadge();
   updateFilterUI();
   updateBreadcrumbs();
 }
@@ -581,16 +950,20 @@ async function loadPhotos() {
   photosGrid.innerHTML = `
     <div class="col-span-full py-16 flex flex-col items-center justify-center text-slate-400">
       <div class="w-8 h-8 border-2 border-sky-500 border-t-transparent rounded-full animate-spin mb-3"></div>
-      <p class="text-xs">Chargement des ${isVideo ? 'vidéos' : 'photos'}...</p>
+      <p class="text-xs">Chargement des médias...</p>
     </div>
   `;
 
   const params = new URLSearchParams({
     media_type: state.mediaType,
+    drive_only: state.driveOnly,
+    in_trash: state.inTrash,
     page: state.page,
     limit: state.limit
   });
 
+  if (state.filterCountry) params.append('country', state.filterCountry);
+  if (state.filterCamera) params.append('camera', state.filterCamera);
   if (state.searchQuery) params.append('q', state.searchQuery);
   if (state.selectedNode) params.append('album_id', state.selectedNode.id);
   if (state.selectedYear) params.append('year', state.selectedYear);
@@ -621,10 +994,26 @@ function renderPhotosGrid() {
 
   state.photos.forEach((item, idx) => {
     const card = document.createElement('div');
-    card.className = "photo-card group relative aspect-square bg-slate-900 border border-slate-800/80 rounded-lg overflow-hidden cursor-pointer shadow";
-    
+    const isSelected = state.selectedPhotoIds.has(item.id);
     const isVideo = item.media_type === 'video';
+    const isPendingDrive = !item.is_in_drive;
+
+    card.className = `photo-card group relative aspect-square bg-slate-900 border rounded-lg overflow-hidden cursor-pointer shadow transition ${
+      isSelected ? 'border-brand-500 ring-2 ring-brand-500/40' : 'border-slate-800/80 hover:border-slate-600'
+    }`;
+    
     const thumbSrc = item.thumbnail_url;
+
+    // Badges
+    let driveBadge = '';
+    if (isPendingDrive) {
+      driveBadge = `
+        <div class="absolute top-2 left-2 px-2 py-0.5 rounded bg-amber-500/90 text-slate-950 font-bold text-[9px] flex items-center gap-1 shadow-md z-10" title="Ce fichier est sur votre PC mais pas encore synchronisé sur Google Drive">
+          <i data-lucide="clock" class="w-3 h-3"></i>
+          <span>En attente Drive</span>
+        </div>
+      `;
+    }
 
     let videoBadge = '';
     let centerPlayIcon = '';
@@ -644,26 +1033,61 @@ function renderPhotosGrid() {
       `;
     }
 
+    // Checkbox for Select Mode
+    let checkboxHtml = '';
+    if (state.isSelectMode) {
+      checkboxHtml = `
+        <div class="absolute top-2 right-2 z-20">
+          <div class="w-5 h-5 rounded-md border flex items-center justify-center transition ${
+            isSelected ? 'bg-brand-500 border-brand-400 text-white' : 'bg-black/60 border-white/40'
+          }">
+            ${isSelected ? '<i data-lucide="check" class="w-3.5 h-3.5"></i>' : ''}
+          </div>
+        </div>
+      `;
+    }
+
     card.innerHTML = `
       <img src="${thumbSrc}" alt="${item.filename}" loading="lazy"
         class="w-full h-full object-cover transition duration-300 group-hover:scale-105"
         onerror="this.src='/static/placeholder.svg'" />
       
+      ${checkboxHtml}
+      ${driveBadge}
       ${centerPlayIcon}
       ${videoBadge}
 
       <!-- Overlay Gradient -->
       <div class="absolute inset-0 bg-gradient-to-t from-slate-950/85 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition duration-200 p-2.5 flex flex-col justify-end pointer-events-none">
         <p class="text-[11px] font-mono text-white truncate drop-shadow">${item.filename}</p>
-        <p class="text-[10px] text-slate-300 font-mono drop-shadow">${formatDate(item.capture_date)}</p>
+        <p class="text-[10px] text-slate-300 font-mono drop-shadow">${item.camera_model ? item.camera_model + ' • ' : ''}${formatDate(item.capture_date)}</p>
       </div>
     `;
 
-    card.addEventListener('click', () => openLightbox(idx));
+    card.addEventListener('click', (e) => {
+      if (state.isSelectMode) {
+        if (state.selectedPhotoIds.has(item.id)) {
+          state.selectedPhotoIds.delete(item.id);
+        } else {
+          state.selectedPhotoIds.add(item.id);
+        }
+        updateBatchActionBar();
+        renderPhotosGrid();
+      } else {
+        openLightbox(idx);
+      }
+    });
+
     photosGrid.appendChild(card);
   });
 
   lucide.createIcons();
+}
+
+function updateBatchActionBar() {
+  const count = state.selectedPhotoIds.size;
+  batchSelectedCount.textContent = count;
+  batchActionBar.classList.toggle('hidden', count === 0);
 }
 
 function formatDate(isoStr) {
@@ -684,7 +1108,7 @@ function formatBytes(bytes) {
   return `${(bytes / Math.pow(k, i)).toFixed(1)} ${sizes[i]}`;
 }
 
-// Lightbox Logic with HTML5 Video support
+// Lightbox
 async function openLightbox(index) {
   state.lightboxIndex = index;
   const item = state.photos[index];
@@ -716,12 +1140,26 @@ async function openLightbox(index) {
     metaFilename.textContent = details.filename;
     metaDate.textContent = details.capture_date || 'Non renseignée';
     metaDimSize.textContent = `${details.width || '?'} × ${details.height || '?'} px (${formatBytes(details.file_size)})`;
-    metaPath.textContent = details.rel_path;
+    
+    // Camera & EXIF
+    const camText = [details.camera_make, details.camera_model].filter(Boolean).join(' ');
+    metaCamera.textContent = camText || 'Non renseigné';
+    
+    const exifParts = [];
+    if (details.focal_length) exifParts.push(`${details.focal_length}mm`);
+    if (details.aperture) exifParts.push(`f/${details.aperture}`);
+    if (details.exposure_time) exifParts.push(`${details.exposure_time}s`);
+    if (details.iso) exifParts.push(`ISO ${details.iso}`);
+    metaExif.textContent = exifParts.join(' • ') || '';
+
+    // Location
+    const locParts = [details.city, details.country].filter(Boolean).join(', ');
+    metaLocation.textContent = locParts || 'Lieu non renseigné';
 
     if (details.drive_id) {
       metaDriveStatus.innerHTML = `<span class="text-emerald-400 font-semibold flex items-center gap-1"><i data-lucide="check-circle-2" class="w-3.5 h-3.5"></i> Synchronisé sur Drive HD</span>`;
     } else {
-      metaDriveStatus.innerHTML = `<span class="text-amber-400 font-semibold flex items-center gap-1"><i data-lucide="clock" class="w-3.5 h-3.5"></i> En cours d'envoi</span>`;
+      metaDriveStatus.innerHTML = `<span class="text-amber-400 font-semibold flex items-center gap-1"><i data-lucide="clock" class="w-3.5 h-3.5"></i> En attente de synchronisation</span>`;
     }
 
     metaAlbums.innerHTML = '';

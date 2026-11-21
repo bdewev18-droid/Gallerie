@@ -6,8 +6,11 @@ from fastapi import FastAPI, Query, HTTPException, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+from datetime import datetime, timedelta
 import sqlite3
 import math
+import uuid
 from typing import Optional, List
 from database import DB_PATH, get_connection
 from thumbnails import make_thumbnail, THUMBNAILS_DIR, PHOTOS_DIR
@@ -24,6 +27,21 @@ app.add_middleware(
 
 FRONTEND_DIR = Path(r"d:\LRforIA\frontend")
 GDRIVE_DEFAULT_URL = "https://drive.google.com/drive/folders/1w_szSK4yKM_j0Trk8lT5Zcpcxae_0_iO"
+
+# Pydantic Models for Actions
+class BatchTrashRequest(BaseModel):
+    photo_ids: List[int]
+
+class BatchMoveRequest(BaseModel):
+    photo_ids: List[int]
+    target_album_id: str
+    remove_from_current: bool = False
+    current_album_id: Optional[str] = None
+
+class AlbumCreateRequest(BaseModel):
+    name: str
+    parent_id: Optional[str] = None
+    is_folder: bool = False
 
 # 1. API: Thematic Tree (Folders and Albums)
 @app.get("/api/thematics")
@@ -112,10 +130,15 @@ def get_dates_for_year(year: str, media_type: Optional[str] = "photo"):
         dates = [{"date_folder": r["date_folder"], "count": r["count"]} for r in cur.fetchall()]
     return {"year": year, "dates": dates}
 
-# 3. API: Photos Grid with Filtering & Search
+# 3. API: Photos Grid with Filtering, Search & Trash
 @app.get("/api/photos")
 def list_photos(
     media_type: Optional[str] = Query("photo"),
+    drive_only: bool = Query(True),
+    in_trash: bool = Query(False),
+    country: Optional[str] = None,
+    city: Optional[str] = None,
+    camera: Optional[str] = None,
     year: Optional[str] = None,
     date_folder: Optional[str] = None,
     album_id: Optional[str] = None,
@@ -130,9 +153,33 @@ def list_photos(
     with get_connection() as conn:
         cur = conn.cursor()
 
+        # Trash filtering
+        if in_trash:
+            where_clauses.append("p.deleted_at IS NOT NULL")
+        else:
+            where_clauses.append("p.deleted_at IS NULL")
+
+        # Media type
         if media_type and media_type != "all":
             where_clauses.append("p.media_type = ?")
             params.append(media_type)
+
+        # Drive only (Point 1: Se servir que de ce qui a dans drive)
+        if drive_only:
+            where_clauses.append("p.gdrive_file_id IS NOT NULL")
+
+        # Metadata filters
+        if country:
+            where_clauses.append("p.country = ?")
+            params.append(country)
+
+        if city:
+            where_clauses.append("p.city = ?")
+            params.append(city)
+
+        if camera:
+            where_clauses.append("p.camera_model = ?")
+            params.append(camera)
 
         if q and q.strip():
             clean_q = re_clean_query(q.strip())
@@ -158,13 +205,17 @@ def list_photos(
         cur.execute(f"SELECT COUNT(*) FROM photos p {where_sql}", params)
         total = cur.fetchone()[0]
 
-        # Fetch page
+        # Fetch page with Homepage ordering: filter future/erroneous dates so 10/2026 Maroc is first!
         query = f"""
         SELECT p.id, p.filename, p.rel_path, p.year, p.date_folder, p.file_size,
-               p.width, p.height, p.capture_date, p.gdrive_file_id, p.gdrive_url, p.media_type
+               p.width, p.height, p.capture_date, p.gdrive_file_id, p.gdrive_url, p.media_type,
+               p.camera_make, p.camera_model, p.country, p.city, p.focal_length, p.aperture, p.iso, p.exposure_time, p.deleted_at
         FROM photos p
         {where_sql}
-        ORDER BY CASE WHEN p.capture_date IS NOT NULL THEN p.capture_date ELSE p.rel_path END DESC
+        ORDER BY CASE 
+            WHEN p.capture_date IS NOT NULL AND p.capture_date <= '2026-12-31T23:59:59' THEN p.capture_date 
+            ELSE '1900-01-01' 
+        END DESC, p.id DESC
         LIMIT ? OFFSET ?
         """
         cur.execute(query, params + [limit, offset])
@@ -187,7 +238,17 @@ def list_photos(
                 "height": r["height"],
                 "capture_date": r["capture_date"],
                 "drive_id": drive_id,
+                "is_in_drive": bool(drive_id),
                 "media_type": r["media_type"],
+                "camera_make": r["camera_make"],
+                "camera_model": r["camera_model"],
+                "country": r["country"],
+                "city": r["city"],
+                "focal_length": r["focal_length"],
+                "aperture": r["aperture"],
+                "iso": r["iso"],
+                "exposure_time": r["exposure_time"],
+                "deleted_at": r["deleted_at"],
                 "media_url": f"/api/media/{r['id']}",
                 "thumbnail_url": f"/api/thumbnail/{r['id']}",
                 "drive_thumbnail_url": drive_thumb,
@@ -309,6 +370,127 @@ def get_photo_detail(photo_id: int):
         "large_preview_url": drive_thumb_large,
         "gdrive_url": direct_view_url
     }
+
+# 6. API: Filter Aggregations for Sidebar/Drawer
+@app.get("/api/filters")
+def get_filters_data():
+    with get_connection() as conn:
+        cur = conn.cursor()
+        
+        # Countries
+        cur.execute("""
+        SELECT country, COUNT(*) as count 
+        FROM photos 
+        WHERE country IS NOT NULL AND country != '' AND deleted_at IS NULL
+        GROUP BY country 
+        ORDER BY count DESC 
+        LIMIT 15;
+        """)
+        countries = [{"name": r["country"], "count": r["count"]} for r in cur.fetchall()]
+
+        # Cameras
+        cur.execute("""
+        SELECT camera_model, COUNT(*) as count 
+        FROM photos 
+        WHERE camera_model IS NOT NULL AND camera_model != '' AND deleted_at IS NULL
+        GROUP BY camera_model 
+        ORDER BY count DESC 
+        LIMIT 15;
+        """)
+        cameras = [{"name": r["camera_model"], "count": r["count"]} for r in cur.fetchall()]
+
+        # Drive counts
+        cur.execute("SELECT COUNT(*) FROM photos WHERE gdrive_file_id IS NOT NULL AND deleted_at IS NULL;")
+        drive_synced = cur.fetchone()[0]
+
+        cur.execute("SELECT COUNT(*) FROM photos WHERE gdrive_file_id IS NULL AND deleted_at IS NULL;")
+        drive_pending = cur.fetchone()[0]
+
+        # Trash count
+        cur.execute("SELECT COUNT(*) FROM photos WHERE deleted_at IS NOT NULL;")
+        trash_count = cur.fetchone()[0]
+
+    return {
+        "countries": countries,
+        "cameras": cameras,
+        "drive_synced": drive_synced,
+        "drive_pending": drive_pending,
+        "trash_count": trash_count
+    }
+
+# 7. API: Batch Actions & Trash System (30-day Retention)
+@app.post("/api/photos/trash")
+def move_to_trash(req: BatchTrashRequest):
+    if not req.photo_ids:
+        return {"status": "ok", "count": 0}
+    now_iso = datetime.utcnow().isoformat()
+    with get_connection() as conn:
+        cur = conn.cursor()
+        placeholders = ",".join("?" for _ in req.photo_ids)
+        cur.execute(f"UPDATE photos SET deleted_at = ? WHERE id IN ({placeholders});", [now_iso] + req.photo_ids)
+        conn.commit()
+    return {"status": "ok", "count": len(req.photo_ids)}
+
+@app.post("/api/photos/restore")
+def restore_from_trash(req: BatchTrashRequest):
+    if not req.photo_ids:
+        return {"status": "ok", "count": 0}
+    with get_connection() as conn:
+        cur = conn.cursor()
+        placeholders = ",".join("?" for _ in req.photo_ids)
+        cur.execute(f"UPDATE photos SET deleted_at = NULL WHERE id IN ({placeholders});", req.photo_ids)
+        conn.commit()
+    return {"status": "ok", "count": len(req.photo_ids)}
+
+@app.post("/api/photos/purge")
+def purge_trash():
+    cutoff = (datetime.utcnow() - timedelta(days=30)).isoformat()
+    with get_connection() as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT id FROM photos WHERE deleted_at IS NOT NULL AND deleted_at < ?;", (cutoff,))
+        expired = [r[0] for r in cur.fetchall()]
+        if expired:
+            pl = ",".join("?" for _ in expired)
+            cur.execute(f"DELETE FROM photo_albums WHERE photo_id IN ({pl});", expired)
+            cur.execute(f"DELETE FROM photos WHERE id IN ({pl});", expired)
+            conn.commit()
+    return {"status": "ok", "purged_count": len(expired)}
+
+@app.post("/api/photos/move_album")
+def move_photos_to_album(req: BatchMoveRequest):
+    if not req.photo_ids or not req.target_album_id:
+        return {"status": "error", "message": "Missing ids or target album"}
+    with get_connection() as conn:
+        cur = conn.cursor()
+        if req.remove_from_current and req.current_album_id:
+            pl = ",".join("?" for _ in req.photo_ids)
+            cur.execute(f"DELETE FROM photo_albums WHERE album_id = ? AND photo_id IN ({pl});", [req.current_album_id] + req.photo_ids)
+        
+        insert_data = [(pid, req.target_album_id) for pid in req.photo_ids]
+        cur.executemany("INSERT OR IGNORE INTO photo_albums (photo_id, album_id) VALUES (?, ?);", insert_data)
+        conn.commit()
+    return {"status": "ok", "count": len(req.photo_ids)}
+
+@app.post("/api/albums")
+def create_album(req: AlbumCreateRequest):
+    alb_id = str(uuid.uuid4()).replace("-", "")
+    with get_connection() as conn:
+        cur = conn.cursor()
+        cur.execute("""
+        INSERT INTO albums (id, name, parent_id, is_folder, direct_count, total_count)
+        VALUES (?, ?, ?, ?, 0, 0);
+        """, (alb_id, req.name.strip(), req.parent_id, 1 if req.is_folder else 0))
+        conn.commit()
+    return {"status": "ok", "id": alb_id, "name": req.name}
+
+@app.delete("/api/albums/{album_id}")
+def delete_album(album_id: str):
+    with get_connection() as conn:
+        cur = conn.cursor()
+        cur.execute("DELETE FROM photo_albums WHERE album_id = ?;", (album_id,))
+        cur.execute("DELETE FROM albums WHERE id = ?;", (album_id,))
+        conn.commit()
+    return {"status": "ok", "deleted_album_id": album_id}
 
 app.mount("/static", StaticFiles(directory=str(FRONTEND_DIR)), name="static")
 
