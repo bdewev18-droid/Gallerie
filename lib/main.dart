@@ -4,7 +4,6 @@ import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 void main() {
-  WidgetsFlutterBinding.ensureInitialized();
   runApp(const GallerieApp());
 }
 
@@ -14,7 +13,7 @@ class GallerieApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Lightroom & Drive Gallery',
+      title: 'Medias Familly',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         useMaterial3: true,
@@ -40,6 +39,7 @@ class PhotoItem {
   final int width;
   final int height;
   final int fileSize;
+  final bool isVideo;
   final String? driveId;
   final List<String> albums;
 
@@ -52,6 +52,7 @@ class PhotoItem {
     required this.width,
     required this.height,
     required this.fileSize,
+    required this.isVideo,
     this.driveId,
     required this.albums,
   });
@@ -66,6 +67,7 @@ class PhotoItem {
       width: json['w'] as int? ?? 0,
       height: json['h'] as int? ?? 0,
       fileSize: json['s'] as int? ?? 0,
+      isVideo: (json['m'] as String? ?? 'p') == 'v',
       driveId: json['gid'] as String?,
       albums: (json['al'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [],
     );
@@ -120,7 +122,10 @@ class YearItem {
   final String year;
   final int count;
 
-  YearItem({required this.year, required this.count});
+  YearItem({
+    required this.year,
+    required this.count,
+  });
 
   factory YearItem.fromJson(Map<String, dynamic> json) {
     return YearItem(
@@ -141,11 +146,15 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _isLoading = true;
   String _gdriveUrl = "https://drive.google.com/drive/folders/1w_szSK4yKM_j0Trk8lT5Zcpcxae_0_iO";
   List<PhotoItem> _allPhotos = [];
+  List<PhotoItem> _photosOnly = [];
+  List<PhotoItem> _videosOnly = [];
   Map<String, AlbumNode> _nodesById = {};
   Map<String?, List<AlbumNode>> _childrenByParent = {};
-  List<YearItem> _years = [];
+  List<YearItem> _photoYears = [];
+  List<YearItem> _videoYears = [];
 
-  int _currentIndex = 0;
+  int _mediaMode = 0; // 0 = Photos, 1 = Vidéos
+  int _currentIndex = 0; // For Photos: 0 = Albums, 1 = Années, 2 = Recherche
   final List<AlbumNode> _navHistory = [];
   String _albumSearch = '';
   final TextEditingController _albumSearchController = TextEditingController();
@@ -182,10 +191,16 @@ class _HomeScreenState extends State<HomeScreen> {
       }
 
       final rawYears = data['years'] as List<dynamic>;
-      _years = rawYears.map((e) => YearItem.fromJson(e)).toList();
+      _photoYears = rawYears.map((e) => YearItem.fromJson(e)).toList();
+
+      final rawVideoYears = (data['video_years'] as List<dynamic>?) ?? [];
+      _videoYears = rawVideoYears.map((e) => YearItem.fromJson(e)).toList();
 
       final rawPhotos = data['photos'] as List<dynamic>;
       _allPhotos = rawPhotos.map((e) => PhotoItem.fromJson(e)).toList();
+
+      _photosOnly = _allPhotos.where((p) => !p.isVideo).toList();
+      _videosOnly = _allPhotos.where((p) => p.isVideo).toList();
     } catch (e) {
       debugPrint("Error loading catalog: $e");
     } finally {
@@ -212,7 +227,7 @@ class _HomeScreenState extends State<HomeScreen> {
             children: [
               CircularProgressIndicator(color: Color(0xFF38BDF8)),
               SizedBox(height: 16),
-              Text("Chargement de la bibliothèque...", style: TextStyle(color: Colors.white70)),
+              Text("Chargement de Medias Familly...", style: TextStyle(color: Colors.white70)),
             ],
           ),
         ),
@@ -222,13 +237,11 @@ class _HomeScreenState extends State<HomeScreen> {
     return Scaffold(
       appBar: AppBar(
         backgroundColor: const Color(0xFF0F172A),
-        title: Row(
+        title: const Row(
           children: [
-            const Icon(Icons.photo_library_outlined, color: Color(0xFF38BDF8), size: 22),
-            const SizedBox(width: 8),
-            const Text("Gallerie", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
-            const Spacer(),
-            Text("${_allPhotos.length} photos", style: const TextStyle(fontSize: 12, color: Colors.white54)),
+            Icon(Icons.photo_library_outlined, color: Color(0xFF38BDF8), size: 22),
+            SizedBox(width: 8),
+            Text("Medias Familly", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
           ],
         ),
         actions: [
@@ -238,41 +251,76 @@ class _HomeScreenState extends State<HomeScreen> {
             onPressed: () => _openUrl(_gdriveUrl),
           ),
         ],
-      ),
-      body: IndexedStack(
-        index: _currentIndex,
-        children: [
-          _buildAlbumsTab(),
-          _buildYearsTab(),
-          _buildSearchTab(),
-        ],
-      ),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: _currentIndex,
-        onDestinationSelected: (idx) => setState(() => _currentIndex = idx),
-        backgroundColor: const Color(0xFF0F172A),
-        indicatorColor: const Color(0xFF0284C7).withValues(alpha: 0.3),
-        destinations: const [
-          NavigationDestination(
-            icon: Icon(Icons.folder_outlined),
-            selectedIcon: Icon(Icons.folder, color: Color(0xFF38BDF8)),
-            label: "Albums & Dossiers",
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(48),
+          child: Padding(
+            padding: const EdgeInsets.only(bottom: 8, left: 16, right: 16),
+            child: SizedBox(
+              width: double.infinity,
+              child: SegmentedButton<int>(
+                style: SegmentedButton.styleFrom(
+                  selectedBackgroundColor: const Color(0xFF0284C7).withValues(alpha: 0.3),
+                  selectedForegroundColor: const Color(0xFF38BDF8),
+                  backgroundColor: const Color(0xFF1E293B),
+                ),
+                segments: [
+                  ButtonSegment(
+                    value: 0,
+                    icon: const Icon(Icons.camera_alt_outlined, size: 16),
+                    label: Text("Photos (${_photosOnly.length})", style: const TextStyle(fontSize: 12)),
+                  ),
+                  ButtonSegment(
+                    value: 1,
+                    icon: const Icon(Icons.videocam_outlined, size: 16),
+                    label: Text("Vidéos (${_videosOnly.length})", style: const TextStyle(fontSize: 12)),
+                  ),
+                ],
+                selected: {_mediaMode},
+                onSelectionChanged: (set) => setState(() => _mediaMode = set.first),
+              ),
+            ),
           ),
-          NavigationDestination(
-            icon: Icon(Icons.calendar_today_outlined),
-            selectedIcon: Icon(Icons.calendar_today, color: Color(0xFF38BDF8)),
-            label: "Années",
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.search),
-            selectedIcon: Icon(Icons.search, color: Color(0xFF38BDF8)),
-            label: "Recherche",
-          ),
-        ],
+        ),
       ),
+      body: _mediaMode == 0
+          ? IndexedStack(
+              index: _currentIndex,
+              children: [
+                _buildAlbumsTab(),
+                _buildPhotoYearsTab(),
+                _buildSearchTab(),
+              ],
+            )
+          : _buildVideoYearsTab(),
+      bottomNavigationBar: _mediaMode == 0
+          ? NavigationBar(
+              selectedIndex: _currentIndex,
+              onDestinationSelected: (idx) => setState(() => _currentIndex = idx),
+              backgroundColor: const Color(0xFF0F172A),
+              indicatorColor: const Color(0xFF0284C7).withValues(alpha: 0.3),
+              destinations: const [
+                NavigationDestination(
+                  icon: Icon(Icons.folder_outlined),
+                  selectedIcon: Icon(Icons.folder, color: Color(0xFF38BDF8)),
+                  label: "Thématiques",
+                ),
+                NavigationDestination(
+                  icon: Icon(Icons.calendar_today_outlined),
+                  selectedIcon: Icon(Icons.calendar_today, color: Color(0xFF38BDF8)),
+                  label: "Années",
+                ),
+                NavigationDestination(
+                  icon: Icon(Icons.search),
+                  selectedIcon: Icon(Icons.search, color: Color(0xFF38BDF8)),
+                  label: "Recherche",
+                ),
+              ],
+            )
+          : null,
     );
   }
 
+  // --- PHOTOS: Lightroom Thematics Tab ---
   Widget _buildAlbumsTab() {
     final currentParentId = _navHistory.isEmpty ? null : _navHistory.last.id;
     final currentChildren = _childrenByParent[currentParentId] ?? [];
@@ -348,7 +396,7 @@ class _HomeScreenState extends State<HomeScreen> {
             decoration: InputDecoration(
               hintText: _albumSearch.isEmpty && _navHistory.isNotEmpty
                   ? "Filtrer dans ${_navHistory.last.name}..."
-                  : "Rechercher un dossier ou album...",
+                  : "Rechercher une thématique...",
               prefixIcon: const Icon(Icons.search, size: 20),
               suffixIcon: _albumSearch.isNotEmpty
                   ? IconButton(
@@ -368,97 +416,79 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ),
 
-        if (_navHistory.isNotEmpty && _navHistory.last.totalCount > 0 && _albumSearch.isEmpty)
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-            child: InkWell(
-              onTap: () => _openPhotosForNode(_navHistory.last),
-              borderRadius: BorderRadius.circular(8),
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF0284C7).withValues(alpha: 0.15),
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: const Color(0xFF0284C7).withValues(alpha: 0.3)),
-                ),
-                child: Row(
-                  children: [
-                    const Icon(Icons.photo_library, size: 18, color: Color(0xFF38BDF8)),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Text(
-                        "Afficher toutes les photos de ${_navHistory.last.name}",
-                        style: const TextStyle(fontSize: 12, color: Color(0xFF38BDF8), fontWeight: FontWeight.w600),
-                      ),
-                    ),
-                    Text(
-                      "${_navHistory.last.totalCount} photos",
-                      style: const TextStyle(fontSize: 11, color: Colors.white70),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-
+        // List
         Expanded(
-          child: ListView.builder(
-            itemCount: filtered.length,
-            itemBuilder: (context, idx) {
-              final node = filtered[idx];
-              final isFolder = node.isFolder;
+          child: filtered.isEmpty
+              ? const Center(
+                  child: Text("Aucun dossier ou album trouvé", style: TextStyle(color: Colors.white38)),
+                )
+              : ListView.builder(
+                  itemCount: filtered.length,
+                  itemBuilder: (context, idx) {
+                    final node = filtered[idx];
+                    final hasChildren = (_childrenByParent[node.id] ?? []).isNotEmpty;
 
-              return ListTile(
-                leading: Container(
-                  width: 42,
-                  height: 42,
-                  decoration: BoxDecoration(
-                    color: isFolder
-                        ? const Color(0xFF0284C7).withValues(alpha: 0.15)
-                        : const Color(0xFF1E293B),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Icon(
-                    isFolder ? Icons.folder : Icons.photo_album_outlined,
-                    color: isFolder ? const Color(0xFF38BDF8) : Colors.white70,
-                    size: 22,
-                  ),
-                ),
-                title: Text(node.name, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
-                subtitle: isFolder
-                    ? Text("Dossier (${node.totalCount} photos)", style: const TextStyle(fontSize: 11, color: Colors.white54))
-                    : Text("Album (${node.directCount} photos)", style: const TextStyle(fontSize: 11, color: Colors.white54)),
-                trailing: isFolder
-                    ? const Icon(Icons.chevron_right, size: 18, color: Colors.white30)
-                    : Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    return ListTile(
+                      leading: Container(
+                        width: 42,
+                        height: 42,
                         decoration: BoxDecoration(
                           color: const Color(0xFF1E293B),
-                          borderRadius: BorderRadius.circular(12),
+                          borderRadius: BorderRadius.circular(8),
                         ),
-                        child: Text("${node.totalCount}", style: const TextStyle(fontSize: 11, color: Colors.white70)),
+                        child: Icon(
+                          node.isFolder ? Icons.folder_outlined : Icons.photo_library_outlined,
+                          color: node.isFolder ? const Color(0xFFFBBF24) : const Color(0xFF38BDF8),
+                          size: 22,
+                        ),
                       ),
-                onTap: () {
-                  if (isFolder) {
-                    setState(() {
-                      _navHistory.add(node);
-                      _albumSearch = '';
-                      _albumSearchController.clear();
-                    });
-                  } else {
-                    _openPhotosForNode(node);
-                  }
-                },
-              );
-            },
-          ),
+                      title: Text(
+                        node.name,
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: node.isFolder ? FontWeight.bold : FontWeight.w500,
+                        ),
+                      ),
+                      subtitle: Text(
+                        node.isFolder
+                            ? "${node.totalCount} photos cumulées"
+                            : "${node.directCount} photos",
+                        style: const TextStyle(fontSize: 11, color: Colors.white54),
+                      ),
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (node.isFolder && node.totalCount > 0)
+                            IconButton(
+                              icon: const Icon(Icons.grid_view, size: 18, color: Colors.white38),
+                              tooltip: "Voir toutes les photos du dossier",
+                              onPressed: () => _openPhotosForNode(node),
+                            ),
+                          if (hasChildren)
+                            const Icon(Icons.chevron_right, size: 20, color: Colors.white38),
+                        ],
+                      ),
+                      onTap: () {
+                        if (hasChildren) {
+                          setState(() {
+                            _navHistory.add(node);
+                            _albumSearch = '';
+                            _albumSearchController.clear();
+                          });
+                        } else {
+                          _openPhotosForNode(node);
+                        }
+                      },
+                    );
+                  },
+                ),
         ),
       ],
     );
   }
 
   void _openPhotosForNode(AlbumNode node) {
-    final albumPhotos = _allPhotos.where((p) => p.albums.contains(node.id)).toList();
+    final albumPhotos = _photosOnly.where((p) => p.albums.contains(node.id)).toList();
     Navigator.push(
       context,
       MaterialPageRoute(
@@ -472,11 +502,12 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _buildYearsTab() {
+  // --- PHOTOS: Years Tab ---
+  Widget _buildPhotoYearsTab() {
     return ListView.builder(
-      itemCount: _years.length,
+      itemCount: _photoYears.length,
       itemBuilder: (context, idx) {
-        final year = _years[idx];
+        final year = _photoYears[idx];
         final label = year.year == 'unknown_date' ? 'Photos sans date' : "Année ${year.year}";
         return ListTile(
           leading: Container(
@@ -498,7 +529,7 @@ class _HomeScreenState extends State<HomeScreen> {
             child: Text("${year.count}", style: const TextStyle(fontSize: 11, color: Colors.white70)),
           ),
           onTap: () {
-            final yearPhotos = _allPhotos.where((p) => p.year == year.year).toList();
+            final yearPhotos = _photosOnly.where((p) => p.year == year.year).toList();
             Navigator.push(
               context,
               MaterialPageRoute(
@@ -516,9 +547,97 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  // --- VIDEOS: Only by Year Tab ---
+  Widget _buildVideoYearsTab() {
+    return Column(
+      children: [
+        // "Toutes les vidéos" Tile
+        ListTile(
+          tileColor: const Color(0xFF1E293B).withValues(alpha: 0.5),
+          leading: Container(
+            width: 42,
+            height: 42,
+            decoration: BoxDecoration(
+              color: const Color(0xFF0284C7).withValues(alpha: 0.2),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: const Icon(Icons.movie_filter_outlined, color: Color(0xFF38BDF8), size: 24),
+          ),
+          title: const Text("Toutes les vidéos", style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
+          trailing: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+            decoration: BoxDecoration(
+              color: const Color(0xFF0284C7).withValues(alpha: 0.3),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Text("${_videosOnly.length}", style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF38BDF8))),
+          ),
+          onTap: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => PhotoGridScreen(
+                  title: "Toutes les vidéos",
+                  photos: _videosOnly,
+                  nodesById: _nodesById,
+                  gdriveUrl: _gdriveUrl,
+                ),
+              ),
+            );
+          },
+        ),
+        const Divider(height: 1, color: Colors.white10),
+        // List of Video Years
+        Expanded(
+          child: ListView.builder(
+            itemCount: _videoYears.length,
+            itemBuilder: (context, idx) {
+              final vy = _videoYears[idx];
+              final label = vy.year == 'unknown_date' ? 'Vidéos sans date' : "Vidéos ${vy.year}";
+              return ListTile(
+                leading: Container(
+                  width: 42,
+                  height: 42,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF1E293B),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Icon(Icons.movie_outlined, color: Color(0xFFFBBF24), size: 22),
+                ),
+                title: Text(label, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+                trailing: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF1E293B),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text("${vy.count}", style: const TextStyle(fontSize: 11, color: Colors.white70)),
+                ),
+                onTap: () {
+                  final yearVideos = _videosOnly.where((p) => p.year == vy.year).toList();
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => PhotoGridScreen(
+                        title: label,
+                        photos: yearVideos,
+                        nodesById: _nodesById,
+                        gdriveUrl: _gdriveUrl,
+                      ),
+                    ),
+                  );
+                },
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
   Widget _buildSearchTab() {
     return PhotoSearchScreen(
-      allPhotos: _allPhotos,
+      allPhotos: _photosOnly,
       nodesById: _nodesById,
       gdriveUrl: _gdriveUrl,
     );
@@ -548,7 +667,7 @@ class PhotoGridScreen extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-            Text("${photos.length} photos", style: const TextStyle(fontSize: 11, color: Colors.white54)),
+            Text("${photos.length} éléments", style: const TextStyle(fontSize: 11, color: Colors.white54)),
           ],
         ),
       ),
@@ -598,14 +717,43 @@ class PhotoGridScreen extends StatelessWidget {
                             );
                           },
                           errorBuilder: (context, error, stackTrace) {
-                            return const Center(
-                              child: Icon(Icons.image_outlined, color: Colors.white24, size: 28),
+                            return Center(
+                              child: Icon(
+                                photo.isVideo ? Icons.movie_outlined : Icons.image_outlined,
+                                color: Colors.white24,
+                                size: 28,
+                              ),
                             );
                           },
                         )
                       else
-                        const Center(
-                          child: Icon(Icons.cloud_upload_outlined, color: Colors.white24, size: 28),
+                        Center(
+                          child: Icon(
+                            photo.isVideo ? Icons.movie_outlined : Icons.cloud_upload_outlined,
+                            color: Colors.white24,
+                            size: 28,
+                          ),
+                        ),
+                      if (photo.isVideo)
+                        Positioned(
+                          bottom: 20,
+                          right: 4,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: Colors.black.withValues(alpha: 0.8),
+                              borderRadius: BorderRadius.circular(4),
+                              border: Border.all(color: Colors.white24),
+                            ),
+                            child: const Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.play_arrow, size: 11, color: Colors.white),
+                                SizedBox(width: 2),
+                                Text("Vidéo", style: TextStyle(fontSize: 8, color: Colors.white, fontWeight: FontWeight.bold)),
+                              ],
+                            ),
+                          ),
                         ),
                       Positioned(
                         bottom: 0,
@@ -677,46 +825,66 @@ class PhotoGridScreen extends StatelessWidget {
                     child: Container(
                       constraints: const BoxConstraints(maxHeight: 260),
                       color: Colors.black38,
-                      child: Image.network(
-                        photo.largePreviewUrl!,
-                        fit: BoxFit.contain,
-                        loadingBuilder: (ctx, child, progress) {
-                          if (progress == null) return child;
-                          return const Center(
-                            child: Padding(
-                              padding: EdgeInsets.all(32),
-                              child: CircularProgressIndicator(color: Color(0xFF38BDF8)),
+                      child: Stack(
+                        alignment: Alignment.center,
+                        children: [
+                          Image.network(
+                            photo.largePreviewUrl!,
+                            fit: BoxFit.contain,
+                            loadingBuilder: (ctx, child, progress) {
+                              if (progress == null) return child;
+                              return const Center(
+                                child: Padding(
+                                  padding: EdgeInsets.all(32),
+                                  child: CircularProgressIndicator(color: Color(0xFF38BDF8)),
+                                ),
+                              );
+                            },
+                            errorBuilder: (ctx, err, stack) => const SizedBox.shrink(),
+                          ),
+                          if (photo.isVideo)
+                            Container(
+                              width: 52,
+                              height: 52,
+                              decoration: BoxDecoration(
+                                color: Colors.black.withValues(alpha: 0.6),
+                                shape: BoxShape.circle,
+                                border: Border.all(color: Colors.white38),
+                              ),
+                              child: const Icon(Icons.play_arrow, color: Colors.white, size: 32),
                             ),
-                          );
-                        },
-                        errorBuilder: (ctx, err, stack) => const SizedBox.shrink(),
+                        ],
                       ),
                     ),
                   ),
                 const SizedBox(height: 16),
                 Text(photo.filename, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
                 const SizedBox(height: 8),
+                Text("Type : ${photo.isVideo ? 'Vidéo' : 'Photo'}",
+                    style: TextStyle(fontSize: 12, color: photo.isVideo ? const Color(0xFFFBBF24) : const Color(0xFF38BDF8), fontWeight: FontWeight.w600)),
                 Text("Date : ${photo.captureDate.isNotEmpty ? photo.captureDate : 'Non renseignée'}",
                     style: const TextStyle(fontSize: 12, color: Colors.white70)),
-                Text("Dimensions : ${photo.width} × ${photo.height} px ($sizeMo Mo)",
+                Text("Taille : $sizeMo Mo (${photo.width} × ${photo.height} px)",
                     style: const TextStyle(fontSize: 12, color: Colors.white70)),
                 const SizedBox(height: 16),
-                const Text("Dossiers & Albums Lightroom :", style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white70)),
-                const SizedBox(height: 8),
-                Wrap(
-                  spacing: 6,
-                  runSpacing: 6,
-                  children: photoAlbumNames.isEmpty
-                      ? [const Text("Aucun album spécifique", style: TextStyle(fontSize: 11, fontStyle: FontStyle.italic, color: Colors.white38))]
-                      : photoAlbumNames
-                          .map((name) => Chip(
-                                label: Text(name, style: const TextStyle(fontSize: 10)),
-                                backgroundColor: const Color(0xFF1E293B),
-                                padding: EdgeInsets.zero,
-                              ))
-                          .toList(),
-                ),
-                const SizedBox(height: 24),
+                if (!photo.isVideo) ...[
+                  const Text("Dossiers & Albums Lightroom :", style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white70)),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 6,
+                    children: photoAlbumNames.isEmpty
+                        ? [const Text("Aucune thématique spécifique", style: TextStyle(fontSize: 11, fontStyle: FontStyle.italic, color: Colors.white38))]
+                        : photoAlbumNames
+                            .map((name) => Chip(
+                                  label: Text(name, style: const TextStyle(fontSize: 10)),
+                                  backgroundColor: const Color(0xFF1E293B),
+                                  padding: EdgeInsets.zero,
+                                ))
+                            .toList(),
+                  ),
+                  const SizedBox(height: 24),
+                ],
                 ElevatedButton.icon(
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFF0284C7),
@@ -724,8 +892,10 @@ class PhotoGridScreen extends StatelessWidget {
                     padding: const EdgeInsets.symmetric(vertical: 12),
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                   ),
-                  icon: const Icon(Icons.cloud_download_outlined, size: 18),
-                  label: Text(photo.driveId != null ? "Ouvrir l'original HD sur Google Drive" : "Ouvrir le dossier Google Drive"),
+                  icon: Icon(photo.isVideo ? Icons.play_circle_outline : Icons.cloud_download_outlined, size: 18),
+                  label: Text(photo.isVideo
+                      ? (photo.driveId != null ? "Lire la vidéo HD sur Google Drive" : "Ouvrir Google Drive")
+                      : (photo.driveId != null ? "Ouvrir l'original HD sur Google Drive" : "Ouvrir le dossier Google Drive")),
                   onPressed: () async {
                     final uri = Uri.parse(fileViewUrl);
                     if (await canLaunchUrl(uri)) {
@@ -759,25 +929,25 @@ class PhotoSearchScreen extends StatefulWidget {
 }
 
 class _PhotoSearchScreenState extends State<PhotoSearchScreen> {
-  String _query = '';
+  final TextEditingController _searchController = TextEditingController();
   List<PhotoItem> _results = [];
+  String _query = '';
 
-  void _onSearch(String q) {
+  void _onSearch(String query) {
     setState(() {
-      _query = q.trim().toLowerCase();
+      _query = query.trim().toLowerCase();
       if (_query.isEmpty) {
         _results = [];
       } else {
         _results = widget.allPhotos.where((p) {
-          if (p.filename.toLowerCase().contains(_query)) return true;
-          if (p.year.contains(_query)) return true;
-          if (p.dateFolder.toLowerCase().contains(_query)) return true;
-          for (var albId in p.albums) {
-            final albNode = widget.nodesById[albId];
-            if (albNode != null && albNode.name.toLowerCase().contains(_query)) return true;
-          }
-          return false;
-        }).take(200).toList();
+          final fnMatch = p.filename.toLowerCase().contains(_query);
+          final yearMatch = p.year.toLowerCase().contains(_query);
+          final albumMatch = p.albums.any((id) {
+            final node = widget.nodesById[id];
+            return node != null && node.name.toLowerCase().contains(_query);
+          });
+          return fnMatch || yearMatch || albumMatch;
+        }).toList();
       }
     });
   }
@@ -789,9 +959,19 @@ class _PhotoSearchScreenState extends State<PhotoSearchScreen> {
         Padding(
           padding: const EdgeInsets.all(12),
           child: TextField(
+            controller: _searchController,
             decoration: InputDecoration(
-              hintText: "Recherche globale (Espagne, Chloé, 2024, Mariage...)",
+              hintText: "Rechercher par nom, année, album...",
               prefixIcon: const Icon(Icons.search),
+              suffixIcon: _query.isNotEmpty
+                  ? IconButton(
+                      icon: const Icon(Icons.clear),
+                      onPressed: () {
+                        _searchController.clear();
+                        _onSearch('');
+                      },
+                    )
+                  : null,
               filled: true,
               fillColor: const Color(0xFF1E293B),
               border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
@@ -799,24 +979,24 @@ class _PhotoSearchScreenState extends State<PhotoSearchScreen> {
             onChanged: _onSearch,
           ),
         ),
-        if (_query.isNotEmpty)
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-            child: Row(
-              children: [
-                Text("${_results.length} résultat(s)", style: const TextStyle(fontSize: 12, color: Colors.white54)),
-              ],
-            ),
-          ),
         Expanded(
           child: _query.isEmpty
               ? const Center(
-                  child: Text("Tapez un mot-clé pour lancer la recherche...", style: TextStyle(color: Colors.white38)),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.search, size: 48, color: Colors.white24),
+                      SizedBox(height: 12),
+                      Text("Tapez pour rechercher dans les photos", style: TextStyle(color: Colors.white38)),
+                    ],
+                  ),
                 )
               : _results.isEmpty
-                  ? const Center(child: Text("Aucun résultat trouvé", style: TextStyle(color: Colors.white38)))
+                  ? const Center(
+                      child: Text("Aucun résultat", style: TextStyle(color: Colors.white38)),
+                    )
                   : PhotoGridScreen(
-                      title: "Recherche : $_query",
+                      title: "Recherche : '$_query'",
                       photos: _results,
                       nodesById: widget.nodesById,
                       gdriveUrl: widget.gdriveUrl,

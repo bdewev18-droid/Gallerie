@@ -27,57 +27,95 @@ GDRIVE_DEFAULT_URL = "https://drive.google.com/drive/folders/1w_szSK4yKM_j0Trk8l
 
 # 1. API: Thematic Tree (Folders and Albums)
 @app.get("/api/thematics")
-def get_thematics():
+def get_thematics(media_type: Optional[str] = "photo"):
     with get_connection() as conn:
         cur = conn.cursor()
-        cur.execute("""
-        SELECT id, name, parent_id, is_folder, direct_count, total_count 
-        FROM albums 
-        ORDER BY is_folder DESC, name ASC;
-        """)
+        
+        # When media_type is photo, completely exclude Videos from the thematics tree
+        if media_type == "photo":
+            cur.execute("""
+            SELECT id, name, parent_id, is_folder, direct_count, total_count 
+            FROM albums 
+            WHERE lower(name) != 'videos' 
+              AND id != 'bb3d36f6161042d4a2ba6a500c4fe504'
+              AND (parent_id IS NULL OR parent_id != 'bb3d36f6161042d4a2ba6a500c4fe504')
+            ORDER BY is_folder DESC, name ASC;
+            """)
+        else:
+            cur.execute("""
+            SELECT id, name, parent_id, is_folder, direct_count, total_count 
+            FROM albums 
+            ORDER BY is_folder DESC, name ASC;
+            """)
         nodes = [dict(r) for r in cur.fetchall()]
         
-        cur.execute("SELECT COUNT(*) FROM photos;")
+        cur.execute("SELECT COUNT(*) FROM photos WHERE media_type = 'photo';")
         total_photos = cur.fetchone()[0]
+
+        cur.execute("SELECT COUNT(*) FROM photos WHERE media_type = 'video';")
+        total_videos = cur.fetchone()[0]
 
     return {
         "title": "Medias Familly",
         "total_photos": total_photos,
+        "total_videos": total_videos,
         "nodes": nodes,
         "gdrive_url": GDRIVE_DEFAULT_URL
     }
 
 # 2. API: Years and sub-dates
 @app.get("/api/years")
-def get_years():
+def get_years(media_type: Optional[str] = "photo"):
+    where = "WHERE media_type = ?" if media_type and media_type != "all" else ""
+    params = [media_type] if media_type and media_type != "all" else []
+    with get_connection() as conn:
+        cur = conn.cursor()
+        cur.execute(f"""
+        SELECT year, COUNT(*) as count 
+        FROM photos 
+        {where}
+        GROUP BY year 
+        ORDER BY CASE WHEN year = 'unknown_date' THEN '9999' ELSE year END DESC;
+        """, params)
+        years = [{"year": r["year"], "count": r["count"]} for r in cur.fetchall()]
+    return {"years": years}
+
+@app.get("/api/video_years")
+def get_video_years():
     with get_connection() as conn:
         cur = conn.cursor()
         cur.execute("""
         SELECT year, COUNT(*) as count 
         FROM photos 
+        WHERE media_type = 'video'
         GROUP BY year 
         ORDER BY CASE WHEN year = 'unknown_date' THEN '9999' ELSE year END DESC;
         """)
         years = [{"year": r["year"], "count": r["count"]} for r in cur.fetchall()]
-    return {"years": years}
+        cur.execute("SELECT COUNT(*) FROM photos WHERE media_type = 'video';")
+        total = cur.fetchone()[0]
+    return {"total": total, "years": years}
 
 @app.get("/api/dates")
-def get_dates_for_year(year: str):
+def get_dates_for_year(year: str, media_type: Optional[str] = "photo"):
+    where_extra = "AND media_type = ?" if media_type and media_type != "all" else ""
+    params = [year, media_type] if where_extra else [year]
     with get_connection() as conn:
         cur = conn.cursor()
-        cur.execute("""
+        cur.execute(f"""
         SELECT date_folder, COUNT(*) as count 
         FROM photos 
-        WHERE year = ? AND date_folder != ''
+        WHERE year = ? AND date_folder != '' {where_extra}
         GROUP BY date_folder 
         ORDER BY date_folder DESC;
-        """, (year,))
+        """, params)
         dates = [{"date_folder": r["date_folder"], "count": r["count"]} for r in cur.fetchall()]
     return {"year": year, "dates": dates}
 
 # 3. API: Photos Grid with Filtering & Search
 @app.get("/api/photos")
 def list_photos(
+    media_type: Optional[str] = Query("photo"),
     year: Optional[str] = None,
     date_folder: Optional[str] = None,
     album_id: Optional[str] = None,
@@ -91,6 +129,10 @@ def list_photos(
 
     with get_connection() as conn:
         cur = conn.cursor()
+
+        if media_type and media_type != "all":
+            where_clauses.append("p.media_type = ?")
+            params.append(media_type)
 
         if q and q.strip():
             clean_q = re_clean_query(q.strip())
@@ -119,7 +161,7 @@ def list_photos(
         # Fetch page
         query = f"""
         SELECT p.id, p.filename, p.rel_path, p.year, p.date_folder, p.file_size,
-               p.width, p.height, p.capture_date, p.gdrive_file_id, p.gdrive_url
+               p.width, p.height, p.capture_date, p.gdrive_file_id, p.gdrive_url, p.media_type
         FROM photos p
         {where_sql}
         ORDER BY CASE WHEN p.capture_date IS NOT NULL THEN p.capture_date ELSE p.rel_path END DESC
@@ -145,6 +187,8 @@ def list_photos(
                 "height": r["height"],
                 "capture_date": r["capture_date"],
                 "drive_id": drive_id,
+                "media_type": r["media_type"],
+                "media_url": f"/api/media/{r['id']}",
                 "thumbnail_url": f"/api/thumbnail/{r['id']}",
                 "drive_thumbnail_url": drive_thumb,
                 "gdrive_url": direct_view_url
@@ -196,6 +240,35 @@ def get_thumbnail(photo_id: int):
     if placeholder.exists():
         return FileResponse(placeholder, media_type="image/svg+xml")
     return Response(status_code=404)
+
+# 4b. API: Direct Media Stream (Local Video/Photo full file)
+@app.get("/api/media/{photo_id}")
+def get_media_file(photo_id: int):
+    with get_connection() as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT rel_path, media_type FROM photos WHERE id = ?", (photo_id,))
+        row = cur.fetchone()
+
+    if not row:
+        raise HTTPException(status_code=404, detail="Media not found")
+
+    file_path = PHOTOS_DIR / row["rel_path"]
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="File on disk not found")
+
+    ext = file_path.suffix.lower()
+    media_types = {
+        ".mp4": "video/mp4",
+        ".mov": "video/quicktime",
+        ".avi": "video/x-msvideo",
+        ".m4v": "video/mp4",
+        ".mkv": "video/x-matroska",
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+        ".png": "image/png"
+    }
+    content_type = media_types.get(ext, "application/octet-stream")
+    return FileResponse(file_path, media_type=content_type)
 
 # 5. API: Single Photo Details
 @app.get("/api/photos/{photo_id}")

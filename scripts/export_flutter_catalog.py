@@ -202,6 +202,9 @@ def export_hierarchical_catalog():
             h = asset_meta[ass_id]["h"]
             albums_for_photo = list(asset_to_all_albums.get(ass_id, []))
 
+        ext = Path(fn).suffix.lower()
+        is_video = ext in ['.mp4', '.mov', '.avi', '.m4v', '.mkv', '.3gp']
+
         photo_dict = {
             "id": idx,
             "fn": fn,
@@ -211,6 +214,7 @@ def export_hierarchical_catalog():
             "w": w,
             "h": h,
             "s": fsize,
+            "m": "v" if is_video else "p",
             "al": albums_for_photo
         }
         if gid:
@@ -220,8 +224,19 @@ def export_hierarchical_catalog():
 
     print(f"Photos linked with exact Google Drive File ID: {matched_drive} ({matched_drive/len(photos)*100:.1f}%)")
 
-    years = [{"year": y, "count": cnt} for y, cnt in sorted(years_count.items(), key=lambda x: (x[0] == 'unknown_date', x[0]), reverse=True)]
+    video_years_count = defaultdict(int)
+    photo_years_count = defaultdict(int)
+    for p in photos:
+        y = p["y"]
+        if p.get("m") == "v":
+            video_years_count[y] += 1
+        else:
+            photo_years_count[y] += 1
 
+    years = [{"year": y, "count": cnt} for y, cnt in sorted(photo_years_count.items(), key=lambda x: (x[0] == 'unknown_date', x[0]), reverse=True)]
+    video_years = [{"year": y, "count": cnt} for y, cnt in sorted(video_years_count.items(), key=lambda x: (x[0] == 'unknown_date', x[0]), reverse=True)]
+
+    # Exclude Videos from photo albums
     albums_list = [
         {
             "id": n["id"],
@@ -232,11 +247,13 @@ def export_hierarchical_catalog():
             "count": n.get("total_count", 0)
         }
         for n in active_nodes.values()
+        if n["id"] != "bb3d36f6161042d4a2ba6a500c4fe504" and n["name"].lower() != "videos"
     ]
 
     catalog = {
         "albums": albums_list,
         "years": years,
+        "video_years": video_years,
         "photos": photos,
         "gdrive_url": "https://drive.google.com/drive/folders/1w_szSK4yKM_j0Trk8lT5Zcpcxae_0_iO"
     }

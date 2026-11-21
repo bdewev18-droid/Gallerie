@@ -182,7 +182,8 @@ def run_indexing():
         capture_date TEXT,
         gdrive_file_id TEXT,
         gdrive_url TEXT,
-        has_thumbnail INTEGER DEFAULT 0
+        has_thumbnail INTEGER DEFAULT 0,
+        media_type TEXT DEFAULT 'photo'
     );
 
     CREATE TABLE albums (
@@ -203,6 +204,7 @@ def run_indexing():
     );
 
     CREATE INDEX idx_photos_year ON photos(year);
+    CREATE INDEX idx_photos_media_type ON photos(media_type);
     CREATE INDEX idx_photos_date_folder ON photos(date_folder);
     CREATE INDEX idx_photos_capture_date ON photos(capture_date);
     CREATE INDEX idx_photo_albums_album ON photo_albums(album_id);
@@ -279,15 +281,17 @@ def run_indexing():
             photo_nodes = asset_to_all_nodes.get(ass_id, set())
 
         file_gdrive_url = f"https://drive.google.com/file/d/{gid}/view" if gid else GDRIVE_BASE_FOLDER
+        ext = Path(fn).suffix.lower()
+        m_type = "video" if ext in [".mp4", ".mov", ".avi", ".m4v", ".mkv", ".3gp"] else "photo"
 
         cur.execute("""
         INSERT INTO photos (
             filename, rel_path, year, date_folder, file_size,
-            width, height, capture_date, gdrive_file_id, gdrive_url
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+            width, height, capture_date, gdrive_file_id, gdrive_url, media_type
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
         """, (
             fn, rel_path, year, date_folder, fsize,
-            w, h, dt, gid, file_gdrive_url
+            w, h, dt, gid, file_gdrive_url, m_type
         ))
         photo_id = cur.lastrowid
 

@@ -1,11 +1,13 @@
 // Application State - Medias Familly
 const state = {
-  activeTab: 'thematics', // 'thematics' | 'years'
+  mediaType: 'photo', // 'photo' | 'video'
+  activeTab: 'thematics', // 'thematics' | 'years' (for photos mode)
   nodes: [],
   nodesById: {},
   childrenByParent: {},
   expandedFolders: new Set(),
   years: [],
+  videoYears: [],
   selectedNode: null, // current active thematic folder or album
   breadcrumbTrail: [], // array of node objects
   selectedYear: null,
@@ -15,6 +17,7 @@ const state = {
   limit: 60,
   totalPages: 1,
   totalPhotos: 0,
+  totalVideos: 0,
   photos: [],
   lightboxIndex: -1,
   gdriveBaseUrl: 'https://drive.google.com/drive/folders/1w_szSK4yKM_j0Trk8lT5Zcpcxae_0_iO'
@@ -23,6 +26,13 @@ const state = {
 // DOM Elements
 const searchInput = document.getElementById('searchInput');
 const clearSearchBtn = document.getElementById('clearSearchBtn');
+const mediaTypePhotosBtn = document.getElementById('mediaTypePhotosBtn');
+const mediaTypeVideosBtn = document.getElementById('mediaTypeVideosBtn');
+const badgePhotosCount = document.getElementById('badgePhotosCount');
+const badgeVideosCount = document.getElementById('badgeVideosCount');
+const photosSubTabs = document.getElementById('photosSubTabs');
+const videosHeader = document.getElementById('videosHeader');
+const videosTotalBadge = document.getElementById('videosTotalBadge');
 const tabThematicsBtn = document.getElementById('tabThematicsBtn');
 const tabYearsBtn = document.getElementById('tabYearsBtn');
 const sidebarList = document.getElementById('sidebarList');
@@ -43,6 +53,7 @@ const headerTotalPhotos = document.getElementById('headerTotalPhotos');
 const lightboxModal = document.getElementById('lightboxModal');
 const closeLightboxBtn = document.getElementById('closeLightboxBtn');
 const lightboxImg = document.getElementById('lightboxImg');
+const lightboxVideo = document.getElementById('lightboxVideo');
 const lightboxCaption = document.getElementById('lightboxCaption');
 const lightboxPrevBtn = document.getElementById('lightboxPrevBtn');
 const lightboxNextBtn = document.getElementById('lightboxNextBtn');
@@ -60,11 +71,15 @@ async function init() {
   setupEventListeners();
   await loadThematics();
   await loadYears();
+  await loadVideoYears();
   updateBreadcrumbs();
   await loadPhotos();
 }
 
 function setupEventListeners() {
+  mediaTypePhotosBtn.addEventListener('click', () => switchMediaType('photo'));
+  mediaTypeVideosBtn.addEventListener('click', () => switchMediaType('video'));
+
   tabThematicsBtn.addEventListener('click', () => switchTab('thematics'));
   tabYearsBtn.addEventListener('click', () => switchTab('years'));
 
@@ -124,6 +139,36 @@ function setupEventListeners() {
   });
 }
 
+function switchMediaType(type) {
+  if (state.mediaType === type) return;
+  state.mediaType = type;
+  state.selectedNode = null;
+  state.selectedYear = null;
+  state.selectedDate = null;
+  state.breadcrumbTrail = [];
+  state.page = 1;
+
+  if (type === 'photo') {
+    mediaTypePhotosBtn.className = "py-2 px-2 text-xs font-bold rounded-md transition flex items-center justify-center gap-1.5 bg-brand-600 text-white shadow-md";
+    mediaTypeVideosBtn.className = "py-2 px-2 text-xs font-semibold rounded-md transition flex items-center justify-center gap-1.5 text-slate-400 hover:text-slate-200 hover:bg-slate-800/60";
+    photosSubTabs.classList.remove('hidden');
+    videosHeader.classList.add('hidden');
+    if (state.activeTab === 'thematics') renderThematicsTree();
+    else renderYearsList();
+  } else {
+    mediaTypeVideosBtn.className = "py-2 px-2 text-xs font-bold rounded-md transition flex items-center justify-center gap-1.5 bg-sky-500 text-white shadow-md";
+    mediaTypePhotosBtn.className = "py-2 px-2 text-xs font-semibold rounded-md transition flex items-center justify-center gap-1.5 text-slate-400 hover:text-slate-200 hover:bg-slate-800/60";
+    photosSubTabs.classList.add('hidden');
+    videosHeader.classList.remove('hidden');
+    renderVideoYearsList();
+  }
+
+  updateFilterUI();
+  updateBreadcrumbs();
+  loadPhotos();
+  lucide.createIcons();
+}
+
 function switchTab(tab) {
   state.activeTab = tab;
   if (tab === 'thematics') {
@@ -139,12 +184,17 @@ function switchTab(tab) {
 
 async function loadThematics() {
   try {
-    const res = await fetch('/api/thematics');
+    const res = await fetch('/api/thematics?media_type=photo');
     const data = await res.json();
     state.nodes = data.nodes;
     state.totalPhotos = data.total_photos;
-    headerTotalPhotos.textContent = data.total_photos.toLocaleString('fr-FR');
-    
+    state.totalVideos = data.total_videos;
+
+    badgePhotosCount.textContent = data.total_photos.toLocaleString('fr-FR');
+    badgeVideosCount.textContent = data.total_videos.toLocaleString('fr-FR');
+    headerTotalPhotos.textContent = (data.total_photos + data.total_videos).toLocaleString('fr-FR');
+    if (videosTotalBadge) videosTotalBadge.textContent = `${data.total_videos} vidéos`;
+
     state.nodesById = {};
     state.childrenByParent = {};
     data.nodes.forEach(n => {
@@ -158,7 +208,9 @@ async function loadThematics() {
     const roots = state.childrenByParent[null] || [];
     roots.forEach(r => state.expandedFolders.add(r.id));
 
-    renderThematicsTree();
+    if (state.mediaType === 'photo' && state.activeTab === 'thematics') {
+      renderThematicsTree();
+    }
   } catch (err) {
     console.error('Failed to load thematics', err);
   }
@@ -166,15 +218,28 @@ async function loadThematics() {
 
 async function loadYears() {
   try {
-    const res = await fetch('/api/years');
+    const res = await fetch('/api/years?media_type=photo');
     const data = await res.json();
     state.years = data.years;
   } catch (err) {
-    console.error('Failed to load years', err);
+    console.error('Failed to load photo years', err);
   }
 }
 
-// Hierarchical Tree Renderer
+async function loadVideoYears() {
+  try {
+    const res = await fetch('/api/video_years');
+    const data = await res.json();
+    state.videoYears = data.years;
+    state.totalVideos = data.total;
+    badgeVideosCount.textContent = data.total.toLocaleString('fr-FR');
+    if (videosTotalBadge) videosTotalBadge.textContent = `${data.total} vidéos`;
+  } catch (err) {
+    console.error('Failed to load video years', err);
+  }
+}
+
+// Hierarchical Tree Renderer (Photos only)
 function renderThematicsTree() {
   sidebarList.innerHTML = '';
 
@@ -221,10 +286,9 @@ function renderNodeAndChildren(node, level) {
       else state.expandedFolders.add(node.id);
       renderThematicsTree();
     },
-    onSelect: () => {
-      selectThematicNode(node);
-    }
+    onSelect: () => selectThematicNode(node)
   });
+
   sidebarList.appendChild(row);
 
   if (hasChildren && isExpanded) {
@@ -263,7 +327,6 @@ function createSidebarRow(opts) {
     <span class="text-[10px] font-mono px-1.5 py-0.5 rounded shrink-0 ${opts.isSelected ? 'bg-sky-500/20 text-sky-300' : 'bg-slate-800 text-slate-400'}">${opts.count}</span>
   `;
 
-  // Toggle arrow click
   const arrowBtn = div.querySelector('.toggle-folder');
   if (arrowBtn) {
     arrowBtn.addEventListener('click', (e) => {
@@ -272,7 +335,6 @@ function createSidebarRow(opts) {
     });
   }
 
-  // Row select
   div.addEventListener('click', opts.onSelect);
   return div;
 }
@@ -283,7 +345,6 @@ function selectThematicNode(node) {
   state.selectedDate = null;
   state.page = 1;
 
-  // Build breadcrumb trail
   const trail = [node];
   let curr = node.parent_id ? state.nodesById[node.parent_id] : null;
   while (curr) {
@@ -291,8 +352,6 @@ function selectThematicNode(node) {
     curr = curr.parent_id ? state.nodesById[curr.parent_id] : null;
   }
   state.breadcrumbTrail = trail;
-
-  // Auto-expand this node and all ancestors
   trail.forEach(n => state.expandedFolders.add(n.id));
 
   updateFilterUI();
@@ -300,6 +359,7 @@ function selectThematicNode(node) {
   loadPhotos();
 }
 
+// Years List Renderer (Photos)
 function renderYearsList() {
   sidebarList.innerHTML = '';
 
@@ -348,6 +408,71 @@ function renderYearsList() {
     });
     sidebarList.appendChild(div);
   });
+
+  lucide.createIcons();
+}
+
+// Videos List Renderer (Organized strictly by year!)
+function renderVideoYearsList() {
+  sidebarList.innerHTML = '';
+
+  // All Videos item
+  const isAllSelected = !state.selectedYear;
+  const allVideosDiv = document.createElement('div');
+  allVideosDiv.className = `flex items-center justify-between px-3 py-2 rounded-lg cursor-pointer transition select-none ${
+    isAllSelected 
+      ? 'bg-sky-500/20 text-sky-400 font-semibold border border-sky-500/30' 
+      : 'text-slate-300 hover:bg-slate-800/60 hover:text-white'
+  }`;
+  allVideosDiv.innerHTML = `
+    <div class="flex items-center gap-2 truncate pr-2">
+      <i data-lucide="clapperboard" class="w-4 h-4 shrink-0 text-sky-400"></i>
+      <span class="truncate text-xs font-semibold">Toutes les vidéos</span>
+    </div>
+    <span class="text-[11px] font-mono px-1.5 py-0.5 rounded ${isAllSelected ? 'bg-sky-500/20 text-sky-300' : 'bg-slate-800 text-slate-400'}">${state.totalVideos}</span>
+  `;
+  allVideosDiv.addEventListener('click', () => {
+    state.selectedYear = null;
+    state.breadcrumbTrail = [];
+    state.page = 1;
+    updateFilterUI();
+    updateBreadcrumbs();
+    loadPhotos();
+  });
+  sidebarList.appendChild(allVideosDiv);
+
+  // Grouped by year
+  state.videoYears.forEach(vy => {
+    const isSelected = state.selectedYear === vy.year;
+    const div = document.createElement('div');
+    div.className = `flex items-center justify-between px-3 py-2 rounded-lg cursor-pointer transition select-none ${
+      isSelected 
+        ? 'bg-sky-500/20 text-sky-400 font-semibold border border-sky-500/30' 
+        : 'text-slate-300 hover:bg-slate-800/60 hover:text-white'
+    }`;
+
+    const label = vy.year === 'unknown_date' ? 'Date inconnue' : `Vidéos ${vy.year}`;
+    div.innerHTML = `
+      <div class="flex items-center gap-2 truncate pr-2">
+        <i data-lucide="film" class="w-3.5 h-3.5 shrink-0 text-amber-400"></i>
+        <span class="truncate text-xs">${label}</span>
+      </div>
+      <span class="text-[11px] font-mono px-1.5 py-0.5 rounded ${isSelected ? 'bg-sky-500/20 text-sky-300' : 'bg-slate-800 text-slate-400'}">${vy.count}</span>
+    `;
+
+    div.addEventListener('click', () => {
+      state.selectedYear = vy.year;
+      state.selectedNode = null;
+      state.selectedDate = null;
+      state.page = 1;
+      state.breadcrumbTrail = [{ name: label }];
+      updateFilterUI();
+      updateBreadcrumbs();
+      loadPhotos();
+    });
+    sidebarList.appendChild(div);
+  });
+
   lucide.createIcons();
 }
 
@@ -362,6 +487,27 @@ function updateBreadcrumbs() {
     loadPhotos();
   });
   breadcrumbBar.appendChild(rootBtn);
+
+  // Add media type crumb
+  const mediaCrumbSep = document.createElement('span');
+  mediaCrumbSep.className = "text-slate-600";
+  mediaCrumbSep.textContent = "/";
+  breadcrumbBar.appendChild(mediaCrumbSep);
+
+  const mediaCrumbBtn = document.createElement('button');
+  mediaCrumbBtn.className = "text-slate-400 hover:text-sky-300 font-medium transition flex items-center gap-1";
+  mediaCrumbBtn.innerHTML = `<i data-lucide="${state.mediaType === 'photo' ? 'camera' : 'video'}" class="w-3 h-3"></i><span>${state.mediaType === 'photo' ? 'Photos' : 'Vidéos'}</span>`;
+  mediaCrumbBtn.addEventListener('click', () => {
+    state.selectedNode = null;
+    state.selectedYear = null;
+    state.selectedDate = null;
+    state.breadcrumbTrail = [];
+    state.page = 1;
+    updateFilterUI();
+    updateBreadcrumbs();
+    loadPhotos();
+  });
+  breadcrumbBar.appendChild(mediaCrumbBtn);
 
   if (state.breadcrumbTrail && state.breadcrumbTrail.length > 0) {
     state.breadcrumbTrail.forEach((crumb, idx) => {
@@ -384,7 +530,7 @@ function updateBreadcrumbs() {
 }
 
 function updateFilterUI() {
-  let title = 'Toutes les photos';
+  let title = state.mediaType === 'photo' ? 'Toutes les photos' : 'Toutes les vidéos';
   let badgeText = '';
 
   if (state.searchQuery) {
@@ -394,7 +540,9 @@ function updateFilterUI() {
     title = state.selectedNode.name;
     badgeText = state.selectedNode.name;
   } else if (state.selectedYear) {
-    title = state.selectedYear === 'unknown_date' ? 'Photos sans date' : `Année ${state.selectedYear}`;
+    title = state.selectedYear === 'unknown_date' 
+      ? (state.mediaType === 'photo' ? 'Photos sans date' : 'Vidéos sans date')
+      : `${state.mediaType === 'photo' ? 'Année' : 'Vidéos'} ${state.selectedYear}`;
     badgeText = `Année: ${state.selectedYear}`;
   }
 
@@ -407,8 +555,12 @@ function updateFilterUI() {
     activeFilterBadge.classList.add('hidden');
   }
 
-  if (state.activeTab === 'thematics') renderThematicsTree();
-  else renderYearsList();
+  if (state.mediaType === 'photo') {
+    if (state.activeTab === 'thematics') renderThematicsTree();
+    else renderYearsList();
+  } else {
+    renderVideoYearsList();
+  }
 }
 
 function resetFilters() {
@@ -425,14 +577,16 @@ function resetFilters() {
 }
 
 async function loadPhotos() {
+  const isVideo = state.mediaType === 'video';
   photosGrid.innerHTML = `
     <div class="col-span-full py-16 flex flex-col items-center justify-center text-slate-400">
       <div class="w-8 h-8 border-2 border-sky-500 border-t-transparent rounded-full animate-spin mb-3"></div>
-      <p class="text-xs">Chargement des photos...</p>
+      <p class="text-xs">Chargement des ${isVideo ? 'vidéos' : 'photos'}...</p>
     </div>
   `;
 
   const params = new URLSearchParams({
+    media_type: state.mediaType,
     page: state.page,
     limit: state.limit
   });
@@ -448,7 +602,7 @@ async function loadPhotos() {
     
     state.photos = data.items;
     state.totalPages = data.pages;
-    galleryCount.textContent = `${data.total.toLocaleString('fr-FR')} photos`;
+    galleryCount.textContent = `${data.total.toLocaleString('fr-FR')} ${isVideo ? 'vidéos' : 'photos'}`;
 
     pageIndicator.textContent = `Page ${state.page} / ${data.pages || 1}`;
     prevPageBtn.disabled = state.page <= 1;
@@ -456,8 +610,8 @@ async function loadPhotos() {
 
     renderPhotosGrid();
   } catch (err) {
-    console.error('Failed to load photos', err);
-    photosGrid.innerHTML = `<div class="col-span-full text-center py-12 text-red-400 text-sm">Erreur lors du chargement des photos.</div>`;
+    console.error('Failed to load media', err);
+    photosGrid.innerHTML = `<div class="col-span-full text-center py-12 text-red-400 text-sm">Erreur lors du chargement des médias.</div>`;
   }
 }
 
@@ -465,28 +619,51 @@ function renderPhotosGrid() {
   photosGrid.innerHTML = '';
   emptyState.classList.toggle('hidden', state.photos.length > 0);
 
-  state.photos.forEach((photo, idx) => {
+  state.photos.forEach((item, idx) => {
     const card = document.createElement('div');
     card.className = "photo-card group relative aspect-square bg-slate-900 border border-slate-800/80 rounded-lg overflow-hidden cursor-pointer shadow";
     
-    // Use drive thumbnail or local thumbnail
-    const thumbSrc = photo.thumbnail_url;
+    const isVideo = item.media_type === 'video';
+    const thumbSrc = item.thumbnail_url;
+
+    let videoBadge = '';
+    let centerPlayIcon = '';
+    if (isVideo) {
+      videoBadge = `
+        <div class="absolute bottom-2 right-2 px-2 py-0.5 rounded-md bg-black/80 backdrop-blur text-[10px] font-mono font-semibold text-white flex items-center gap-1 shadow-md border border-white/10 z-10">
+          <i data-lucide="play" class="w-3 h-3 fill-white text-white"></i>
+          <span>Vidéo</span>
+        </div>
+      `;
+      centerPlayIcon = `
+        <div class="absolute inset-0 flex items-center justify-center pointer-events-none">
+          <div class="w-10 h-10 rounded-full bg-black/60 backdrop-blur flex items-center justify-center shadow-lg border border-white/20 group-hover:scale-110 transition duration-200">
+            <i data-lucide="play" class="w-5 h-5 fill-white text-white ml-0.5"></i>
+          </div>
+        </div>
+      `;
+    }
 
     card.innerHTML = `
-      <img src="${thumbSrc}" alt="${photo.filename}" loading="lazy"
+      <img src="${thumbSrc}" alt="${item.filename}" loading="lazy"
         class="w-full h-full object-cover transition duration-300 group-hover:scale-105"
         onerror="this.src='/static/placeholder.svg'" />
       
+      ${centerPlayIcon}
+      ${videoBadge}
+
       <!-- Overlay Gradient -->
-      <div class="absolute inset-0 bg-gradient-to-t from-slate-950/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition duration-200 p-2.5 flex flex-col justify-end">
-        <p class="text-[11px] font-mono text-white truncate drop-shadow">${photo.filename}</p>
-        <p class="text-[10px] text-slate-300 font-mono drop-shadow">${formatDate(photo.capture_date)}</p>
+      <div class="absolute inset-0 bg-gradient-to-t from-slate-950/85 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition duration-200 p-2.5 flex flex-col justify-end pointer-events-none">
+        <p class="text-[11px] font-mono text-white truncate drop-shadow">${item.filename}</p>
+        <p class="text-[10px] text-slate-300 font-mono drop-shadow">${formatDate(item.capture_date)}</p>
       </div>
     `;
 
     card.addEventListener('click', () => openLightbox(idx));
     photosGrid.appendChild(card);
   });
+
+  lucide.createIcons();
 }
 
 function formatDate(isoStr) {
@@ -507,20 +684,33 @@ function formatBytes(bytes) {
   return `${(bytes / Math.pow(k, i)).toFixed(1)} ${sizes[i]}`;
 }
 
-// Lightbox Logic
+// Lightbox Logic with HTML5 Video support
 async function openLightbox(index) {
   state.lightboxIndex = index;
-  const photo = state.photos[index];
-  if (!photo) return;
+  const item = state.photos[index];
+  if (!item) return;
 
-  lightboxImg.src = photo.thumbnail_url;
-  lightboxCaption.textContent = `${photo.filename} (${index + 1} / ${state.photos.length})`;
-  lightboxDriveBtn.href = photo.gdrive_url || state.gdriveBaseUrl;
+  const isVideo = item.media_type === 'video';
+
+  if (isVideo) {
+    lightboxImg.classList.add('hidden');
+    lightboxVideo.classList.remove('hidden');
+    lightboxVideo.src = item.media_url || item.thumbnail_url;
+    lightboxVideo.play().catch(() => {});
+  } else {
+    lightboxVideo.pause();
+    lightboxVideo.classList.add('hidden');
+    lightboxImg.classList.remove('hidden');
+    lightboxImg.src = item.thumbnail_url;
+  }
+
+  lightboxCaption.textContent = `${item.filename} (${index + 1} / ${state.photos.length})`;
+  lightboxDriveBtn.href = item.gdrive_url || state.gdriveBaseUrl;
 
   lightboxModal.classList.remove('hidden');
 
   try {
-    const res = await fetch(`/api/photos/${photo.id}`);
+    const res = await fetch(`/api/photos/${item.id}`);
     const details = await res.json();
     
     metaFilename.textContent = details.filename;
@@ -551,7 +741,7 @@ async function openLightbox(index) {
     }
     lucide.createIcons();
   } catch (err) {
-    console.error('Failed to load photo details', err);
+    console.error('Failed to load item details', err);
   }
 }
 
@@ -564,6 +754,8 @@ function navigateLightbox(step) {
 
 function closeLightbox() {
   state.lightboxIndex = -1;
+  lightboxVideo.pause();
+  lightboxVideo.src = '';
   lightboxModal.classList.add('hidden');
 }
 

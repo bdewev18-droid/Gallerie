@@ -33,7 +33,8 @@ def init_db():
             exposure_time TEXT,
             gdrive_file_id TEXT,
             gdrive_url TEXT,
-            has_thumbnail INTEGER DEFAULT 0
+            has_thumbnail INTEGER DEFAULT 0,
+            media_type TEXT DEFAULT 'photo'
         );
 
         CREATE TABLE IF NOT EXISTS albums (
