@@ -34,11 +34,11 @@ class AppUpdateService {
   AppUpdateService._();
 
   static const String versionCheckUrl =
-      'https://bdewev18-droid.github.io/Gallerie/version.json';
+      'https://raw.githubusercontent.com/bdewev18-droid/Gallerie/main/version.json';
 
   static bool _dialogShownThisSession = false;
 
-  /// Vérifie si une mise à jour est disponible sur GitHub Pages.
+  /// Vérifie si une mise à jour est disponible sur le dépôt GitHub.
   /// Ne s'exécute que sur mobile (Android) et jamais sur le Web.
   static Future<RemoteAppVersion?> checkUpdate() async {
     if (kIsWeb) return null;
