@@ -1,6 +1,6 @@
 {
-  "version": "1.0.0",
-  "buildNumber": 1,
+  "version": "1.0.1",
+  "buildNumber": 2,
   "apkUrl": "https://github.com/bdewev18-droid/Gallerie/releases/latest/download/app-release.apk",
-  "releaseNotes": "Version initiale Medias Familly avec Google Drive HD, vignettes vidéos réelles, filtres avancés (boîtiers et lieux) et gestion corbeille 30 jours."
+  "releaseNotes": "v1.0.1 : Chargement progressif des médias, interface responsive grand écran (sidebar + modale), correction CORS des vignettes Drive et auto-retry."
 }

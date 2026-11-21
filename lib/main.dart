@@ -4,8 +4,8 @@ import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'services/app_update_service.dart';
 
-const int appBuildNumber = 1;
-const String appVersionLabel = "1.0.0";
+const int appBuildNumber = 2;
+const String appVersionLabel = "1.0.1";
 
 void main() {
   runApp(const GallerieApp());
@@ -87,11 +87,11 @@ class PhotoItem {
   }
 
   String? get thumbnailUrl => driveId != null
-      ? 'https://drive.google.com/thumbnail?id=$driveId&sz=w400'
+      ? 'https://lh3.googleusercontent.com/d/$driveId=w400'
       : null;
 
   String? get largePreviewUrl => driveId != null
-      ? 'https://drive.google.com/thumbnail?id=$driveId&sz=w1200'
+      ? 'https://lh3.googleusercontent.com/d/$driveId=w1200'
       : null;
 
   String getDriveViewUrl(String defaultFolderUrl) {
@@ -215,14 +215,61 @@ class _HomeScreenState extends State<HomeScreen> {
       _videoYears = rawVideoYears.map((e) => YearItem.fromJson(e)).toList();
 
       final rawPhotos = data['photos'] as List<dynamic>;
-      _allPhotos = rawPhotos.map((e) => PhotoItem.fromJson(e)).toList();
 
-      _photosOnly = _allPhotos.where((p) => !p.isVideo).toList();
-      _videosOnly = _allPhotos.where((p) => p.isVideo).toList();
+      // Chargement progressif : afficher immédiatement les 60 premiers médias
+      const int initialBatchSize = 60;
+      const int chunkBatchSize = 1500;
+      final int totalCount = rawPhotos.length;
+      final int firstEnd = totalCount < initialBatchSize ? totalCount : initialBatchSize;
+
+      final initialItems = <PhotoItem>[];
+      final initialPhotos = <PhotoItem>[];
+      final initialVideos = <PhotoItem>[];
+
+      for (int i = 0; i < firstEnd; i++) {
+        final item = PhotoItem.fromJson(rawPhotos[i] as Map<String, dynamic>);
+        initialItems.add(item);
+        if (item.isVideo) {
+          initialVideos.add(item);
+        } else {
+          initialPhotos.add(item);
+        }
+      }
+
+      _allPhotos = initialItems;
+      _photosOnly = initialPhotos;
+      _videosOnly = initialVideos;
+
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+
+      // Parser le reste en arrière-plan par lots pour ne pas bloquer l'interface
+      int currentIdx = firstEnd;
+      while (currentIdx < totalCount) {
+        await Future<void>.delayed(const Duration(milliseconds: 16));
+        if (!mounted) return;
+        final int nextEnd = (currentIdx + chunkBatchSize) < totalCount
+            ? (currentIdx + chunkBatchSize)
+            : totalCount;
+        for (int i = currentIdx; i < nextEnd; i++) {
+          final item = PhotoItem.fromJson(rawPhotos[i] as Map<String, dynamic>);
+          _allPhotos.add(item);
+          if (item.isVideo) {
+            _videosOnly.add(item);
+          } else {
+            _photosOnly.add(item);
+          }
+        }
+        currentIdx = nextEnd;
+        if (mounted) {
+          setState(() {});
+        }
+      }
     } catch (e) {
       debugPrint("Error loading catalog: $e");
     } finally {
-      if (mounted) {
+      if (mounted && _isLoading) {
         setState(() => _isLoading = false);
       }
     }
@@ -252,6 +299,352 @@ class _HomeScreenState extends State<HomeScreen> {
       );
     }
 
+    final screenWidth = MediaQuery.of(context).size.width;
+    final isWide = screenWidth >= 900;
+
+    if (isWide) {
+      return _buildDesktopScaffold();
+    }
+    return _buildMobileScaffold();
+  }
+
+  Widget _buildDesktopScaffold() {
+    final activeNavIndex = _mediaMode == 0 ? _currentIndex : _currentIndex.clamp(0, 2);
+
+    return Scaffold(
+      appBar: AppBar(
+        backgroundColor: const Color(0xFF0F172A),
+        surfaceTintColor: Colors.transparent,
+        toolbarHeight: 64,
+        titleSpacing: 20,
+        shape: const Border(bottom: BorderSide(color: Colors.white10)),
+        title: Row(
+          children: [
+            Container(
+              width: 36,
+              height: 36,
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  colors: [Color(0xFF0284C7), Color(0xFF38BDF8)],
+                  begin: Alignment.bottomLeft,
+                  end: Alignment.topRight,
+                ),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: const Icon(Icons.photo_library_outlined, color: Colors.white, size: 20),
+            ),
+            const SizedBox(width: 12),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Row(
+                  children: [
+                    const Text(
+                      "Medias Familly",
+                      style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16, letterSpacing: -0.3),
+                    ),
+                    const SizedBox(width: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF0284C7).withValues(alpha: 0.25),
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(color: const Color(0xFF38BDF8).withValues(alpha: 0.4)),
+                      ),
+                      child: const Text(
+                        "HD",
+                        style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: Color(0xFF38BDF8)),
+                      ),
+                    ),
+                  ],
+                ),
+                Text(
+                  "${_allPhotos.length} médias indexés",
+                  style: const TextStyle(fontSize: 11, color: Colors.white54),
+                ),
+              ],
+            ),
+            const SizedBox(width: 32),
+            // Sélecteur Photos / Vidéos compact et centré/aligné proprement
+            SizedBox(
+              width: 320,
+              child: SegmentedButton<int>(
+                showSelectedIcon: false,
+                style: SegmentedButton.styleFrom(
+                  visualDensity: VisualDensity.compact,
+                  selectedBackgroundColor: const Color(0xFF0284C7),
+                  selectedForegroundColor: Colors.white,
+                  backgroundColor: const Color(0xFF1E293B),
+                  foregroundColor: Colors.white70,
+                  side: const BorderSide(color: Colors.white12),
+                ),
+                segments: [
+                  ButtonSegment(
+                    value: 0,
+                    icon: const Icon(Icons.camera_alt_outlined, size: 15),
+                    label: Text("Photos (${_photosOnly.length})", style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+                  ),
+                  ButtonSegment(
+                    value: 1,
+                    icon: const Icon(Icons.videocam_outlined, size: 15),
+                    label: Text("Vidéos (${_videosOnly.length})", style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+                  ),
+                ],
+                selected: {_mediaMode},
+                onSelectionChanged: (set) => setState(() {
+                  _mediaMode = set.first;
+                  if (_mediaMode == 1 && _currentIndex > 2) {
+                    _currentIndex = 0;
+                  }
+                }),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          IconButton(
+            tooltip: "Mises à jour (v$appVersionLabel)",
+            icon: const Icon(Icons.system_update_alt_outlined, color: Color(0xFF38BDF8), size: 20),
+            onPressed: () async {
+              final update = await AppUpdateService.checkUpdate();
+              if (!context.mounted) return;
+              if (update != null) {
+                await AppUpdateService.promptUpdate(context, update, isForced: true);
+              } else {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    backgroundColor: Color(0xFF0F172A),
+                    content: Text(
+                      'Votre application Medias Familly est à jour (v$appVersionLabel).',
+                      style: TextStyle(color: Colors.white),
+                    ),
+                  ),
+                );
+              }
+            },
+          ),
+          const SizedBox(width: 4),
+          Padding(
+            padding: const EdgeInsets.only(right: 16),
+            child: OutlinedButton.icon(
+              style: OutlinedButton.styleFrom(
+                foregroundColor: Colors.white,
+                backgroundColor: const Color(0xFF1E293B),
+                side: const BorderSide(color: Colors.white12),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+              ),
+              onPressed: () => _openUrl(_gdriveUrl),
+              icon: const Icon(Icons.cloud_outlined, size: 16, color: Color(0xFF38BDF8)),
+              label: const Text("Google Drive HD", style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500)),
+            ),
+          ),
+        ],
+      ),
+      body: Row(
+        children: [
+          Container(
+            width: 220,
+            decoration: const BoxDecoration(
+              color: Color(0xFF0F172A),
+              border: Border(right: BorderSide(color: Colors.white10)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const Padding(
+                  padding: EdgeInsets.fromLTRB(16, 16, 16, 8),
+                  child: Text(
+                    "NAVIGATION",
+                    style: TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 1.1,
+                      color: Colors.white38,
+                    ),
+                  ),
+                ),
+                if (_mediaMode == 0) ...[
+                  _buildDesktopNavItem(
+                    index: 0,
+                    activeIndex: activeNavIndex,
+                    icon: Icons.photo_library_outlined,
+                    selectedIcon: Icons.photo_library,
+                    label: "Galerie",
+                    badge: "${_photosOnly.length}",
+                  ),
+                  _buildDesktopNavItem(
+                    index: 1,
+                    activeIndex: activeNavIndex,
+                    icon: Icons.folder_outlined,
+                    selectedIcon: Icons.folder,
+                    label: "Thématiques",
+                    badge: "${_nodesById.length}",
+                  ),
+                  _buildDesktopNavItem(
+                    index: 2,
+                    activeIndex: activeNavIndex,
+                    icon: Icons.calendar_today_outlined,
+                    selectedIcon: Icons.calendar_today,
+                    label: "Années",
+                    badge: "${_photoYears.length}",
+                  ),
+                  _buildDesktopNavItem(
+                    index: 3,
+                    activeIndex: activeNavIndex,
+                    icon: Icons.search,
+                    selectedIcon: Icons.search,
+                    label: "Recherche",
+                  ),
+                ] else ...[
+                  _buildDesktopNavItem(
+                    index: 0,
+                    activeIndex: activeNavIndex,
+                    icon: Icons.video_library_outlined,
+                    selectedIcon: Icons.video_library,
+                    label: "Galerie Vidéos",
+                    badge: "${_videosOnly.length}",
+                  ),
+                  _buildDesktopNavItem(
+                    index: 1,
+                    activeIndex: activeNavIndex,
+                    icon: Icons.calendar_today_outlined,
+                    selectedIcon: Icons.calendar_today,
+                    label: "Années Vidéos",
+                    badge: "${_videoYears.length}",
+                  ),
+                  _buildDesktopNavItem(
+                    index: 2,
+                    activeIndex: activeNavIndex,
+                    icon: Icons.search,
+                    selectedIcon: Icons.search,
+                    label: "Recherche",
+                  ),
+                ],
+                const Spacer(),
+                Container(
+                  margin: const EdgeInsets.all(12),
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF1E293B).withValues(alpha: 0.6),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: Colors.white10),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Row(
+                        children: [
+                          Icon(Icons.cloud_done_outlined, size: 15, color: Color(0xFF4ADE80)),
+                          SizedBox(width: 6),
+                          Text(
+                            "Google Drive synchronisé",
+                            style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Colors.white),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        "v$appVersionLabel • Build $appBuildNumber",
+                        style: const TextStyle(fontSize: 10, color: Colors.white38),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Expanded(
+            child: _mediaMode == 0
+                ? IndexedStack(
+                    index: _currentIndex,
+                    children: [
+                      _buildGalleryTab(_photosOnly, isVideo: false),
+                      _buildAlbumsTab(),
+                      _buildPhotoYearsTab(),
+                      _buildSearchTab(),
+                    ],
+                  )
+                : IndexedStack(
+                    index: _currentIndex.clamp(0, 2),
+                    children: [
+                      _buildGalleryTab(_videosOnly, isVideo: true),
+                      _buildVideoYearsTab(),
+                      _buildSearchTab(),
+                    ],
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDesktopNavItem({
+    required int index,
+    required int activeIndex,
+    required IconData icon,
+    required IconData selectedIcon,
+    required String label,
+    String? badge,
+  }) {
+    final isSelected = index == activeIndex;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(10),
+        onTap: () => setState(() => _currentIndex = index),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          decoration: BoxDecoration(
+            color: isSelected ? const Color(0xFF0284C7).withValues(alpha: 0.22) : Colors.transparent,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(
+              color: isSelected ? const Color(0xFF38BDF8).withValues(alpha: 0.35) : Colors.transparent,
+            ),
+          ),
+          child: Row(
+            children: [
+              Icon(
+                isSelected ? selectedIcon : icon,
+                size: 18,
+                color: isSelected ? const Color(0xFF38BDF8) : Colors.white60,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                    color: isSelected ? Colors.white : Colors.white70,
+                  ),
+                ),
+              ),
+              if (badge != null)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: isSelected ? const Color(0xFF0284C7).withValues(alpha: 0.4) : const Color(0xFF1E293B),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    badge,
+                    style: TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w600,
+                      color: isSelected ? const Color(0xFF38BDF8) : Colors.white54,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMobileScaffold() {
     return Scaffold(
       appBar: AppBar(
         backgroundColor: const Color(0xFF0F172A),
@@ -848,7 +1241,7 @@ class PhotoGridScreen extends StatelessWidget {
   }
 }
 
-class PhotoGridBody extends StatelessWidget {
+class PhotoGridBody extends StatefulWidget {
   final List<PhotoItem> photos;
   final Map<String, AlbumNode> nodesById;
   final String gdriveUrl;
@@ -863,7 +1256,56 @@ class PhotoGridBody extends StatelessWidget {
   });
 
   @override
+  State<PhotoGridBody> createState() => _PhotoGridBodyState();
+}
+
+class _PhotoGridBodyState extends State<PhotoGridBody> {
+  static const int _pageSize = 60;
+  int _visibleCount = _pageSize;
+  final ScrollController _scrollController = ScrollController();
+
+  @override
+  void initState() {
+    super.initState();
+    _scrollController.addListener(_onScroll);
+  }
+
+  @override
+  void didUpdateWidget(covariant PhotoGridBody oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.photos != widget.photos) {
+      if (_visibleCount > widget.photos.length && widget.photos.length > _pageSize) {
+        _visibleCount = _pageSize;
+      } else if (_visibleCount < _pageSize) {
+        _visibleCount = _pageSize;
+      }
+    }
+  }
+
+  void _onScroll() {
+    if (!_scrollController.hasClients) return;
+    final pos = _scrollController.position;
+    if (pos.pixels >= pos.maxScrollExtent - 600) {
+      _loadMore();
+    }
+  }
+
+  void _loadMore() {
+    if (_visibleCount >= widget.photos.length) return;
+    setState(() {
+      _visibleCount = (_visibleCount + _pageSize).clamp(0, widget.photos.length);
+    });
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final photos = widget.photos;
     if (photos.isEmpty) {
       return Center(
         child: Column(
@@ -877,134 +1319,46 @@ class PhotoGridBody extends StatelessWidget {
       );
     }
 
+    final displayCount = _visibleCount < photos.length ? _visibleCount : photos.length;
+
     return LayoutBuilder(
       builder: (context, constraints) {
-        final crossAxisCount = (constraints.maxWidth / 130).clamp(2, 10).toInt();
+        final isWide = constraints.maxWidth >= 900;
+        final crossAxisCount = isWide
+            ? (constraints.maxWidth / 210).clamp(3, 7).toInt()
+            : (constraints.maxWidth / 130).clamp(2, 6).toInt();
+        final gridSpacing = isWide ? 10.0 : 6.0;
+        final gridPadding = isWide ? 16.0 : 8.0;
         return Column(
           children: [
-            if (header != null) header!,
+            if (widget.header != null) widget.header!,
             Expanded(
-              child: GridView.builder(
-            padding: const EdgeInsets.all(8),
-            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: crossAxisCount,
-              crossAxisSpacing: 6,
-              mainAxisSpacing: 6,
-            ),
-            itemCount: photos.length,
-            itemBuilder: (context, idx) {
-              final photo = photos[idx];
-              final hasThumb = photo.thumbnailUrl != null;
-
-              return InkWell(
-                borderRadius: BorderRadius.circular(8),
-                onTap: () => _openLightbox(context, photo),
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF1E293B),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: Colors.white10),
-                  ),
-                  clipBehavior: Clip.antiAlias,
-                  child: Stack(
-                    fit: StackFit.expand,
-                    children: [
-                      if (hasThumb)
-                        Image.network(
-                          photo.thumbnailUrl!,
-                          fit: BoxFit.cover,
-                          loadingBuilder: (context, child, loadingProgress) {
-                            if (loadingProgress == null) return child;
-                            return Container(
-                              color: const Color(0xFF1E293B),
-                              child: const Center(
-                                child: SizedBox(
-                                  width: 20,
-                                  height: 20,
-                                  child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF38BDF8)),
-                                ),
-                              ),
-                            );
-                          },
-                          errorBuilder: (context, error, stackTrace) {
-                            return Center(
-                              child: Icon(
-                                photo.isVideo ? Icons.movie_outlined : Icons.image_outlined,
-                                color: Colors.white24,
-                                size: 28,
-                              ),
-                            );
-                          },
-                        )
-                      else
-                        Center(
-                          child: Icon(
-                            photo.isVideo ? Icons.movie_outlined : Icons.cloud_upload_outlined,
-                            color: Colors.white24,
-                            size: 28,
-                          ),
-                        ),
-                      if (photo.isVideo)
-                        Positioned(
-                          bottom: 20,
-                          right: 4,
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
-                            decoration: BoxDecoration(
-                              color: Colors.black.withValues(alpha: 0.8),
-                              borderRadius: BorderRadius.circular(4),
-                              border: Border.all(color: Colors.white24),
-                            ),
-                            child: const Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(Icons.play_arrow, size: 11, color: Colors.white),
-                                SizedBox(width: 2),
-                                Text("Vidéo", style: TextStyle(fontSize: 8, color: Colors.white, fontWeight: FontWeight.bold)),
-                              ],
-                            ),
-                          ),
-                        ),
-                      if (photo.driveId == null)
-                        Positioned(
-                          top: 4,
-                          left: 4,
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFFD97706).withValues(alpha: 0.9),
-                              borderRadius: BorderRadius.circular(4),
-                            ),
-                            child: const Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(Icons.cloud_off, size: 10, color: Colors.white),
-                                SizedBox(width: 3),
-                                Text("En attente Drive", style: TextStyle(fontSize: 8, color: Colors.white, fontWeight: FontWeight.bold)),
-                              ],
-                            ),
-                          ),
-                        ),
-                      Positioned(
-                        bottom: 0,
-                        left: 0,
-                        right: 0,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 3),
-                          color: Colors.black.withValues(alpha: 0.65),
-                          child: Text(
-                            photo.filename,
-                            style: const TextStyle(fontSize: 9, color: Colors.white70),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              );
+              child: NotificationListener<ScrollNotification>(
+                onNotification: (notification) {
+                  if (notification.metrics.pixels >= notification.metrics.maxScrollExtent - 600) {
+                    _loadMore();
+                  }
+                  return false;
                 },
+                child: GridView.builder(
+                  controller: _scrollController,
+                  padding: EdgeInsets.all(gridPadding),
+                  cacheExtent: 250,
+                  gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: crossAxisCount,
+                    crossAxisSpacing: gridSpacing,
+                    mainAxisSpacing: gridSpacing,
+                  ),
+                  itemCount: displayCount,
+                  itemBuilder: (context, idx) {
+                    final photo = photos[idx];
+                    return _PhotoGridTile(
+                      key: ValueKey(photo.id),
+                      photo: photo,
+                      onTap: () => _openLightbox(context, photo),
+                    );
+                  },
+                ),
               ),
             ),
           ],
@@ -1014,6 +1368,150 @@ class PhotoGridBody extends StatelessWidget {
   }
 
   void _openLightbox(BuildContext context, PhotoItem photo) {
+    final isWide = MediaQuery.of(context).size.width >= 900;
+    final photoAlbumNames = photo.albums
+        .map((id) => widget.nodesById[id]?.name)
+        .where((name) => name != null)
+        .cast<String>()
+        .toList();
+    final sizeMo = (photo.fileSize / (1024 * 1024)).toStringAsFixed(1);
+    final fileViewUrl = photo.getDriveViewUrl(widget.gdriveUrl);
+
+    if (isWide) {
+      showDialog(
+        context: context,
+        builder: (dialogCtx) => Dialog(
+          backgroundColor: const Color(0xFF0F172A),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+            side: const BorderSide(color: Colors.white12),
+          ),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 720, maxHeight: 760),
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          photo.filename,
+                          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.close, color: Colors.white70),
+                        onPressed: () => Navigator.of(dialogCtx).pop(),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  if (photo.largePreviewUrl != null)
+                    Flexible(
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(12),
+                        child: Container(
+                          constraints: const BoxConstraints(maxHeight: 380),
+                          color: Colors.black45,
+                          child: Stack(
+                            alignment: Alignment.center,
+                            children: [
+                              Image.network(
+                                photo.largePreviewUrl!,
+                                fit: BoxFit.contain,
+                                loadingBuilder: (ctx, child, progress) {
+                                  if (progress == null) return child;
+                                  return const Center(
+                                    child: Padding(
+                                      padding: EdgeInsets.all(32),
+                                      child: CircularProgressIndicator(color: Color(0xFF38BDF8)),
+                                    ),
+                                  );
+                                },
+                                errorBuilder: (ctx, err, stack) => const SizedBox.shrink(),
+                              ),
+                              if (photo.isVideo)
+                                Container(
+                                  width: 56,
+                                  height: 56,
+                                  decoration: BoxDecoration(
+                                    color: Colors.black.withValues(alpha: 0.6),
+                                    shape: BoxShape.circle,
+                                    border: Border.all(color: Colors.white38),
+                                  ),
+                                  child: const Icon(Icons.play_arrow, color: Colors.white, size: 34),
+                                ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  const SizedBox(height: 16),
+                  Wrap(
+                    spacing: 16,
+                    runSpacing: 6,
+                    children: [
+                      Text("Type : ${photo.isVideo ? 'Vidéo' : 'Photo'}",
+                          style: TextStyle(fontSize: 12, color: photo.isVideo ? const Color(0xFFFBBF24) : const Color(0xFF38BDF8), fontWeight: FontWeight.w600)),
+                      Text("Date : ${photo.captureDate.isNotEmpty ? photo.captureDate : 'Non renseignée'}",
+                          style: const TextStyle(fontSize: 12, color: Colors.white70)),
+                      Text("Taille : $sizeMo Mo (${photo.width} × ${photo.height} px)",
+                          style: const TextStyle(fontSize: 12, color: Colors.white70)),
+                      if (photo.cameraModel != null && photo.cameraModel!.isNotEmpty)
+                        Text("Appareil : ${photo.cameraModel}", style: const TextStyle(fontSize: 12, color: Colors.white70)),
+                      if (photo.country != null && photo.country!.isNotEmpty)
+                        Text("Lieu : ${photo.city != null && photo.city!.isNotEmpty ? '${photo.city}, ' : ''}${photo.country}",
+                            style: const TextStyle(fontSize: 12, color: Colors.white70)),
+                      Text("Statut Drive : ${photo.driveId != null ? '✔ Synchronisé en HD' : '⏳ Non chargé sur Drive'}",
+                          style: TextStyle(fontSize: 12, color: photo.driveId != null ? const Color(0xFF4ADE80) : const Color(0xFFFBBF24))),
+                    ],
+                  ),
+                  if (!photo.isVideo && photoAlbumNames.isNotEmpty) ...[
+                    const SizedBox(height: 12),
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 6,
+                      children: photoAlbumNames
+                          .map((name) => Chip(
+                                label: Text(name, style: const TextStyle(fontSize: 11)),
+                                backgroundColor: const Color(0xFF1E293B),
+                                visualDensity: VisualDensity.compact,
+                              ))
+                          .toList(),
+                    ),
+                  ],
+                  const SizedBox(height: 20),
+                  ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF0284C7),
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    ),
+                    icon: Icon(photo.isVideo ? Icons.play_circle_outline : Icons.cloud_download_outlined, size: 18),
+                    label: Text(photo.isVideo
+                        ? (photo.driveId != null ? "Lire la vidéo HD sur Google Drive" : "Ouvrir Google Drive")
+                        : (photo.driveId != null ? "Ouvrir l'original HD sur Google Drive" : "Ouvrir le dossier Google Drive")),
+                    onPressed: () async {
+                      final uri = Uri.parse(fileViewUrl);
+                      if (await canLaunchUrl(uri)) {
+                        await launchUrl(uri, mode: LaunchMode.externalApplication);
+                      }
+                    },
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+      return;
+    }
+
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -1022,14 +1520,6 @@ class PhotoGridBody extends StatelessWidget {
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
       builder: (context) {
-        final photoAlbumNames = photo.albums
-            .map((id) => nodesById[id]?.name)
-            .where((name) => name != null)
-            .cast<String>()
-            .toList();
-        final sizeMo = (photo.fileSize / (1024 * 1024)).toStringAsFixed(1);
-        final fileViewUrl = photo.getDriveViewUrl(gdriveUrl);
-
         return DraggableScrollableSheet(
           initialChildSize: 0.7,
           maxChildSize: 0.95,
@@ -1147,6 +1637,211 @@ class PhotoGridBody extends StatelessWidget {
           },
         );
       },
+    );
+  }
+}
+
+class _PhotoGridTile extends StatefulWidget {
+  final PhotoItem photo;
+  final VoidCallback onTap;
+
+  const _PhotoGridTile({
+    super.key,
+    required this.photo,
+    required this.onTap,
+  });
+
+  @override
+  State<_PhotoGridTile> createState() => _PhotoGridTileState();
+}
+
+class _PhotoGridTileState extends State<_PhotoGridTile> {
+  int _retryAttempt = 0;
+  static const int _maxRetries = 3;
+  bool _isHovered = false;
+
+  String? get _effectiveThumbUrl {
+    final base = widget.photo.thumbnailUrl;
+    if (base == null) return null;
+    if (_retryAttempt == 0) return base;
+    return '$base?retry=$_retryAttempt';
+  }
+
+  void _scheduleRetry() {
+    if (_retryAttempt >= _maxRetries) return;
+    final nextAttempt = _retryAttempt + 1;
+    final delayMs = 600 * nextAttempt + (widget.photo.id % 5) * 150;
+    Future<void>.delayed(Duration(milliseconds: delayMs), () {
+      if (mounted && _retryAttempt < nextAttempt) {
+        setState(() {
+          _retryAttempt = nextAttempt;
+        });
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final photo = widget.photo;
+    final thumbUrl = _effectiveThumbUrl;
+
+    return MouseRegion(
+      onEnter: (_) => setState(() => _isHovered = true),
+      onExit: (_) => setState(() => _isHovered = false),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(10),
+        onTap: widget.onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 160),
+          decoration: BoxDecoration(
+            color: const Color(0xFF1E293B),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(
+              color: _isHovered ? const Color(0xFF38BDF8).withValues(alpha: 0.6) : Colors.white10,
+              width: _isHovered ? 1.5 : 1.0,
+            ),
+            boxShadow: _isHovered
+                ? [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.4),
+                      blurRadius: 10,
+                      offset: const Offset(0, 4),
+                    ),
+                  ]
+                : null,
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              if (thumbUrl != null)
+                Image.network(
+                  thumbUrl,
+                  key: ValueKey(thumbUrl),
+                  fit: BoxFit.cover,
+                  cacheWidth: 360,
+                  frameBuilder: (context, child, frame, wasSynchronouslyLoaded) {
+                    if (wasSynchronouslyLoaded) return child;
+                    return AnimatedOpacity(
+                      opacity: frame == null ? 0 : 1,
+                      duration: const Duration(milliseconds: 220),
+                      curve: Curves.easeOut,
+                      child: child,
+                    );
+                  },
+                  loadingBuilder: (context, child, loadingProgress) {
+                    if (loadingProgress == null) return child;
+                    return Container(
+                      color: const Color(0xFF1E293B),
+                      child: const Center(
+                        child: SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF38BDF8)),
+                        ),
+                      ),
+                    );
+                  },
+                  errorBuilder: (context, error, stackTrace) {
+                    if (_retryAttempt < _maxRetries) {
+                      _scheduleRetry();
+                      return Container(
+                        color: const Color(0xFF1E293B),
+                        child: const Center(
+                          child: SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 1.5, color: Colors.white24),
+                          ),
+                        ),
+                      );
+                    }
+                    return Center(
+                      child: Icon(
+                        photo.isVideo ? Icons.movie_outlined : Icons.image_outlined,
+                        color: Colors.white24,
+                        size: 28,
+                      ),
+                    );
+                  },
+                )
+              else
+                Center(
+                  child: Icon(
+                    photo.isVideo ? Icons.movie_outlined : Icons.cloud_upload_outlined,
+                    color: Colors.white24,
+                    size: 28,
+                  ),
+                ),
+              if (photo.isVideo)
+                Positioned(
+                  bottom: 24,
+                  right: 6,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withValues(alpha: 0.8),
+                      borderRadius: BorderRadius.circular(4),
+                      border: Border.all(color: Colors.white24),
+                    ),
+                    child: const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.play_arrow, size: 11, color: Colors.white),
+                        SizedBox(width: 2),
+                        Text("Vidéo", style: TextStyle(fontSize: 9, color: Colors.white, fontWeight: FontWeight.bold)),
+                      ],
+                    ),
+                  ),
+                ),
+              if (photo.driveId == null)
+                Positioned(
+                  top: 6,
+                  left: 6,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFD97706).withValues(alpha: 0.9),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.cloud_off, size: 10, color: Colors.white),
+                        SizedBox(width: 3),
+                        Text("En attente Drive", style: TextStyle(fontSize: 8, color: Colors.white, fontWeight: FontWeight.bold)),
+                      ],
+                    ),
+                  ),
+                ),
+              Positioned(
+                bottom: 0,
+                left: 0,
+                right: 0,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.bottomCenter,
+                      end: Alignment.topCenter,
+                      colors: [
+                        Colors.black.withValues(alpha: 0.8),
+                        Colors.black.withValues(alpha: 0.0),
+                      ],
+                    ),
+                  ),
+                  child: Text(
+                    photo.filename,
+                    style: const TextStyle(fontSize: 10, color: Colors.white70, fontWeight: FontWeight.w500),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
