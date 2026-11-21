@@ -315,7 +315,12 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                 ],
                 selected: {_mediaMode},
-                onSelectionChanged: (set) => setState(() => _mediaMode = set.first),
+                onSelectionChanged: (set) => setState(() {
+                  _mediaMode = set.first;
+                  if (_mediaMode == 1 && _currentIndex > 2) {
+                    _currentIndex = 0;
+                  }
+                }),
               ),
             ),
           ),
@@ -325,19 +330,32 @@ class _HomeScreenState extends State<HomeScreen> {
           ? IndexedStack(
               index: _currentIndex,
               children: [
+                _buildGalleryTab(_photosOnly, isVideo: false),
                 _buildAlbumsTab(),
                 _buildPhotoYearsTab(),
                 _buildSearchTab(),
               ],
             )
-          : _buildVideoYearsTab(),
-      bottomNavigationBar: _mediaMode == 0
-          ? NavigationBar(
-              selectedIndex: _currentIndex,
-              onDestinationSelected: (idx) => setState(() => _currentIndex = idx),
-              backgroundColor: const Color(0xFF0F172A),
-              indicatorColor: const Color(0xFF0284C7).withValues(alpha: 0.3),
-              destinations: const [
+          : IndexedStack(
+              index: _currentIndex.clamp(0, 2),
+              children: [
+                _buildGalleryTab(_videosOnly, isVideo: true),
+                _buildVideoYearsTab(),
+                _buildSearchTab(),
+              ],
+            ),
+      bottomNavigationBar: NavigationBar(
+        selectedIndex: _mediaMode == 0 ? _currentIndex : _currentIndex.clamp(0, 2),
+        onDestinationSelected: (idx) => setState(() => _currentIndex = idx),
+        backgroundColor: const Color(0xFF0F172A),
+        indicatorColor: const Color(0xFF0284C7).withValues(alpha: 0.3),
+        destinations: _mediaMode == 0
+            ? const [
+                NavigationDestination(
+                  icon: Icon(Icons.photo_library_outlined),
+                  selectedIcon: Icon(Icons.photo_library, color: Color(0xFF38BDF8)),
+                  label: "Galerie",
+                ),
                 NavigationDestination(
                   icon: Icon(Icons.folder_outlined),
                   selectedIcon: Icon(Icons.folder, color: Color(0xFF38BDF8)),
@@ -353,9 +371,77 @@ class _HomeScreenState extends State<HomeScreen> {
                   selectedIcon: Icon(Icons.search, color: Color(0xFF38BDF8)),
                   label: "Recherche",
                 ),
+              ]
+            : const [
+                NavigationDestination(
+                  icon: Icon(Icons.video_library_outlined),
+                  selectedIcon: Icon(Icons.video_library, color: Color(0xFF38BDF8)),
+                  label: "Galerie",
+                ),
+                NavigationDestination(
+                  icon: Icon(Icons.calendar_today_outlined),
+                  selectedIcon: Icon(Icons.calendar_today, color: Color(0xFF38BDF8)),
+                  label: "Années",
+                ),
+                NavigationDestination(
+                  icon: Icon(Icons.search),
+                  selectedIcon: Icon(Icons.search, color: Color(0xFF38BDF8)),
+                  label: "Recherche",
+                ),
               ],
-            )
-          : null,
+      ),
+    );
+  }
+
+  // --- GALERIE: Direct Photo Grid Tab ---
+  Widget _buildGalleryTab(List<PhotoItem> photos, {required bool isVideo}) {
+    final header = Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: const BoxDecoration(
+        color: Color(0xFF0F172A),
+        border: Border(bottom: BorderSide(color: Colors.white10)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: const Color(0xFF0284C7).withValues(alpha: 0.2),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Icon(
+              isVideo ? Icons.movie_outlined : Icons.photo_library_outlined,
+              size: 20,
+              color: const Color(0xFF38BDF8),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  isVideo ? "Toutes les vidéos" : "Derniers ajouts (Maroc 10/2026)",
+                  style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.white),
+                  overflow: TextOverflow.ellipsis,
+                ),
+                Text(
+                  "${photos.length} ${isVideo ? 'vidéos' : 'photos'} • Google Drive HD",
+                  style: const TextStyle(fontSize: 11, color: Colors.white54),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+
+    return PhotoGridBody(
+      photos: photos,
+      nodesById: _nodesById,
+      gdriveUrl: _gdriveUrl,
+      header: header,
     );
   }
 
@@ -482,17 +568,7 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
             onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => PhotoGridScreen(
-                    title: "Toutes les photos",
-                    photos: _photosOnly,
-                    nodesById: _nodesById,
-                    gdriveUrl: _gdriveUrl,
-                  ),
-                ),
-              );
+              setState(() => _currentIndex = 0);
             },
           ),
           const Divider(height: 1, color: Colors.white10),
@@ -763,10 +839,52 @@ class PhotoGridScreen extends StatelessWidget {
           ],
         ),
       ),
-      body: LayoutBuilder(
-        builder: (context, constraints) {
-          final crossAxisCount = (constraints.maxWidth / 120).clamp(2, 6).toInt();
-          return GridView.builder(
+      body: PhotoGridBody(
+        photos: photos,
+        nodesById: nodesById,
+        gdriveUrl: gdriveUrl,
+      ),
+    );
+  }
+}
+
+class PhotoGridBody extends StatelessWidget {
+  final List<PhotoItem> photos;
+  final Map<String, AlbumNode> nodesById;
+  final String gdriveUrl;
+  final Widget? header;
+
+  const PhotoGridBody({
+    super.key,
+    required this.photos,
+    required this.nodesById,
+    required this.gdriveUrl,
+    this.header,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (photos.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.image_not_supported_outlined, size: 48, color: Colors.white24),
+            const SizedBox(height: 12),
+            const Text("Aucun média disponible", style: TextStyle(color: Colors.white38)),
+          ],
+        ),
+      );
+    }
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final crossAxisCount = (constraints.maxWidth / 130).clamp(2, 10).toInt();
+        return Column(
+          children: [
+            if (header != null) header!,
+            Expanded(
+              child: GridView.builder(
             padding: const EdgeInsets.all(8),
             gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
               crossAxisCount: crossAxisCount,
@@ -886,10 +1004,12 @@ class PhotoGridScreen extends StatelessWidget {
                   ),
                 ),
               );
-            },
-          );
-        },
-      ),
+                },
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
 
@@ -1114,8 +1234,7 @@ class _PhotoSearchScreenState extends State<PhotoSearchScreen> {
                   ? const Center(
                       child: Text("Aucun résultat", style: TextStyle(color: Colors.white38)),
                     )
-                  : PhotoGridScreen(
-                      title: "Recherche : '$_query'",
+                  : PhotoGridBody(
                       photos: _results,
                       nodesById: widget.nodesById,
                       gdriveUrl: widget.gdriveUrl,
