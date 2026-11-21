@@ -251,12 +251,14 @@ class CloudSyncService {
         url: supabaseUrl,
         anonKey: supabasePublishableKey,
       );
-      _googleSignIn = GoogleSignIn(
-        scopes: const ['email', 'openid', 'profile'],
-        signInOption: SignInOption.standard,
-        serverClientId: kIsWeb || googleWebClientId.isEmpty ? null : googleWebClientId,
-        forceCodeForRefreshToken: false,
-      );
+      if (!kIsWeb) {
+        _googleSignIn = GoogleSignIn(
+          scopes: const ['email', 'openid', 'profile'],
+          signInOption: SignInOption.standard,
+          serverClientId: googleWebClientId.isEmpty ? null : googleWebClientId,
+          forceCodeForRefreshToken: false,
+        );
+      }
 
       Supabase.instance.client.auth.onAuthStateChange.listen((data) {
         _updateFromSupabaseSession(data.session);
@@ -265,6 +267,7 @@ class CloudSyncService {
       _initialized = true;
     } catch (e) {
       debugPrint('CloudSyncService.initialize error: $e');
+      rethrow;
     }
   }
 

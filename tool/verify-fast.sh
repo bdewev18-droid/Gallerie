@@ -87,7 +87,7 @@ fi
 
 case "$TARGET" in
   web)
-    run_bounded_flutter build web --release --base-href '/Gallerie/' --no-pub
+    run_bounded_flutter build web --release --base-href '/Gallerie/'
     ;;
   apk)
     run_bounded_flutter build apk --release --no-pub

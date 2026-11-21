@@ -6,8 +6,8 @@ import 'package:url_launcher/url_launcher.dart';
 import 'services/app_update_service.dart';
 import 'services/cloud_sync_service.dart';
 
-const int appBuildNumber = 6;
-const String appVersionLabel = "1.0.5";
+const int appBuildNumber = 7;
+const String appVersionLabel = "1.0.6";
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
