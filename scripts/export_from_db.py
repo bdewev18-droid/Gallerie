@@ -20,7 +20,7 @@ def export_catalog():
             "id": r["id"],
             "name": r["name"],
             "parent_id": r["parent_id"],
-            "is_folder": r["is_folder"],
+            "is_folder": bool(r["is_folder"]),
             "direct_count": r["direct_count"],
             "count": r["total_count"]
         }

@@ -69,14 +69,14 @@ class PhotoItem {
 
   factory PhotoItem.fromJson(Map<String, dynamic> json) {
     return PhotoItem(
-      id: json['id'] as int,
-      filename: json['fn'] as String,
-      year: json['y'] as String,
+      id: (json['id'] as num).toInt(),
+      filename: json['fn'] as String? ?? '',
+      year: json['y'] as String? ?? 'unknown_date',
       dateFolder: json['d'] as String? ?? '',
       captureDate: json['dt'] as String? ?? '',
-      width: json['w'] as int? ?? 0,
-      height: json['h'] as int? ?? 0,
-      fileSize: json['s'] as int? ?? 0,
+      width: (json['w'] as num?)?.toInt() ?? 0,
+      height: (json['h'] as num?)?.toInt() ?? 0,
+      fileSize: (json['s'] as num?)?.toInt() ?? 0,
       isVideo: (json['m'] as String? ?? 'p') == 'v',
       driveId: json['gid'] as String?,
       cameraModel: json['cam'] as String?,
@@ -120,13 +120,15 @@ class AlbumNode {
   });
 
   factory AlbumNode.fromJson(Map<String, dynamic> json) {
+    final rawFolder = json['is_folder'];
+    final isFolder = rawFolder is bool ? rawFolder : (rawFolder == 1 || rawFolder == '1');
     return AlbumNode(
-      id: json['id'] as String,
-      name: json['name'] as String,
-      parentId: json['parent_id'] as String?,
-      isFolder: json['is_folder'] as bool? ?? false,
-      directCount: json['direct_count'] as int? ?? 0,
-      totalCount: json['count'] as int? ?? 0,
+      id: json['id'].toString(),
+      name: json['name'] as String? ?? '',
+      parentId: json['parent_id']?.toString(),
+      isFolder: isFolder,
+      directCount: (json['direct_count'] as num?)?.toInt() ?? 0,
+      totalCount: (json['count'] as num?)?.toInt() ?? 0,
     );
   }
 }
@@ -453,6 +455,49 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ),
 
+        // "Toutes les photos" at root level
+        if (_navHistory.isEmpty && _albumSearch.isEmpty) ...[
+          ListTile(
+            tileColor: const Color(0xFF1E293B).withValues(alpha: 0.6),
+            leading: Container(
+              width: 42,
+              height: 42,
+              decoration: BoxDecoration(
+                color: const Color(0xFF0284C7).withValues(alpha: 0.25),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Icon(Icons.photo_library_outlined, color: Color(0xFF38BDF8), size: 24),
+            ),
+            title: const Text("Toutes les photos", style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
+            subtitle: const Text("Dernières photos créées en tête (Maroc 10/2026)", style: TextStyle(fontSize: 11, color: Colors.white54)),
+            trailing: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              decoration: BoxDecoration(
+                color: const Color(0xFF0284C7).withValues(alpha: 0.3),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Text(
+                "${_photosOnly.length}",
+                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF38BDF8)),
+              ),
+            ),
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => PhotoGridScreen(
+                    title: "Toutes les photos",
+                    photos: _photosOnly,
+                    nodesById: _nodesById,
+                    gdriveUrl: _gdriveUrl,
+                  ),
+                ),
+              );
+            },
+          ),
+          const Divider(height: 1, color: Colors.white10),
+        ],
+
         // List
         Expanded(
           child: filtered.isEmpty
@@ -524,8 +569,18 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  Set<String> _getAllDescendantAlbumIds(String nodeId) {
+    final ids = <String>{nodeId};
+    final children = _childrenByParent[nodeId] ?? [];
+    for (final child in children) {
+      ids.addAll(_getAllDescendantAlbumIds(child.id));
+    }
+    return ids;
+  }
+
   void _openPhotosForNode(AlbumNode node) {
-    final albumPhotos = _photosOnly.where((p) => p.albums.contains(node.id)).toList();
+    final targetIds = node.isFolder ? _getAllDescendantAlbumIds(node.id) : {node.id};
+    final albumPhotos = _photosOnly.where((p) => p.albums.any((aId) => targetIds.contains(aId))).toList();
     Navigator.push(
       context,
       MaterialPageRoute(
