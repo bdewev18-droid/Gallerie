@@ -25,6 +25,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+@app.middleware("http")
+async def add_anti_crawler_headers(request, call_next):
+    response = await call_next(request)
+    response.headers["X-Robots-Tag"] = "noindex, nofollow, noarchive, nosnippet, noimageindex"
+    return response
+
 FRONTEND_DIR = Path(r"d:\LRforIA\frontend")
 GDRIVE_DEFAULT_URL = "https://drive.google.com/drive/folders/1w_szSK4yKM_j0Trk8lT5Zcpcxae_0_iO"
 

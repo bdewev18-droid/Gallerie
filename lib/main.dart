@@ -2,6 +2,10 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'services/app_update_service.dart';
+
+const int appBuildNumber = 1;
+const String appVersionLabel = "1.0.0";
 
 void main() {
   runApp(const GallerieApp());
@@ -172,6 +176,9 @@ class _HomeScreenState extends State<HomeScreen> {
   void initState() {
     super.initState();
     _loadCatalog();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      AppUpdateService.checkAndPrompt(context);
+    });
   }
 
   Future<void> _loadCatalog() async {
@@ -254,6 +261,27 @@ class _HomeScreenState extends State<HomeScreen> {
           ],
         ),
         actions: [
+          IconButton(
+            tooltip: "Mises à jour (v$appVersionLabel)",
+            icon: const Icon(Icons.system_update_alt_outlined, color: Color(0xFF38BDF8)),
+            onPressed: () async {
+              final update = await AppUpdateService.checkUpdate();
+              if (!context.mounted) return;
+              if (update != null) {
+                await AppUpdateService.promptUpdate(context, update, isForced: true);
+              } else {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    backgroundColor: Color(0xFF0F172A),
+                    content: Text(
+                      'Votre application Medias Familly est à jour (v$appVersionLabel).',
+                      style: TextStyle(color: Colors.white),
+                    ),
+                  ),
+                );
+              }
+            },
+          ),
           IconButton(
             tooltip: "Ouvrir Google Drive HD",
             icon: const Icon(Icons.cloud_outlined, color: Color(0xFF38BDF8)),
