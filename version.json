@@ -1,6 +1,6 @@
 {
-  "version": "1.0.4",
-  "buildNumber": 5,
+  "version": "1.0.5",
+  "buildNumber": 6,
   "apkUrl": "https://github.com/bdewev18-droid/Gallerie/releases/latest/download/app-release.apk",
   "releaseNotes": "v1.0.1 : Chargement progressif des médias, interface responsive grand écran (sidebar + modale), correction CORS des vignettes Drive et auto-retry."
 }

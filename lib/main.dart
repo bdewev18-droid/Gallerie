@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -5,10 +6,12 @@ import 'package:url_launcher/url_launcher.dart';
 import 'services/app_update_service.dart';
 import 'services/cloud_sync_service.dart';
 
-const int appBuildNumber = 5;
-const String appVersionLabel = "1.0.4";
+const int appBuildNumber = 6;
+const String appVersionLabel = "1.0.5";
 
-void main() {
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await CloudSyncService.initialize();
   runApp(const GallerieApp());
 }
 
@@ -50,6 +53,8 @@ class PhotoItem {
   final String? country;
   final String? city;
   final List<String> albums;
+  final String? addedByName;
+  final String? addedByEmail;
 
   PhotoItem({
     required this.id,
@@ -66,6 +71,8 @@ class PhotoItem {
     this.country,
     this.city,
     required this.albums,
+    this.addedByName,
+    this.addedByEmail,
   });
 
   factory PhotoItem.fromJson(Map<String, dynamic> json) {
@@ -110,6 +117,7 @@ class AlbumNode {
   final bool isFolder;
   final int directCount;
   final int totalCount;
+  final String? createdByName;
 
   AlbumNode({
     required this.id,
@@ -118,6 +126,7 @@ class AlbumNode {
     required this.isFolder,
     required this.directCount,
     required this.totalCount,
+    this.createdByName,
   });
 
   factory AlbumNode.fromJson(Map<String, dynamic> json) {
@@ -177,15 +186,270 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _isSyncingCloud = false;
   bool _cloudTableReady = true;
   final Map<int, PhotoOverrideRecord> _overridesByPhotoId = {};
+  final Map<int, List<PhotoLikeRecord>> _likesByPhotoId = {};
   final Set<String> _customAlbumIds = {};
+  AuthUserSession _auth = CloudSyncService.currentAuth;
+  StreamSubscription<AuthUserSession>? _authSub;
 
   @override
   void initState() {
     super.initState();
+    _authSub = CloudSyncService.authStream.listen((session) {
+      if (mounted) {
+        setState(() => _auth = session);
+      }
+    });
     _loadCatalog();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       AppUpdateService.checkAndPrompt(context);
     });
+  }
+
+  @override
+  void dispose() {
+    _authSub?.cancel();
+    _albumSearchController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _handleGoogleSignIn() async {
+    try {
+      await CloudSyncService.signInWithGoogle();
+      if (!mounted) return;
+      if (_auth.isSignedIn) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            backgroundColor: const Color(0xFF0F172A),
+            content: Text(
+              '✔ Connecté en tant que ${_auth.shortLabel} (${_auth.email})',
+              style: const TextStyle(color: Colors.white, fontSize: 12),
+            ),
+          ),
+        );
+      }
+    } catch (error) {
+      if (!mounted) return;
+      showDialog<void>(
+        context: context,
+        builder: (dialogCtx) => AlertDialog(
+          backgroundColor: const Color(0xFF0F172A),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14),
+            side: const BorderSide(color: Colors.white12),
+          ),
+          title: const Text('Connexion Google impossible', style: TextStyle(color: Colors.white, fontSize: 16)),
+          content: SingleChildScrollView(
+            child: Text('$error', style: const TextStyle(color: Colors.white70, fontSize: 12)),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogCtx).pop(),
+              child: const Text('OK'),
+            ),
+          ],
+        ),
+      );
+    }
+  }
+
+  Future<void> _handleSignOut() async {
+    await CloudSyncService.signOut();
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        backgroundColor: Color(0xFF0F172A),
+        content: Text('Déconnecté.', style: TextStyle(color: Colors.white, fontSize: 12)),
+      ),
+    );
+  }
+
+  void _showUserAccountSheet() {
+    showDialog<void>(
+      context: context,
+      builder: (dialogCtx) => AlertDialog(
+        backgroundColor: const Color(0xFF0F172A),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+          side: const BorderSide(color: Colors.white12),
+        ),
+        title: Row(
+          children: [
+            Icon(
+              _auth.isSignedIn ? Icons.verified_user_outlined : Icons.account_circle_outlined,
+              color: _auth.isSignedIn ? const Color(0xFF4ADE80) : const Color(0xFF38BDF8),
+              size: 24,
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                _auth.isSignedIn ? 'Compte connecté' : 'Connexion Google Famille',
+                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white),
+              ),
+            ),
+          ],
+        ),
+        content: _auth.isSignedIn
+            ? Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      CircleAvatar(
+                        radius: 22,
+                        backgroundColor: const Color(0xFF0284C7),
+                        backgroundImage:
+                            (_auth.avatarUrl != null && _auth.avatarUrl!.isNotEmpty) ? NetworkImage(_auth.avatarUrl!) : null,
+                        child: (_auth.avatarUrl == null || _auth.avatarUrl!.isEmpty)
+                            ? Text(
+                                _auth.shortLabel.substring(0, 1).toUpperCase(),
+                                style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
+                              )
+                            : null,
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              _auth.shortLabel,
+                              style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Colors.white),
+                            ),
+                            Text(
+                              _auth.email ?? '',
+                              style: const TextStyle(fontSize: 12, color: Colors.white70),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 14),
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF1E293B),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Text(
+                      'Vos "J\'aime" (❤️), nouveaux dossiers et ajouts de photos sont automatiquement associés à votre prénom pour toute la famille.',
+                      style: TextStyle(fontSize: 11, color: Colors.white70),
+                    ),
+                  ),
+                ],
+              )
+            : const Text(
+                'Connectez-vous avec votre compte Google pour aimer des photos (❤️), créer des dossiers ou ajouter des photos associées à votre nom.',
+                style: TextStyle(fontSize: 12, color: Colors.white70),
+              ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogCtx).pop(),
+            child: const Text('Fermer', style: TextStyle(color: Colors.white54)),
+          ),
+          if (_auth.isSignedIn)
+            ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFFEF4444),
+                foregroundColor: Colors.white,
+              ),
+              icon: const Icon(Icons.logout, size: 17),
+              label: const Text('Se déconnecter'),
+              onPressed: () async {
+                Navigator.of(dialogCtx).pop();
+                await _handleSignOut();
+              },
+            )
+          else
+            ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF0284C7),
+                foregroundColor: Colors.white,
+              ),
+              icon: const Icon(Icons.login, size: 17),
+              label: const Text('Se connecter avec Google'),
+              onPressed: () async {
+                Navigator.of(dialogCtx).pop();
+                await _handleGoogleSignIn();
+              },
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAuthHeaderChip({bool compact = false}) {
+    final isSigningIn = _auth.status == AuthStatus.signingIn;
+    if (isSigningIn) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8),
+        child: Chip(
+          backgroundColor: const Color(0xFF1E293B),
+          avatar: const SizedBox(
+            width: 14,
+            height: 14,
+            child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF38BDF8)),
+          ),
+          label: Text(compact ? '...' : 'Connexion...', style: const TextStyle(fontSize: 11)),
+        ),
+      );
+    }
+
+    if (_auth.isSignedIn) {
+      return Padding(
+        padding: const EdgeInsets.only(right: 6),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(20),
+          onTap: _showUserAccountSheet,
+          child: Container(
+            padding: EdgeInsets.symmetric(horizontal: compact ? 8 : 10, vertical: 5),
+            decoration: BoxDecoration(
+              color: const Color(0xFF1E293B),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: const Color(0xFF4ADE80).withValues(alpha: 0.5)),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 8,
+                  height: 8,
+                  decoration: const BoxDecoration(
+                    color: Color(0xFF4ADE80),
+                    shape: BoxShape.circle,
+                  ),
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  _auth.shortLabel,
+                  style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.white),
+                ),
+                const SizedBox(width: 4),
+                const Icon(Icons.expand_more, size: 14, color: Colors.white70),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.only(right: 6),
+      child: OutlinedButton.icon(
+        style: OutlinedButton.styleFrom(
+          foregroundColor: const Color(0xFF38BDF8),
+          backgroundColor: const Color(0xFF1E293B),
+          side: const BorderSide(color: Color(0xFF0284C7)),
+          visualDensity: VisualDensity.compact,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          padding: EdgeInsets.symmetric(horizontal: compact ? 8 : 12, vertical: 6),
+        ),
+        onPressed: _handleGoogleSignIn,
+        icon: const Icon(Icons.login, size: 15),
+        label: Text(compact ? 'Connexion' : 'Connexion Google', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+      ),
+    );
   }
 
   Future<void> _loadCatalog() async {
@@ -354,6 +618,7 @@ class _HomeScreenState extends State<HomeScreen> {
             isFolder: ca.isFolder,
             directCount: existing?.directCount ?? 0,
             totalCount: existing?.totalCount ?? 0,
+            createdByName: ca.createdByName,
           );
         }
       }
@@ -380,6 +645,8 @@ class _HomeScreenState extends State<HomeScreen> {
               country: cp.country,
               city: cp.city,
               albums: List<String>.from(cp.albums),
+              addedByName: cp.addedByName,
+              addedByEmail: cp.addedByEmail,
             ),
           );
         }
@@ -388,10 +655,13 @@ class _HomeScreenState extends State<HomeScreen> {
         _allPhotos.insertAll(0, newCustomItems);
       }
 
-      // 3. Appliquer les overrides (ajout/retrait d'albums, suppression)
+      // 3. Appliquer les overrides (ajout/retrait d'albums, suppression) et les likes
       _overridesByPhotoId
         ..clear()
         ..addAll(delta.overridesByPhotoId);
+      _likesByPhotoId
+        ..clear()
+        ..addAll(delta.likesByPhotoId);
 
       final updatedAll = <PhotoItem>[];
       for (final p in _allPhotos) {
@@ -579,6 +849,7 @@ class _HomeScreenState extends State<HomeScreen> {
           ],
         ),
         actions: [
+          _buildAuthHeaderChip(compact: false),
           IconButton(
             tooltip: "Ajouter un média Google Drive",
             icon: const Icon(Icons.add_photo_alternate_outlined, color: Color(0xFF4ADE80), size: 22),
@@ -855,6 +1126,7 @@ class _HomeScreenState extends State<HomeScreen> {
           ],
         ),
         actions: [
+          _buildAuthHeaderChip(compact: true),
           IconButton(
             tooltip: "Ajouter un média Google Drive",
             icon: const Icon(Icons.add_photo_alternate_outlined, color: Color(0xFF4ADE80)),
@@ -1068,6 +1340,9 @@ class _HomeScreenState extends State<HomeScreen> {
       nodesById: _nodesById,
       gdriveUrl: _gdriveUrl,
       header: header,
+      likesByPhotoId: _likesByPhotoId,
+      currentUserEmail: _auth.email,
+      onToggleLike: _handleTogglePhotoLike,
       onAssignAlbum: _handleAssignAlbumToPhoto,
       onDeletePhoto: _handleDeletePhoto,
     );
@@ -1249,9 +1524,8 @@ class _HomeScreenState extends State<HomeScreen> {
                         ),
                       ),
                       subtitle: Text(
-                        node.isFolder
-                            ? "${node.totalCount} photos cumulées"
-                            : "${node.directCount} photos",
+                        "${node.isFolder ? '${node.totalCount} photos cumulées' : '${node.directCount} photos'}"
+                        "${node.createdByName != null && node.createdByName!.isNotEmpty ? ' • créé par ${node.createdByName}' : ''}",
                         style: const TextStyle(fontSize: 11, color: Colors.white54),
                       ),
                       trailing: Row(
@@ -1306,6 +1580,9 @@ class _HomeScreenState extends State<HomeScreen> {
           photos: albumPhotos,
           nodesById: _nodesById,
           gdriveUrl: _gdriveUrl,
+          likesByPhotoId: _likesByPhotoId,
+          currentUserEmail: _auth.email,
+          onToggleLike: _handleTogglePhotoLike,
           onAssignAlbum: _handleAssignAlbumToPhoto,
           onDeletePhoto: _handleDeletePhoto,
         ),
@@ -1349,6 +1626,9 @@ class _HomeScreenState extends State<HomeScreen> {
                   photos: yearPhotos,
                   nodesById: _nodesById,
                   gdriveUrl: _gdriveUrl,
+                  likesByPhotoId: _likesByPhotoId,
+                  currentUserEmail: _auth.email,
+                  onToggleLike: _handleTogglePhotoLike,
                   onAssignAlbum: _handleAssignAlbumToPhoto,
                   onDeletePhoto: _handleDeletePhoto,
                 ),
@@ -1394,6 +1674,9 @@ class _HomeScreenState extends State<HomeScreen> {
                   photos: _videosOnly,
                   nodesById: _nodesById,
                   gdriveUrl: _gdriveUrl,
+                  likesByPhotoId: _likesByPhotoId,
+                  currentUserEmail: _auth.email,
+                  onToggleLike: _handleTogglePhotoLike,
                   onAssignAlbum: _handleAssignAlbumToPhoto,
                   onDeletePhoto: _handleDeletePhoto,
                 ),
@@ -1438,6 +1721,9 @@ class _HomeScreenState extends State<HomeScreen> {
                         photos: yearVideos,
                         nodesById: _nodesById,
                         gdriveUrl: _gdriveUrl,
+                        likesByPhotoId: _likesByPhotoId,
+                        currentUserEmail: _auth.email,
+                        onToggleLike: _handleTogglePhotoLike,
                         onAssignAlbum: _handleAssignAlbumToPhoto,
                         onDeletePhoto: _handleDeletePhoto,
                       ),
@@ -1457,6 +1743,9 @@ class _HomeScreenState extends State<HomeScreen> {
       allPhotos: _photosOnly,
       nodesById: _nodesById,
       gdriveUrl: _gdriveUrl,
+      likesByPhotoId: _likesByPhotoId,
+      currentUserEmail: _auth.email,
+      onToggleLike: _handleTogglePhotoLike,
       onAssignAlbum: _handleAssignAlbumToPhoto,
       onDeletePhoto: _handleDeletePhoto,
     );
@@ -1573,6 +1862,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     isFolder: isFolder,
                     directCount: 0,
                     totalCount: 0,
+                    createdByName: _auth.isSignedIn ? _auth.shortLabel : null,
                   );
                   _customAlbumIds.add(newId);
                   _rebuildChildrenTree();
@@ -1790,6 +2080,8 @@ class _HomeScreenState extends State<HomeScreen> {
                   country: record.country,
                   city: record.city,
                   albums: albums,
+                  addedByName: _auth.isSignedIn ? _auth.shortLabel : null,
+                  addedByEmail: _auth.isSignedIn ? _auth.email : null,
                 );
 
                 setState(() {
@@ -1885,6 +2177,45 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
     );
   }
+
+  Future<void> _handleTogglePhotoLike(PhotoItem photo) async {
+    if (!_auth.isSignedIn || _auth.email == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          backgroundColor: const Color(0xFF0F172A),
+          content: const Text(
+            'Connectez-vous avec Google (en haut à droite) pour aimer des photos ❤️',
+            style: TextStyle(color: Colors.white, fontSize: 12),
+          ),
+          action: SnackBarAction(
+            label: 'Connexion',
+            textColor: const Color(0xFF38BDF8),
+            onPressed: _handleGoogleSignIn,
+          ),
+        ),
+      );
+      return;
+    }
+
+    final email = _auth.email!;
+    final name = _auth.shortLabel;
+    final list = List<PhotoLikeRecord>.from(_likesByPhotoId[photo.id] ?? []);
+    final alreadyLiked = list.any((l) => l.userEmail == email);
+
+    setState(() {
+      if (alreadyLiked) {
+        list.removeWhere((l) => l.userEmail == email);
+      } else {
+        list.add(PhotoLikeRecord(photoId: photo.id, userEmail: email, userName: name));
+      }
+      _likesByPhotoId[photo.id] = list;
+    });
+
+    await CloudSyncService.togglePhotoLike(
+      photoId: photo.id,
+      isCurrentlyLiked: alreadyLiked,
+    );
+  }
 }
 
 class PhotoGridScreen extends StatelessWidget {
@@ -1892,6 +2223,9 @@ class PhotoGridScreen extends StatelessWidget {
   final List<PhotoItem> photos;
   final Map<String, AlbumNode> nodesById;
   final String gdriveUrl;
+  final Map<int, List<PhotoLikeRecord>>? likesByPhotoId;
+  final String? currentUserEmail;
+  final Future<void> Function(PhotoItem photo)? onToggleLike;
   final Future<void> Function(PhotoItem photo, String albumId)? onAssignAlbum;
   final Future<void> Function(PhotoItem photo)? onDeletePhoto;
 
@@ -1901,6 +2235,9 @@ class PhotoGridScreen extends StatelessWidget {
     required this.photos,
     required this.nodesById,
     required this.gdriveUrl,
+    this.likesByPhotoId,
+    this.currentUserEmail,
+    this.onToggleLike,
     this.onAssignAlbum,
     this.onDeletePhoto,
   });
@@ -1922,6 +2259,9 @@ class PhotoGridScreen extends StatelessWidget {
         photos: photos,
         nodesById: nodesById,
         gdriveUrl: gdriveUrl,
+        likesByPhotoId: likesByPhotoId,
+        currentUserEmail: currentUserEmail,
+        onToggleLike: onToggleLike,
         onAssignAlbum: onAssignAlbum,
         onDeletePhoto: onDeletePhoto,
       ),
@@ -1934,6 +2274,9 @@ class PhotoGridBody extends StatefulWidget {
   final Map<String, AlbumNode> nodesById;
   final String gdriveUrl;
   final Widget? header;
+  final Map<int, List<PhotoLikeRecord>>? likesByPhotoId;
+  final String? currentUserEmail;
+  final Future<void> Function(PhotoItem photo)? onToggleLike;
   final Future<void> Function(PhotoItem photo, String albumId)? onAssignAlbum;
   final Future<void> Function(PhotoItem photo)? onDeletePhoto;
 
@@ -1943,6 +2286,9 @@ class PhotoGridBody extends StatefulWidget {
     required this.nodesById,
     required this.gdriveUrl,
     this.header,
+    this.likesByPhotoId,
+    this.currentUserEmail,
+    this.onToggleLike,
     this.onAssignAlbum,
     this.onDeletePhoto,
   });
@@ -2044,9 +2390,20 @@ class _PhotoGridBodyState extends State<PhotoGridBody> {
                   itemCount: displayCount,
                   itemBuilder: (context, idx) {
                     final photo = photos[idx];
+                    final photoLikes = widget.likesByPhotoId?[photo.id] ?? const <PhotoLikeRecord>[];
+                    final isLikedByMe = widget.currentUserEmail != null &&
+                        photoLikes.any((l) => l.userEmail == widget.currentUserEmail);
                     return _PhotoGridTile(
                       key: ValueKey(photo.id),
                       photo: photo,
+                      likeCount: photoLikes.length,
+                      isLikedByMe: isLikedByMe,
+                      onToggleLike: widget.onToggleLike != null
+                          ? () async {
+                              await widget.onToggleLike!(photo);
+                              if (mounted) setState(() {});
+                            }
+                          : null,
                       onTap: () => _openLightbox(context, photo),
                     );
                   },
@@ -2158,10 +2515,28 @@ class _PhotoGridBodyState extends State<PhotoGridBody> {
                       if (photo.country != null && photo.country!.isNotEmpty)
                         Text("Lieu : ${photo.city != null && photo.city!.isNotEmpty ? '${photo.city}, ' : ''}${photo.country}",
                             style: const TextStyle(fontSize: 12, color: Colors.white70)),
+                      if (photo.addedByName != null && photo.addedByName!.isNotEmpty)
+                        Text("Ajouté par : ${photo.addedByName}",
+                            style: const TextStyle(fontSize: 12, color: Color(0xFF38BDF8), fontWeight: FontWeight.w600)),
                       Text("Statut Drive : ${photo.driveId != null ? '✔ Synchronisé en HD' : '⏳ Non chargé sur Drive'}",
                           style: TextStyle(fontSize: 12, color: photo.driveId != null ? const Color(0xFF4ADE80) : const Color(0xFFFBBF24))),
                     ],
                   ),
+                  if ((widget.likesByPhotoId?[photo.id] ?? const []).isNotEmpty) ...[
+                    const SizedBox(height: 10),
+                    Row(
+                      children: [
+                        const Icon(Icons.favorite, size: 15, color: Color(0xFFF43F5E)),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            "Aimé par : ${(widget.likesByPhotoId![photo.id]!).map((l) => l.userName).join(', ')}",
+                            style: const TextStyle(fontSize: 12, color: Color(0xFFFDA4AF), fontWeight: FontWeight.w600),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
                   if (!photo.isVideo && photoAlbumNames.isNotEmpty) ...[
                     const SizedBox(height: 12),
                     Wrap(
@@ -2179,6 +2554,31 @@ class _PhotoGridBodyState extends State<PhotoGridBody> {
                   const SizedBox(height: 16),
                   Row(
                     children: [
+                      if (widget.onToggleLike != null) ...[
+                        Builder(
+                          builder: (_) {
+                            final likes = widget.likesByPhotoId?[photo.id] ?? const <PhotoLikeRecord>[];
+                            final isLiked = widget.currentUserEmail != null &&
+                                likes.any((l) => l.userEmail == widget.currentUserEmail);
+                            return OutlinedButton.icon(
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: isLiked ? Colors.white : const Color(0xFFF43F5E),
+                                backgroundColor: isLiked ? const Color(0xFFE11D48) : Colors.transparent,
+                                side: const BorderSide(color: Color(0xFFF43F5E)),
+                                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                              ),
+                              icon: Icon(isLiked ? Icons.favorite : Icons.favorite_border, size: 17),
+                              label: Text("J'aime (${likes.length})", style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                              onPressed: () async {
+                                Navigator.of(dialogCtx).pop();
+                                await widget.onToggleLike!(photo);
+                              },
+                            );
+                          },
+                        ),
+                        const SizedBox(width: 10),
+                      ],
                       if (widget.onAssignAlbum != null)
                         Expanded(
                           child: OutlinedButton.icon(
@@ -2324,8 +2724,26 @@ class _PhotoGridBodyState extends State<PhotoGridBody> {
                 if (photo.country != null && photo.country!.isNotEmpty)
                   Text("Lieu : ${photo.city != null && photo.city!.isNotEmpty ? '${photo.city}, ' : ''}${photo.country}",
                       style: const TextStyle(fontSize: 12, color: Colors.white70)),
+                if (photo.addedByName != null && photo.addedByName!.isNotEmpty)
+                  Text("Ajouté par : ${photo.addedByName}",
+                      style: const TextStyle(fontSize: 12, color: Color(0xFF38BDF8), fontWeight: FontWeight.w600)),
                 Text("Statut Drive : ${photo.driveId != null ? '✔ Synchronisé en HD' : '⏳ Non chargé sur Drive'}",
                     style: TextStyle(fontSize: 12, color: photo.driveId != null ? const Color(0xFF4ADE80) : const Color(0xFFFBBF24))),
+                if ((widget.likesByPhotoId?[photo.id] ?? const []).isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      const Icon(Icons.favorite, size: 15, color: Color(0xFFF43F5E)),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          "Aimé par : ${(widget.likesByPhotoId![photo.id]!).map((l) => l.userName).join(', ')}",
+                          style: const TextStyle(fontSize: 12, color: Color(0xFFFDA4AF), fontWeight: FontWeight.w600),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
                 const SizedBox(height: 16),
                 if (!photo.isVideo) ...[
                   const Text("Dossiers & Albums Lightroom :", style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white70)),
@@ -2347,6 +2765,31 @@ class _PhotoGridBodyState extends State<PhotoGridBody> {
                 ],
                 Row(
                   children: [
+                    if (widget.onToggleLike != null) ...[
+                      Builder(
+                        builder: (_) {
+                          final likes = widget.likesByPhotoId?[photo.id] ?? const <PhotoLikeRecord>[];
+                          final isLiked = widget.currentUserEmail != null &&
+                              likes.any((l) => l.userEmail == widget.currentUserEmail);
+                          return OutlinedButton.icon(
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: isLiked ? Colors.white : const Color(0xFFF43F5E),
+                              backgroundColor: isLiked ? const Color(0xFFE11D48) : Colors.transparent,
+                              side: const BorderSide(color: Color(0xFFF43F5E)),
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                            ),
+                            icon: Icon(isLiked ? Icons.favorite : Icons.favorite_border, size: 17),
+                            label: Text("(${likes.length})", style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                            onPressed: () async {
+                              Navigator.of(context).pop();
+                              await widget.onToggleLike!(photo);
+                            },
+                          );
+                        },
+                      ),
+                      const SizedBox(width: 8),
+                    ],
                     if (widget.onAssignAlbum != null)
                       Expanded(
                         child: OutlinedButton.icon(
@@ -2483,11 +2926,17 @@ class _PhotoGridBodyState extends State<PhotoGridBody> {
 
 class _PhotoGridTile extends StatefulWidget {
   final PhotoItem photo;
+  final int likeCount;
+  final bool isLikedByMe;
+  final VoidCallback? onToggleLike;
   final VoidCallback onTap;
 
   const _PhotoGridTile({
     super.key,
     required this.photo,
+    this.likeCount = 0,
+    this.isLikedByMe = false,
+    this.onToggleLike,
     required this.onTap,
   });
 
@@ -2654,6 +3103,48 @@ class _PhotoGridTileState extends State<_PhotoGridTile> {
                     ),
                   ),
                 ),
+              // Bouton Like (❤️) en haut à droite de la vignette
+              if (widget.onToggleLike != null || widget.likeCount > 0)
+                Positioned(
+                  top: 6,
+                  right: 6,
+                  child: GestureDetector(
+                    onTap: widget.onToggleLike,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: widget.isLikedByMe
+                            ? const Color(0xFFE11D48).withValues(alpha: 0.9)
+                            : Colors.black.withValues(alpha: 0.6),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: widget.isLikedByMe ? const Color(0xFFFDA4AF) : Colors.white24,
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            widget.isLikedByMe ? Icons.favorite : Icons.favorite_border,
+                            size: 13,
+                            color: widget.isLikedByMe ? Colors.white : Colors.white70,
+                          ),
+                          if (widget.likeCount > 0) ...[
+                            const SizedBox(width: 3),
+                            Text(
+                              "${widget.likeCount}",
+                              style: const TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.white,
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
               Positioned(
                 bottom: 0,
                 left: 0,
@@ -2690,6 +3181,9 @@ class PhotoSearchScreen extends StatefulWidget {
   final List<PhotoItem> allPhotos;
   final Map<String, AlbumNode> nodesById;
   final String gdriveUrl;
+  final Map<int, List<PhotoLikeRecord>>? likesByPhotoId;
+  final String? currentUserEmail;
+  final Future<void> Function(PhotoItem photo)? onToggleLike;
   final Future<void> Function(PhotoItem photo, String albumId)? onAssignAlbum;
   final Future<void> Function(PhotoItem photo)? onDeletePhoto;
 
@@ -2698,6 +3192,9 @@ class PhotoSearchScreen extends StatefulWidget {
     required this.allPhotos,
     required this.nodesById,
     required this.gdriveUrl,
+    this.likesByPhotoId,
+    this.currentUserEmail,
+    this.onToggleLike,
     this.onAssignAlbum,
     this.onDeletePhoto,
   });
@@ -2777,6 +3274,9 @@ class _PhotoSearchScreenState extends State<PhotoSearchScreen> {
                       photos: _results,
                       nodesById: widget.nodesById,
                       gdriveUrl: widget.gdriveUrl,
+                      likesByPhotoId: widget.likesByPhotoId,
+                      currentUserEmail: widget.currentUserEmail,
+                      onToggleLike: widget.onToggleLike,
                       onAssignAlbum: widget.onAssignAlbum,
                       onDeletePhoto: widget.onDeletePhoto,
                     ),
