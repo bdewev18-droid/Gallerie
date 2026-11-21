@@ -3,14 +3,53 @@ import msgpack
 import re
 import os
 from pathlib import Path
-from PIL import Image
-from PIL.ExifTags import TAGS
-from typing import Dict, Any, Tuple
-from database import get_connection, init_db
+from collections import defaultdict
+from database import DB_PATH, get_connection, init_db
 
 PHOTOS_DIR = Path(r"D:\dowload chrome\PHOTOS")
 MCAT_PATH = Path(r"C:\Users\bdewe\OneDrive\Images\Lightroom\Lightroom Catalog Sync.lrdata\afb0cfb20b2a4bcb9b57d5ec165fc499\Managed Catalog.mcat")
 GDRIVE_BASE_FOLDER = "https://drive.google.com/drive/folders/1w_szSK4yKM_j0Trk8lT5Zcpcxae_0_iO"
+
+def get_drive_file_ids():
+    fs_base = Path(r"C:\Users\bdewe\AppData\Local\Google\DriveFS\118213793054156610633")
+    if not fs_base.exists():
+        return {}
+    try:
+        conn_mirror = sqlite3.connect(f"file:{fs_base / 'mirror_sqlite.db'}?mode=ro", uri=True)
+        cur_m = conn_mirror.cursor()
+        cur_m.execute("SELECT local_stable_id, stable_id, parent_local_stable_id, local_filename, local_type FROM mirror_item;")
+        mirror_rows = cur_m.fetchall()
+        conn_mirror.close()
+
+        conn_meta = sqlite3.connect(f"file:{fs_base / 'mirror_metadata_sqlite.db'}?mode=ro", uri=True)
+        cur_meta = conn_meta.cursor()
+        cur_meta.execute("SELECT stable_id, id FROM items WHERE is_folder = 0;")
+        meta_rows = cur_meta.fetchall()
+        conn_meta.close()
+
+        stable_to_drive_id = {sid: drive_id for sid, drive_id in meta_rows}
+        item_map = {lid: (pid, fn, lt, sid) for lid, sid, pid, fn, lt in mirror_rows}
+
+        def get_rel_path(lid):
+            parts = []
+            curr = lid
+            while curr in item_map:
+                pid, fn, lt, sid = item_map[curr]
+                if fn == "PHOTOS":
+                    break
+                parts.append(fn)
+                curr = pid
+            return "/".join(reversed(parts))
+
+        drive_path_to_id = {}
+        for lid, (pid, fn, lt, sid) in item_map.items():
+            if lt != 0 and sid in stable_to_drive_id:
+                rel = get_rel_path(lid)
+                drive_path_to_id[rel.lower()] = stable_to_drive_id[sid]
+        return drive_path_to_id
+    except Exception as e:
+        print(f"Error reading DriveFS: {e}")
+        return {}
 
 def parse_mcat(mcat_path: Path):
     print("Reading Lightroom catalog from:", mcat_path)
@@ -25,11 +64,12 @@ def parse_mcat(mcat_path: Path):
     WHERE r.current=1 AND r.deleted=0;
     """)
 
-    albums = {} # album_id -> {'name': name, 'parent_id': parent_id}
-    album_assets = [] # (album_id, asset_id)
-    assets_by_name_size = {} # (clean_name_lower, filesize) -> asset_dict
-    assets_by_size = {} # filesize -> asset_dict (if unique)
-    size_counts = {}
+    nodes = {}
+    album_assets = defaultdict(set)
+    assets_by_name_size = {}
+    assets_by_size = {}
+    size_counts = defaultdict(int)
+    asset_meta = {}
 
     for fullDocId_bytes, blob in cur:
         if not blob:
@@ -39,223 +79,244 @@ def parse_mcat(mcat_path: Path):
             t = data.get("type")
             doc_id = fullDocId_bytes.decode("utf-8")
 
-            if t == "album":
+            if t in ["album", "space_album"]:
                 name = data.get("name") or data.get("payload", {}).get("name")
                 parent = data.get("parent", {}).get("id")
+                subtype = data.get("subtype")
                 if name:
-                    albums[doc_id] = {
+                    nodes[doc_id] = {
                         "id": doc_id,
                         "name": name.strip(),
-                        "parent_id": parent
+                        "parent_id": parent,
+                        "is_folder": (subtype == "collection_set")
                     }
             elif t == "album_asset":
                 alb_id = data.get("album", {}).get("id")
                 ass_id = data.get("asset", {}).get("id")
                 if alb_id and ass_id:
-                    album_assets.append((alb_id, ass_id))
+                    album_assets[alb_id].add(ass_id)
             elif t == "asset":
                 import_src = data.get("importSource") or {}
                 fname = import_src.get("fileName")
                 fsize = import_src.get("fileSize")
                 if fname and fsize:
-                    asset_obj = {
-                        "id": doc_id,
-                        "filename": fname,
-                        "filesize": fsize,
-                        "capture_date": data.get("captureDate"),
-                        "width": import_src.get("originalWidth"),
-                        "height": import_src.get("originalHeight")
+                    assets_by_name_size[(fname.lower(), fsize)] = doc_id
+                    size_counts[fsize] += 1
+                    assets_by_size[fsize] = doc_id
+                    asset_meta[doc_id] = {
+                        "fn": fname,
+                        "s": fsize,
+                        "dt": data.get("captureDate") or "",
+                        "w": import_src.get("originalWidth") or 0,
+                        "h": import_src.get("originalHeight") or 0
                     }
-                    assets_by_name_size[(fname.lower(), fsize)] = asset_obj
-                    size_counts[fsize] = size_counts.get(fsize, 0) + 1
-                    assets_by_size[fsize] = asset_obj
         except Exception:
             pass
 
     conn.close()
 
-    # Filter unique sizes
-    unique_size_assets = {sz: obj for sz, obj in assets_by_size.items() if size_counts[sz] == 1}
+    unique_size_assets = {sz: aid for sz, aid in assets_by_size.items() if size_counts[sz] == 1}
 
-    # Map asset_id to set of album_ids
-    asset_to_albums = {}
-    for alb_id, ass_id in album_assets:
-        if ass_id not in asset_to_albums:
-            asset_to_albums[ass_id] = set()
-        asset_to_albums[ass_id].add(alb_id)
+    # Map children
+    children = defaultdict(list)
+    for n in nodes.values():
+        if n["parent_id"] and n["parent_id"] in nodes:
+            children[n["parent_id"]].append(n["id"])
 
-    print(f"Extracted {len(albums)} albums, {len(assets_by_name_size)} assets from Lightroom.")
-    return albums, assets_by_name_size, unique_size_assets, asset_to_albums
+    # Recursive total photo counts
+    def calc_photos(nid):
+        direct = len(album_assets.get(nid, set()))
+        sub = sum(calc_photos(cid) for cid in children[nid])
+        nodes[nid]["direct_count"] = direct
+        nodes[nid]["total_count"] = direct + sub
+        return direct + sub
+
+    roots = [n for n in nodes.values() if not n["parent_id"] or n["parent_id"] not in nodes]
+    for r in roots:
+        calc_photos(r["id"])
+
+    # Filter out empty nodes (0 total photos)
+    active_nodes = {nid: n for nid, n in nodes.items() if n.get("total_count", 0) > 0}
+    print(f"Extracted {len(active_nodes)} active albums/thematic folders.")
+
+    # Map each asset to its direct albums AND ancestor folders
+    asset_to_all_nodes = defaultdict(set)
+    for alb_id, asset_set in album_assets.items():
+        if alb_id not in active_nodes:
+            continue
+        ancestors = [alb_id]
+        curr = active_nodes[alb_id].get("parent_id")
+        while curr and curr in active_nodes:
+            ancestors.append(curr)
+            curr = active_nodes[curr].get("parent_id")
+
+        for ass_id in asset_set:
+            for anc in ancestors:
+                asset_to_all_nodes[ass_id].add(anc)
+
+    return active_nodes, assets_by_name_size, unique_size_assets, asset_meta, asset_to_all_nodes
 
 def clean_lr_filename(name: str) -> str:
-    # Handles Lightroom exported suffixes like __2022-05-15T13_14_59.664_.JPG
     return re.sub(r'__\d{4}-\d{2}-\d{2}T.*_(\.[a-zA-Z0-9]+)$', r'\1', name, flags=re.IGNORECASE)
 
-def extract_exif(path: Path) -> Dict[str, Any]:
-    meta = {
-        "width": None, "height": None, "capture_date": None,
-        "camera_make": None, "camera_model": None, "iso": None,
-        "focal_length": None, "aperture": None, "exposure_time": None
-    }
-    if path.suffix.lower() not in ['.jpg', '.jpeg', '.png', '.webp', '.tif', '.tiff']:
-        return meta
-    try:
-        with Image.open(path) as img:
-            meta["width"], meta["height"] = img.size
-            exif = img.getexif()
-            if exif:
-                # 271: Make, 272: Model
-                meta["camera_make"] = exif.get(271)
-                meta["camera_model"] = exif.get(272)
-                # 306: DateTime, 36867: DateTimeOriginal
-                date_str = exif.get(36867) or exif.get(306)
-                if date_str:
-                    meta["capture_date"] = str(date_str)
-    except Exception:
-        pass
-    return meta
-
 def run_indexing():
-    init_db()
-    
-    albums, assets_by_name_size, unique_size_assets, asset_to_albums = parse_mcat(MCAT_PATH)
-
     db = get_connection()
     cur = db.cursor()
 
-    print("\nInserting albums into database...")
-    for alb_id, alb_data in albums.items():
-        cur.execute("""
-        INSERT OR REPLACE INTO albums (id, name, parent_id, photo_count)
-        VALUES (?, ?, ?, 0);
-        """, (alb_id, alb_data["name"], alb_data["parent_id"]))
-    db.commit()
+    # Recreate tables with is_folder & counts
+    cur.executescript("""
+    DROP TABLE IF EXISTS photo_albums;
+    DROP TABLE IF EXISTS albums;
+    DROP TABLE IF EXISTS photos_fts;
+    DROP TABLE IF EXISTS photos;
 
-    print(f"\nScanning photos from {PHOTOS_DIR}...")
-    all_files = [f for f in PHOTOS_DIR.rglob("*") if f.is_file() and f.suffix.lower() != '.txt']
-    print(f"Found {len(all_files)} photos/videos to index.")
+    CREATE TABLE photos (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        filename TEXT NOT NULL,
+        rel_path TEXT NOT NULL UNIQUE,
+        year TEXT,
+        date_folder TEXT,
+        file_size INTEGER,
+        width INTEGER,
+        height INTEGER,
+        capture_date TEXT,
+        gdrive_file_id TEXT,
+        gdrive_url TEXT,
+        has_thumbnail INTEGER DEFAULT 0
+    );
 
-    photos_to_insert = []
-    photo_album_links = []
-    fts_entries = []
+    CREATE TABLE albums (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        parent_id TEXT,
+        is_folder INTEGER DEFAULT 0,
+        direct_count INTEGER DEFAULT 0,
+        total_count INTEGER DEFAULT 0
+    );
 
-    matched_lr = 0
+    CREATE TABLE photo_albums (
+        photo_id INTEGER NOT NULL,
+        album_id TEXT NOT NULL,
+        PRIMARY KEY (photo_id, album_id),
+        FOREIGN KEY (photo_id) REFERENCES photos(id) ON DELETE CASCADE,
+        FOREIGN KEY (album_id) REFERENCES albums(id) ON DELETE CASCADE
+    );
 
-    for idx, f in enumerate(all_files, start=1):
-        if idx % 5000 == 0:
-            print(f"Processing {idx}/{len(all_files)}...")
+    CREATE INDEX idx_photos_year ON photos(year);
+    CREATE INDEX idx_photos_date_folder ON photos(date_folder);
+    CREATE INDEX idx_photos_capture_date ON photos(capture_date);
+    CREATE INDEX idx_photo_albums_album ON photo_albums(album_id);
+    CREATE INDEX idx_albums_parent ON albums(parent_id);
 
-        rel_path = str(f.relative_to(PHOTOS_DIR)).replace('\\', '/')
-        parts = rel_path.split('/')
-        year = parts[0] if len(parts) > 0 else "unknown_date"
-        date_folder = parts[1] if len(parts) > 2 else (parts[0] if len(parts) == 2 else "")
-        fsize = f.stat().st_size
-        filename = f.name
-
-        clean_name = clean_lr_filename(filename)
-        
-        # Match against Lightroom asset
-        matched_asset = (
-            assets_by_name_size.get((filename.lower(), fsize)) or
-            assets_by_name_size.get((clean_name.lower(), fsize)) or
-            unique_size_assets.get(fsize)
-        )
-
-        width = None
-        height = None
-        capture_date = None
-        cam_make = None
-        cam_model = None
-        iso = None
-        focal_length = None
-        aperture = None
-        exposure_time = None
-
-        matched_album_ids = set()
-
-        if matched_asset:
-            matched_lr += 1
-            width = matched_asset.get("width")
-            height = matched_asset.get("height")
-            capture_date = matched_asset.get("capture_date")
-            matched_album_ids = asset_to_albums.get(matched_asset["id"], set())
-
-        # If width/height still missing, extract from file header quickly
-        if not width or not capture_date:
-            exif_meta = extract_exif(f)
-            width = width or exif_meta["width"]
-            height = height or exif_meta["height"]
-            capture_date = capture_date or exif_meta["capture_date"]
-            cam_make = exif_meta["camera_make"]
-            cam_model = exif_meta["camera_model"]
-
-        # Insert photo
-        cur.execute("""
-        INSERT OR REPLACE INTO photos (
-            filename, rel_path, year, date_folder, file_size,
-            width, height, capture_date, camera_make, camera_model,
-            iso, focal_length, aperture, exposure_time, gdrive_url
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (
-            filename, rel_path, year, date_folder, fsize,
-            width, height, str(capture_date) if capture_date else None,
-            cam_make, cam_model, iso, focal_length, aperture, exposure_time,
-            GDRIVE_BASE_FOLDER
-        ))
-        photo_id = cur.lastrowid
-
-        # Record photo album associations
-        album_names_list = []
-        for alb_id in matched_album_ids:
-            if alb_id in albums:
-                album_names_list.append(albums[alb_id]["name"])
-                photo_album_links.append((photo_id, alb_id))
-
-        # Record FTS entry
-        camera_str = f"{cam_make or ''} {cam_model or ''}".strip()
-        albums_str = " ".join(album_names_list)
-        fts_entries.append((photo_id, filename, year, date_folder, camera_str, albums_str))
-
-    print("\nCommitting photos...")
-    db.commit()
-
-    print(f"Linking {len(photo_album_links)} photo-album relationships...")
-    cur.executemany("""
-    INSERT OR IGNORE INTO photo_albums (photo_id, album_id) VALUES (?, ?);
-    """, photo_album_links)
-    db.commit()
-
-    print("Updating album photo counts...")
-    cur.execute("""
-    UPDATE albums SET photo_count = (
-        SELECT COUNT(*) FROM photo_albums WHERE photo_albums.album_id = albums.id
+    CREATE VIRTUAL TABLE photos_fts USING fts5(
+        photo_id UNINDEXED,
+        filename,
+        year,
+        date_folder,
+        albums
     );
     """)
     db.commit()
 
-    print("Populating Full-Text Search index...")
-    cur.executemany("""
-    INSERT INTO photos_fts (photo_id, filename, year, date_folder, camera, albums)
-    VALUES (?, ?, ?, ?, ?, ?);
-    """, fts_entries)
+    active_nodes, assets_by_name_size, unique_size_assets, asset_meta, asset_to_all_nodes = parse_mcat(MCAT_PATH)
+    drive_map = get_drive_file_ids()
+
+    print("\nInserting thematic folders and albums into database...")
+    for nid, n in active_nodes.items():
+        cur.execute("""
+        INSERT INTO albums (id, name, parent_id, is_folder, direct_count, total_count)
+        VALUES (?, ?, ?, ?, ?, ?);
+        """, (
+            nid,
+            n["name"],
+            n["parent_id"] if n["parent_id"] in active_nodes else None,
+            1 if n["is_folder"] else 0,
+            n.get("direct_count", 0),
+            n.get("total_count", 0)
+        ))
     db.commit()
 
-    # Summary
-    cur.execute("SELECT count(*) FROM photos;")
-    p_cnt = cur.fetchone()[0]
-    cur.execute("SELECT count(*) FROM albums WHERE photo_count > 0;")
-    active_albs = cur.fetchone()[0]
-    cur.execute("SELECT count(*) FROM photo_albums;")
-    links_cnt = cur.fetchone()[0]
+    print(f"\nScanning photos from {PHOTOS_DIR}...")
+    all_files = [f for f in PHOTOS_DIR.rglob("*") if f.is_file() and f.suffix.lower() != '.txt']
+    print(f"Found {len(all_files)} files to index.")
+
+    photo_album_links = []
+    fts_entries = []
+
+    matched_lr = 0
+    matched_drive = 0
+
+    for idx, f in enumerate(all_files, start=1):
+        rel_path = str(f.relative_to(PHOTOS_DIR)).replace('\\', '/')
+        clean_rel_path = rel_path.lower()
+        parts = rel_path.split('/')
+        year = parts[0] if len(parts) > 0 else "unknown_date"
+        date_folder = parts[1] if len(parts) > 2 else (parts[0] if len(parts) == 2 else "")
+        fsize = f.stat().st_size
+        fn = f.name
+
+        gid = drive_map.get(clean_rel_path)
+        if gid:
+            matched_drive += 1
+
+        c_name = clean_lr_filename(fn)
+        ass_id = (
+            assets_by_name_size.get((fn.lower(), fsize)) or
+            assets_by_name_size.get((c_name.lower(), fsize)) or
+            unique_size_assets.get(fsize)
+        )
+
+        dt = None
+        w = None
+        h = None
+        photo_nodes = set()
+
+        if ass_id and ass_id in asset_meta:
+            matched_lr += 1
+            dt = asset_meta[ass_id]["dt"]
+            w = asset_meta[ass_id]["w"]
+            h = asset_meta[ass_id]["h"]
+            photo_nodes = asset_to_all_nodes.get(ass_id, set())
+
+        file_gdrive_url = f"https://drive.google.com/file/d/{gid}/view" if gid else GDRIVE_BASE_FOLDER
+
+        cur.execute("""
+        INSERT INTO photos (
+            filename, rel_path, year, date_folder, file_size,
+            width, height, capture_date, gdrive_file_id, gdrive_url
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+        """, (
+            fn, rel_path, year, date_folder, fsize,
+            w, h, dt, gid, file_gdrive_url
+        ))
+        photo_id = cur.lastrowid
+
+        album_names = []
+        for nid in photo_nodes:
+            if nid in active_nodes:
+                album_names.append(active_nodes[nid]["name"])
+                photo_album_links.append((photo_id, nid))
+
+        fts_entries.append((photo_id, fn, year, date_folder, " ".join(album_names)))
+
+    print("Committing photos...")
+    db.commit()
+
+    print(f"Linking {len(photo_album_links)} photo-thematic album links...")
+    cur.executemany("INSERT OR IGNORE INTO photo_albums (photo_id, album_id) VALUES (?, ?);", photo_album_links)
+    db.commit()
+
+    print("Populating FTS index...")
+    cur.executemany("INSERT INTO photos_fts (photo_id, filename, year, date_folder, albums) VALUES (?, ?, ?, ?, ?);", fts_entries)
+    db.commit()
 
     db.close()
     print("\n" + "="*50)
     print("INDEXATION TERMINÉE AVEC SUCCÈS")
-    print("="*50)
-    print(f"Photos indexées : {p_cnt}")
-    print(f"Correspondances Lightroom : {matched_lr} ({matched_lr/p_cnt*100:.1f}%)")
-    print(f"Albums actifs avec photos : {active_albs}")
-    print(f"Liaisons Photos <-> Albums : {links_cnt}")
+    print(f"Photos indexées : {len(all_files)}")
+    print(f"Dossiers/Albums thématiques : {len(active_nodes)}")
+    print(f"Liaisons Photos <-> Thématiques : {len(photo_album_links)}")
+    print(f"Photos liées à Google Drive HD : {matched_drive}")
     print("="*50)
 
 if __name__ == "__main__":

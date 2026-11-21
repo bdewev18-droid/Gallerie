@@ -12,7 +12,7 @@ from typing import Optional, List
 from database import DB_PATH, get_connection
 from thumbnails import make_thumbnail, THUMBNAILS_DIR, PHOTOS_DIR
 
-app = FastAPI(title="Lightroom Gallery & Drive Explorer")
+app = FastAPI(title="Medias Familly")
 
 app.add_middleware(
     CORSMiddleware,
@@ -23,14 +23,35 @@ app.add_middleware(
 )
 
 FRONTEND_DIR = Path(r"d:\LRforIA\frontend")
+GDRIVE_DEFAULT_URL = "https://drive.google.com/drive/folders/1w_szSK4yKM_j0Trk8lT5Zcpcxae_0_iO"
 
-# 1. API: Navigation Tree (Years & Albums)
-@app.get("/api/navigation")
-def get_navigation():
+# 1. API: Thematic Tree (Folders and Albums)
+@app.get("/api/thematics")
+def get_thematics():
     with get_connection() as conn:
         cur = conn.cursor()
+        cur.execute("""
+        SELECT id, name, parent_id, is_folder, direct_count, total_count 
+        FROM albums 
+        ORDER BY is_folder DESC, name ASC;
+        """)
+        nodes = [dict(r) for r in cur.fetchall()]
         
-        # Years
+        cur.execute("SELECT COUNT(*) FROM photos;")
+        total_photos = cur.fetchone()[0]
+
+    return {
+        "title": "Medias Familly",
+        "total_photos": total_photos,
+        "nodes": nodes,
+        "gdrive_url": GDRIVE_DEFAULT_URL
+    }
+
+# 2. API: Years and sub-dates
+@app.get("/api/years")
+def get_years():
+    with get_connection() as conn:
+        cur = conn.cursor()
         cur.execute("""
         SELECT year, COUNT(*) as count 
         FROM photos 
@@ -38,28 +59,8 @@ def get_navigation():
         ORDER BY CASE WHEN year = 'unknown_date' THEN '9999' ELSE year END DESC;
         """)
         years = [{"year": r["year"], "count": r["count"]} for r in cur.fetchall()]
+    return {"years": years}
 
-        # Active Albums
-        cur.execute("""
-        SELECT id, name, parent_id, photo_count 
-        FROM albums 
-        WHERE photo_count > 0 
-        ORDER BY photo_count DESC;
-        """)
-        albums = [{"id": r["id"], "name": r["name"], "parent_id": r["parent_id"], "count": r["photo_count"]} for r in cur.fetchall()]
-
-        # Stats
-        cur.execute("SELECT COUNT(*) FROM photos;")
-        total_photos = cur.fetchone()[0]
-
-    return {
-        "total_photos": total_photos,
-        "years": years,
-        "albums": albums,
-        "gdrive_folder_url": "https://drive.google.com/drive/folders/1w_szSK4yKM_j0Trk8lT5Zcpcxae_0_iO"
-    }
-
-# 2. API: Sub-folders / dates for a specific year
 @app.get("/api/dates")
 def get_dates_for_year(year: str):
     with get_connection() as conn:
@@ -92,7 +93,6 @@ def list_photos(
         cur = conn.cursor()
 
         if q and q.strip():
-            # Use Full-Text Search
             clean_q = re_clean_query(q.strip())
             if clean_q:
                 where_clauses.append("p.id IN (SELECT photo_id FROM photos_fts WHERE photos_fts MATCH ?)")
@@ -119,7 +119,7 @@ def list_photos(
         # Fetch page
         query = f"""
         SELECT p.id, p.filename, p.rel_path, p.year, p.date_folder, p.file_size,
-               p.width, p.height, p.capture_date, p.camera_make, p.camera_model, p.gdrive_url
+               p.width, p.height, p.capture_date, p.gdrive_file_id, p.gdrive_url
         FROM photos p
         {where_sql}
         ORDER BY CASE WHEN p.capture_date IS NOT NULL THEN p.capture_date ELSE p.rel_path END DESC
@@ -130,6 +130,10 @@ def list_photos(
 
         items = []
         for r in rows:
+            drive_id = r["gdrive_file_id"]
+            direct_view_url = f"https://drive.google.com/file/d/{drive_id}/view" if drive_id else GDRIVE_DEFAULT_URL
+            drive_thumb = f"https://drive.google.com/thumbnail?id={drive_id}&sz=w400" if drive_id else None
+
             items.append({
                 "id": r["id"],
                 "filename": r["filename"],
@@ -140,9 +144,10 @@ def list_photos(
                 "width": r["width"],
                 "height": r["height"],
                 "capture_date": r["capture_date"],
-                "camera": f"{r['camera_make'] or ''} {r['camera_model'] or ''}".strip(),
+                "drive_id": drive_id,
                 "thumbnail_url": f"/api/thumbnail/{r['id']}",
-                "gdrive_url": r["gdrive_url"]
+                "drive_thumbnail_url": drive_thumb,
+                "gdrive_url": direct_view_url
             })
 
     return {
@@ -159,7 +164,7 @@ def re_clean_query(q: str) -> str:
         return ""
     return " ".join(f"{w}*" for w in words)
 
-# 4. API: Smart Preview Thumbnail (Instant or On-demand)
+# 4. API: Thumbnail (Local WebP Smart Preview)
 @app.get("/api/thumbnail/{photo_id}")
 def get_thumbnail(photo_id: int):
     thumb_path = THUMBNAILS_DIR / f"{photo_id}.webp"
@@ -170,7 +175,6 @@ def get_thumbnail(photo_id: int):
             headers={"Cache-Control": "public, max-age=31536000, immutable"}
         )
 
-    # Generate on the fly
     with get_connection() as conn:
         cur = conn.cursor()
         cur.execute("SELECT rel_path FROM photos WHERE id = ?", (photo_id,))
@@ -188,13 +192,12 @@ def get_thumbnail(photo_id: int):
             headers={"Cache-Control": "public, max-age=31536000, immutable"}
         )
 
-    # Return placeholder if video or generation failed
     placeholder = FRONTEND_DIR / "placeholder.svg"
     if placeholder.exists():
         return FileResponse(placeholder, media_type="image/svg+xml")
     return Response(status_code=404)
 
-# 5. API: Single Photo Details with its Albums
+# 5. API: Single Photo Details
 @app.get("/api/photos/{photo_id}")
 def get_photo_detail(photo_id: int):
     with get_connection() as conn:
@@ -204,14 +207,18 @@ def get_photo_detail(photo_id: int):
         if not p:
             raise HTTPException(status_code=404, detail="Photo not found")
 
-        # Get albums
         cur.execute("""
-        SELECT a.id, a.name 
+        SELECT a.id, a.name, a.is_folder 
         FROM albums a 
         JOIN photo_albums pa ON a.id = pa.album_id 
         WHERE pa.photo_id = ?
+        ORDER BY a.is_folder DESC, a.name ASC;
         """, (photo_id,))
-        albums = [{"id": r["id"], "name": r["name"]} for r in cur.fetchall()]
+        albums = [{"id": r["id"], "name": r["name"], "is_folder": bool(r["is_folder"])} for r in cur.fetchall()]
+
+    drive_id = p["gdrive_file_id"]
+    direct_view_url = f"https://drive.google.com/file/d/{drive_id}/view" if drive_id else GDRIVE_DEFAULT_URL
+    drive_thumb_large = f"https://drive.google.com/thumbnail?id={drive_id}&sz=w1200" if drive_id else None
 
     return {
         "id": p["id"],
@@ -223,14 +230,13 @@ def get_photo_detail(photo_id: int):
         "width": p["width"],
         "height": p["height"],
         "capture_date": p["capture_date"],
-        "camera_make": p["camera_make"],
-        "camera_model": p["camera_model"],
+        "drive_id": drive_id,
         "albums": albums,
         "thumbnail_url": f"/api/thumbnail/{p['id']}",
-        "gdrive_url": p["gdrive_url"]
+        "large_preview_url": drive_thumb_large,
+        "gdrive_url": direct_view_url
     }
 
-# Mount static frontend
 app.mount("/static", StaticFiles(directory=str(FRONTEND_DIR)), name="static")
 
 @app.get("/")

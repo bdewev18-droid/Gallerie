@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Lightroom Gallery & Drive</title>
+  <title>Medias Familly</title>
   <!-- Tailwind CSS CDN -->
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
@@ -26,7 +26,6 @@
   <!-- Lucide Icons -->
   <script src="https://unpkg.com/lucide@latest"></script>
   <style>
-    /* Custom scrollbar */
     ::-webkit-scrollbar { width: 6px; height: 6px; }
     ::-webkit-scrollbar-track { background: #0f172a; }
     ::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
@@ -38,21 +37,24 @@
 <body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col font-sans antialiased overflow-hidden">
 
   <!-- Top Navbar -->
-  <header class="h-16 border-b border-slate-800 bg-slate-900/80 backdrop-blur px-5 flex items-center justify-between shrink-0 z-20">
+  <header class="h-16 border-b border-slate-800 bg-slate-900/90 backdrop-blur px-5 flex items-center justify-between shrink-0 z-20">
     <div class="flex items-center gap-3">
-      <div class="w-9 h-9 rounded-lg bg-brand-500/20 text-brand-400 flex items-center justify-center font-bold">
+      <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-brand-600 to-sky-400 text-white flex items-center justify-center font-bold shadow-lg shadow-sky-500/20">
         <i data-lucide="camera" class="w-5 h-5"></i>
       </div>
       <div>
-        <h1 class="font-bold text-base leading-tight">Lightroom Gallery</h1>
-        <p class="text-xs text-slate-400"><span id="headerTotalPhotos">25 221</span> photos indexées</p>
+        <h1 class="font-extrabold text-base tracking-tight text-white flex items-center gap-2">
+          Medias Familly
+          <span class="text-[10px] uppercase font-mono px-2 py-0.5 rounded-full bg-brand-500/20 text-brand-400 border border-brand-500/30">HD</span>
+        </h1>
+        <p class="text-xs text-slate-400"><span id="headerTotalPhotos">25 221</span> photos & vidéos</p>
       </div>
     </div>
 
     <!-- Search Bar -->
     <div class="relative w-96 max-w-md hidden sm:block">
       <i data-lucide="search" class="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2"></i>
-      <input type="text" id="searchInput" placeholder="Rechercher (ex: Barcelone, Chloé, 2024, Canon...)"
+      <input type="text" id="searchInput" placeholder="Rechercher (ex: Barcelone, Chloé, 2024, Maroc...)"
         class="w-full bg-slate-800/80 border border-slate-700/80 rounded-full pl-9 pr-9 py-1.5 text-sm focus:outline-none focus:border-brand-500 text-slate-200 placeholder-slate-400 transition" />
       <button id="clearSearchBtn" class="hidden absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-200">
         <i data-lucide="x" class="w-4 h-4"></i>
@@ -69,21 +71,21 @@
     </div>
   </header>
 
-  <!-- Main Body Layout -->
+  <!-- Main Layout -->
   <div class="flex flex-1 overflow-hidden relative">
 
-    <!-- Left Sidebar: Explorer -->
-    <aside class="w-72 border-r border-slate-800 bg-slate-900 flex flex-col shrink-0">
+    <!-- Left Sidebar: Thematic Tree & Years -->
+    <aside class="w-80 border-r border-slate-800 bg-slate-900 flex flex-col shrink-0">
       
-      <!-- Tabs (Albums vs Années) -->
+      <!-- Tabs (Thématiques vs Années) -->
       <div class="flex border-b border-slate-800 p-1.5 bg-slate-950/40">
-        <button id="tabAlbumsBtn" class="flex-1 py-1.5 text-xs font-semibold rounded-md transition text-brand-400 bg-slate-800 flex items-center justify-center gap-1.5">
-          <i data-lucide="bookmark" class="w-3.5 h-3.5"></i>
-          <span>Albums (527)</span>
+        <button id="tabThematicsBtn" class="flex-1 py-1.5 text-xs font-semibold rounded-md transition text-brand-400 bg-slate-800 flex items-center justify-center gap-1.5">
+          <i data-lucide="folder-tree" class="w-3.5 h-3.5"></i>
+          <span>Thématiques</span>
         </button>
         <button id="tabYearsBtn" class="flex-1 py-1.5 text-xs font-medium rounded-md transition text-slate-400 hover:text-slate-200 flex items-center justify-center gap-1.5">
           <i data-lucide="calendar" class="w-3.5 h-3.5"></i>
-          <span>Années</span>
+          <span>Années & Dates</span>
         </button>
       </div>
 
@@ -96,10 +98,15 @@
     <!-- Main Gallery Canvas -->
     <main class="flex-1 flex flex-col overflow-hidden bg-slate-950">
 
+      <!-- Breadcrumbs Bar -->
+      <div id="breadcrumbBar" class="px-6 py-2.5 bg-slate-900/60 border-b border-slate-800/80 text-xs flex items-center gap-2 shrink-0 overflow-x-auto">
+        <!-- Breadcrumbs rendered by JS -->
+      </div>
+
       <!-- Gallery Toolbar -->
-      <div class="px-6 py-3 border-b border-slate-800/80 flex items-center justify-between bg-slate-900/40 shrink-0">
+      <div class="px-6 py-3 border-b border-slate-800/60 flex items-center justify-between bg-slate-900/30 shrink-0">
         <div class="flex items-center gap-3">
-          <h2 id="galleryTitle" class="text-lg font-bold text-white">Toutes les photos</h2>
+          <h2 id="galleryTitle" class="text-base font-bold text-white truncate max-w-md">Toutes les photos</h2>
           <span id="galleryCount" class="text-xs px-2.5 py-0.5 rounded-full bg-slate-800 text-slate-300 font-mono">0 photo</span>
           <span id="activeFilterBadge" class="hidden text-xs px-2.5 py-0.5 rounded-full bg-brand-500/20 text-brand-400 border border-brand-500/30 flex items-center gap-1">
             <span id="filterLabel">Filtre</span>
@@ -139,9 +146,9 @@
     
     <!-- Close & Actions -->
     <div class="absolute top-4 right-4 flex items-center gap-2 z-10">
-      <a id="lightboxDriveBtn" href="#" target="_blank" class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-medium text-brand-400 flex items-center gap-1.5">
+      <a id="lightboxDriveBtn" href="#" target="_blank" class="px-3.5 py-1.5 rounded-lg bg-sky-600 hover:bg-sky-500 text-white text-xs font-semibold flex items-center gap-1.5 shadow-lg transition">
         <i data-lucide="external-link" class="w-3.5 h-3.5"></i>
-        <span>Voir sur Drive HD</span>
+        <span>Ouvrir l'original HD sur Google Drive</span>
       </a>
       <button id="closeLightboxBtn" class="p-2 rounded-lg bg-slate-800/80 hover:bg-slate-700 text-slate-300">
         <i data-lucide="x" class="w-5 h-5"></i>
@@ -164,7 +171,7 @@
       <i data-lucide="chevron-right" class="w-6 h-6"></i>
     </button>
 
-    <!-- Metadata Panel (Collapsible) -->
+    <!-- Metadata Panel -->
     <div id="lightboxMetaPanel" class="w-72 bg-slate-900 border-l border-slate-800 h-full p-5 overflow-y-auto text-xs space-y-4">
       <h3 class="font-bold text-slate-200 text-sm">Informations</h3>
       
@@ -179,13 +186,13 @@
       </div>
 
       <div>
-        <p class="text-slate-500 uppercase tracking-wider text-[10px] font-semibold">Appareil</p>
-        <p id="metaCamera" class="text-slate-300 font-mono mt-0.5"></p>
+        <p class="text-slate-500 uppercase tracking-wider text-[10px] font-semibold">Dimensions & Poids</p>
+        <p id="metaDimSize" class="text-slate-300 font-mono mt-0.5"></p>
       </div>
 
       <div>
-        <p class="text-slate-500 uppercase tracking-wider text-[10px] font-semibold">Dimensions & Poids</p>
-        <p id="metaDimSize" class="text-slate-300 font-mono mt-0.5"></p>
+        <p class="text-slate-500 uppercase tracking-wider text-[10px] font-semibold">Statut Google Drive HD</p>
+        <p id="metaDriveStatus" class="font-mono mt-0.5"></p>
       </div>
 
       <div>
@@ -194,7 +201,7 @@
       </div>
 
       <div>
-        <p class="text-slate-500 uppercase tracking-wider text-[10px] font-semibold">Albums Lightroom</p>
+        <p class="text-slate-500 uppercase tracking-wider text-[10px] font-semibold">Dossiers & Thématiques</p>
         <div id="metaAlbums" class="flex flex-wrap gap-1 mt-1"></div>
       </div>
     </div>
