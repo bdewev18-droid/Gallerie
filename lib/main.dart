@@ -40,6 +40,7 @@ class PhotoItem {
   final int width;
   final int height;
   final int fileSize;
+  final String? driveId;
   final List<String> albums;
 
   PhotoItem({
@@ -51,6 +52,7 @@ class PhotoItem {
     required this.width,
     required this.height,
     required this.fileSize,
+    this.driveId,
     required this.albums,
   });
 
@@ -64,8 +66,24 @@ class PhotoItem {
       width: json['w'] as int? ?? 0,
       height: json['h'] as int? ?? 0,
       fileSize: json['s'] as int? ?? 0,
+      driveId: json['gid'] as String?,
       albums: (json['al'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [],
     );
+  }
+
+  String? get thumbnailUrl => driveId != null
+      ? 'https://drive.google.com/thumbnail?id=$driveId&sz=w400'
+      : null;
+
+  String? get largePreviewUrl => driveId != null
+      ? 'https://drive.google.com/thumbnail?id=$driveId&sz=w1200'
+      : null;
+
+  String getDriveViewUrl(String defaultFolderUrl) {
+    if (driveId != null) {
+      return 'https://drive.google.com/file/d/$driveId/view';
+    }
+    return defaultFolderUrl;
   }
 }
 
@@ -128,8 +146,6 @@ class _HomeScreenState extends State<HomeScreen> {
   List<YearItem> _years = [];
 
   int _currentIndex = 0;
-  
-  // Tree navigation state
   final List<AlbumNode> _navHistory = [];
   String _albumSearch = '';
   final TextEditingController _albumSearchController = TextEditingController();
@@ -156,7 +172,6 @@ class _HomeScreenState extends State<HomeScreen> {
         _childrenByParent.putIfAbsent(a.parentId, () => []).add(a);
       }
 
-      // Sort children alphabetically and folders first
       for (var list in _childrenByParent.values) {
         list.sort((a, b) {
           if (a.isFolder != b.isFolder) {
@@ -259,7 +274,6 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildAlbumsTab() {
-    // Current folder
     final currentParentId = _navHistory.isEmpty ? null : _navHistory.last.id;
     final currentChildren = _childrenByParent[currentParentId] ?? [];
 
@@ -354,7 +368,6 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ),
 
-        // Option to view all photos of current folder if inside a folder
         if (_navHistory.isNotEmpty && _navHistory.last.totalCount > 0 && _albumSearch.isEmpty)
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
@@ -388,7 +401,6 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ),
 
-        // List of folders and albums
         Expanded(
           child: ListView.builder(
             itemCount: filtered.length,
@@ -553,6 +565,8 @@ class PhotoGridScreen extends StatelessWidget {
             itemCount: photos.length,
             itemBuilder: (context, idx) {
               final photo = photos[idx];
+              final hasThumb = photo.thumbnailUrl != null;
+
               return InkWell(
                 borderRadius: BorderRadius.circular(8),
                 onTap: () => _openLightbox(context, photo),
@@ -566,16 +580,40 @@ class PhotoGridScreen extends StatelessWidget {
                   child: Stack(
                     fit: StackFit.expand,
                     children: [
-                      const Center(
-                        child: Icon(Icons.image_outlined, color: Colors.white24, size: 28),
-                      ),
+                      if (hasThumb)
+                        Image.network(
+                          photo.thumbnailUrl!,
+                          fit: BoxFit.cover,
+                          loadingBuilder: (context, child, loadingProgress) {
+                            if (loadingProgress == null) return child;
+                            return Container(
+                              color: const Color(0xFF1E293B),
+                              child: const Center(
+                                child: SizedBox(
+                                  width: 20,
+                                  height: 20,
+                                  child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF38BDF8)),
+                                ),
+                              ),
+                            );
+                          },
+                          errorBuilder: (context, error, stackTrace) {
+                            return const Center(
+                              child: Icon(Icons.image_outlined, color: Colors.white24, size: 28),
+                            );
+                          },
+                        )
+                      else
+                        const Center(
+                          child: Icon(Icons.cloud_upload_outlined, color: Colors.white24, size: 28),
+                        ),
                       Positioned(
                         bottom: 0,
                         left: 0,
                         right: 0,
                         child: Container(
-                          padding: const EdgeInsets.all(4),
-                          color: Colors.black.withValues(alpha: 0.6),
+                          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 3),
+                          color: Colors.black.withValues(alpha: 0.65),
                           child: Text(
                             photo.filename,
                             style: const TextStyle(fontSize: 9, color: Colors.white70),
@@ -610,10 +648,11 @@ class PhotoGridScreen extends StatelessWidget {
             .cast<String>()
             .toList();
         final sizeMo = (photo.fileSize / (1024 * 1024)).toStringAsFixed(1);
+        final fileViewUrl = photo.getDriveViewUrl(gdriveUrl);
 
         return DraggableScrollableSheet(
-          initialChildSize: 0.6,
-          maxChildSize: 0.9,
+          initialChildSize: 0.7,
+          maxChildSize: 0.95,
           minChildSize: 0.4,
           expand: false,
           builder: (context, scrollController) {
@@ -631,6 +670,29 @@ class PhotoGridScreen extends StatelessWidget {
                     ),
                   ),
                 ),
+                const SizedBox(height: 16),
+                if (photo.largePreviewUrl != null)
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(12),
+                    child: Container(
+                      constraints: const BoxConstraints(maxHeight: 260),
+                      color: Colors.black38,
+                      child: Image.network(
+                        photo.largePreviewUrl!,
+                        fit: BoxFit.contain,
+                        loadingBuilder: (ctx, child, progress) {
+                          if (progress == null) return child;
+                          return const Center(
+                            child: Padding(
+                              padding: EdgeInsets.all(32),
+                              child: CircularProgressIndicator(color: Color(0xFF38BDF8)),
+                            ),
+                          );
+                        },
+                        errorBuilder: (ctx, err, stack) => const SizedBox.shrink(),
+                      ),
+                    ),
+                  ),
                 const SizedBox(height: 16),
                 Text(photo.filename, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
                 const SizedBox(height: 8),
@@ -663,9 +725,9 @@ class PhotoGridScreen extends StatelessWidget {
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                   ),
                   icon: const Icon(Icons.cloud_download_outlined, size: 18),
-                  label: const Text("Ouvrir sur Google Drive HD"),
+                  label: Text(photo.driveId != null ? "Ouvrir l'original HD sur Google Drive" : "Ouvrir le dossier Google Drive"),
                   onPressed: () async {
-                    final uri = Uri.parse(gdriveUrl);
+                    final uri = Uri.parse(fileViewUrl);
                     if (await canLaunchUrl(uri)) {
                       await launchUrl(uri, mode: LaunchMode.externalApplication);
                     }

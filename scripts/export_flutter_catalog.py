@@ -5,6 +5,51 @@ import json
 from pathlib import Path
 from collections import defaultdict
 
+def get_drive_file_ids():
+    fs_base = Path(r"C:\Users\bdewe\AppData\Local\Google\DriveFS\118213793054156610633")
+    if not fs_base.exists():
+        print("DriveFS folder not found, skipping drive mapping.")
+        return {}
+
+    try:
+        conn_mirror = sqlite3.connect(f"file:{fs_base / 'mirror_sqlite.db'}?mode=ro", uri=True)
+        cur_m = conn_mirror.cursor()
+        cur_m.execute("SELECT local_stable_id, stable_id, parent_local_stable_id, local_filename, local_type FROM mirror_item;")
+        mirror_rows = cur_m.fetchall()
+        conn_mirror.close()
+
+        conn_meta = sqlite3.connect(f"file:{fs_base / 'mirror_metadata_sqlite.db'}?mode=ro", uri=True)
+        cur_meta = conn_meta.cursor()
+        cur_meta.execute("SELECT stable_id, id FROM items WHERE is_folder = 0;")
+        meta_rows = cur_meta.fetchall()
+        conn_meta.close()
+
+        stable_to_drive_id = {sid: drive_id for sid, drive_id in meta_rows}
+        item_map = {lid: (pid, fn, lt, sid) for lid, sid, pid, fn, lt in mirror_rows}
+
+        def get_rel_path(lid):
+            parts = []
+            curr = lid
+            while curr in item_map:
+                pid, fn, lt, sid = item_map[curr]
+                if fn == "PHOTOS":
+                    break
+                parts.append(fn)
+                curr = pid
+            return "/".join(reversed(parts))
+
+        drive_path_to_id = {}
+        for lid, (pid, fn, lt, sid) in item_map.items():
+            if lt != 0 and sid in stable_to_drive_id:
+                rel = get_rel_path(lid)
+                drive_path_to_id[rel.lower()] = stable_to_drive_id[sid]
+
+        print(f"Loaded {len(drive_path_to_id)} Drive file IDs from DriveFS.")
+        return drive_path_to_id
+    except Exception as e:
+        print(f"Error reading DriveFS: {e}")
+        return {}
+
 def export_hierarchical_catalog():
     mcat_path = Path(r"C:\Users\bdewe\OneDrive\Images\Lightroom\Lightroom Catalog Sync.lrdata\afb0cfb20b2a4bcb9b57d5ec165fc499\Managed Catalog.mcat")
     print(f"Reading Lightroom catalog: {mcat_path}")
@@ -21,11 +66,11 @@ def export_hierarchical_catalog():
     """)
 
     nodes = {}
-    album_assets = defaultdict(set) # album_id -> set of asset_ids
-    assets_by_name_size = {} # (fname.lower(), fsize) -> asset_id
-    assets_by_size = {} # fsize -> asset_id
+    album_assets = defaultdict(set)
+    assets_by_name_size = {}
+    assets_by_size = {}
     size_counts = defaultdict(int)
-    asset_meta = {} # asset_id -> dict
+    asset_meta = {}
 
     for fullDocId_bytes, blob in cur:
         if not blob:
@@ -91,17 +136,13 @@ def export_hierarchical_catalog():
     for r in roots:
         calc_photos(r["id"])
 
-    # Filter out empty nodes (0 photos anywhere in subtree)
     active_nodes = {nid: n for nid, n in nodes.items() if n.get("total_count", 0) > 0}
-    print(f"Active nodes with photos in tree: {len(active_nodes)} (out of {len(nodes)})")
+    print(f"Active nodes with photos in tree: {len(active_nodes)}")
 
-    # Map asset_id to all album_ids (including parent folders)
-    # So searching or clicking a parent folder can find its photos!
     asset_to_all_albums = defaultdict(set)
     for alb_id, asset_set in album_assets.items():
         if alb_id not in active_nodes:
             continue
-        # Find all ancestor folders
         ancestors = [alb_id]
         curr = active_nodes[alb_id].get("parent_id")
         while curr and curr in active_nodes:
@@ -111,6 +152,9 @@ def export_hierarchical_catalog():
         for ass_id in asset_set:
             for anc in ancestors:
                 asset_to_all_albums[ass_id].add(anc)
+
+    # Load Drive file IDs
+    drive_map = get_drive_file_ids()
 
     # Scan PHOTOS directory
     photos_dir = Path(r"D:\dowload chrome\PHOTOS")
@@ -123,14 +167,21 @@ def export_hierarchical_catalog():
     def clean_name(name):
         return re.sub(r'__\d{4}-\d{2}-\d{2}T.*_(\.[a-zA-Z0-9]+)$', r'\1', name, flags=re.IGNORECASE)
 
+    matched_drive = 0
     for idx, f in enumerate(all_files, start=1):
         rel_path = str(f.relative_to(photos_dir)).replace('\\', '/')
+        clean_rel_path = rel_path.lower()
         parts = rel_path.split('/')
         year = parts[0] if len(parts) > 0 else "unknown_date"
         date_folder = parts[1] if len(parts) > 2 else (parts[0] if len(parts) == 2 else "")
         fsize = f.stat().st_size
         fn = f.name
         years_count[year] += 1
+
+        # Match Drive File ID
+        gid = drive_map.get(clean_rel_path)
+        if gid:
+            matched_drive += 1
 
         # Match asset
         c_name = clean_name(fn)
@@ -151,7 +202,7 @@ def export_hierarchical_catalog():
             h = asset_meta[ass_id]["h"]
             albums_for_photo = list(asset_to_all_albums.get(ass_id, []))
 
-        photos.append({
+        photo_dict = {
             "id": idx,
             "fn": fn,
             "y": year,
@@ -161,7 +212,13 @@ def export_hierarchical_catalog():
             "h": h,
             "s": fsize,
             "al": albums_for_photo
-        })
+        }
+        if gid:
+            photo_dict["gid"] = gid
+
+        photos.append(photo_dict)
+
+    print(f"Photos linked with exact Google Drive File ID: {matched_drive} ({matched_drive/len(photos)*100:.1f}%)")
 
     years = [{"year": y, "count": cnt} for y, cnt in sorted(years_count.items(), key=lambda x: (x[0] == 'unknown_date', x[0]), reverse=True)]
 
@@ -190,8 +247,7 @@ def export_hierarchical_catalog():
     with open(json_path, "w", encoding="utf-8") as f:
         json.dump(catalog, f, ensure_ascii=False, separators=(',', ':'))
 
-    print(f"Hierarchical Catalog exported: {len(photos)} photos, {len(albums_list)} albums/folders.")
-    print(f"Catalog size: {json_path.stat().st_size / (1024**2):.2f} MB")
+    print(f"Catalog saved: {json_path.stat().st_size / (1024**2):.2f} MB")
 
 if __name__ == "__main__":
     export_hierarchical_catalog()
