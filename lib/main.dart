@@ -4,8 +4,8 @@ import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'services/app_update_service.dart';
 
-const int appBuildNumber = 3;
-const String appVersionLabel = "1.0.2";
+const int appBuildNumber = 4;
+const String appVersionLabel = "1.0.3";
 
 void main() {
   runApp(const GallerieApp());
