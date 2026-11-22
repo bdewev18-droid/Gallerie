@@ -448,8 +448,8 @@ class _WorldMapTabState extends State<WorldMapTab> {
     final shapes = _shapes;
     if (shapes == null) return;
 
-    final inverse = Matrix4.inverted(_transformController.value);
-    final scenePoint = MatrixUtils.transformPoint(inverse, details.localPosition);
+    // GestureDetector is inside InteractiveViewer, so localPosition is already in mapBoxSize coordinates.
+    final scenePoint = details.localPosition;
     final normPoint = Offset(
       (scenePoint.dx / mapBoxSize.width).clamp(0.0, 1.0),
       (scenePoint.dy / mapBoxSize.height).clamp(0.0, 1.0),
