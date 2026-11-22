@@ -427,6 +427,23 @@ class _WorldMapTabState extends State<WorldMapTab> {
     return inside;
   }
 
+  void _zoomToCanvasPoint(Offset scenePoint, Size mapBoxSize, double targetZoom) {
+    final zoom = targetZoom.clamp(1.0, 7.0);
+    final offsetX = (_lastViewportSize.width - mapBoxSize.width) / 2;
+    final offsetY = (_lastViewportSize.height - mapBoxSize.height) / 2;
+    final cx = offsetX + scenePoint.dx;
+    final cy = offsetY + scenePoint.dy;
+    final tx = _lastViewportSize.width / 2 - cx * zoom;
+    final ty = _lastViewportSize.height / 2 - cy * zoom;
+    final matrix = Matrix4.identity()
+      ..translate(
+        tx.clamp(-_lastViewportSize.width * (zoom - 1), 0.0),
+        ty.clamp(-_lastViewportSize.height * (zoom - 1), 0.0),
+      )
+      ..scale(zoom);
+    _transformController.value = matrix;
+  }
+
   void _handleMapTap(TapUpDetails details, Size mapBoxSize, Map<String, CountryVisitStats> visitedByIso) {
     final shapes = _shapes;
     if (shapes == null) return;
@@ -439,19 +456,34 @@ class _WorldMapTabState extends State<WorldMapTab> {
     );
 
     final currentScale = _transformController.value.getMaxScaleOnAxis();
-    final hitRadius = 0.025 / currentScale.clamp(1.0, 4.0);
-    _CountryGeoShape? bestBadgeHit;
-    double bestDist = double.infinity;
-    for (final s in shapes) {
-      if (!visitedByIso.containsKey(s.iso3)) continue;
-      final d = (s.centerNorm - normPoint).distance;
-      if (d <= hitRadius && d < bestDist) {
-        bestDist = d;
-        bestBadgeHit = s;
+    final clusters = _buildMapClusters(
+      shapes: shapes,
+      visitedByIso: visitedByIso,
+      canvasSize: mapBoxSize,
+      currentZoom: currentScale,
+    );
+
+    // 1. Check cluster/country badges first (generous mobile touch radius)
+    final tapRadiusCanvas = 26.0 / currentScale.clamp(1.0, 5.0);
+    _MapCluster? hitCluster;
+    double bestClusterDist = double.infinity;
+    for (final cl in clusters) {
+      final d = (cl.centerCanvas - scenePoint).distance;
+      if (d <= tapRadiusCanvas && d < bestClusterDist) {
+        bestClusterDist = d;
+        hitCluster = cl;
       }
     }
-    if (bestBadgeHit != null) {
-      _openCountryDetails(visitedByIso[bestBadgeHit.iso3]!);
+    if (hitCluster != null) {
+      if (hitCluster.continentName != null) {
+        _focusContinent(hitCluster.continentName!, _lastViewportSize);
+        return;
+      }
+      if (hitCluster.countries.length > 1) {
+        _zoomToCanvasPoint(hitCluster.centerCanvas, mapBoxSize, math.max(currentScale * 1.85, 3.0));
+        return;
+      }
+      _openCountryDetails(hitCluster.countries.first);
       return;
     }
 
@@ -922,9 +954,11 @@ class _WorldMapTabState extends State<WorldMapTab> {
                       ),
                       const SizedBox(width: 6),
                       Text(
-                        _currentZoom < 1.8 && isCompact
-                            ? 'Zoomez ou choisissez un continent'
-                            : 'Pays visités (cliquer pour détails)',
+                        _currentZoom < 1.55
+                            ? 'Vue Continents · Touchez un compteur pour zoomer'
+                            : (_currentZoom < 2.8
+                                ? 'Vue Régions · Zoomez pour diviser les groupes'
+                                : 'Pays visités · Touchez un pays pour les détails'),
                         style: const TextStyle(fontSize: 11, color: Colors.white70),
                       ),
                     ],
@@ -1423,6 +1457,117 @@ class _CountryDetailSheetState extends State<_CountryDetailSheet> {
   }
 }
 
+class _MapCluster {
+  final Offset centerCanvas;
+  final List<CountryVisitStats> countries;
+  final int totalMedia;
+  final String? continentName;
+
+  const _MapCluster({
+    required this.centerCanvas,
+    required this.countries,
+    required this.totalMedia,
+    this.continentName,
+  });
+}
+
+Offset _continentNormCenter(String continent) {
+  switch (continent) {
+    case 'Europe':
+      return _WorldMapTabState._project(12, 50);
+    case 'Afrique':
+      return _WorldMapTabState._project(18, 6);
+    case 'Amériques':
+      return _WorldMapTabState._project(-68, -4);
+    case 'Asie':
+      return _WorldMapTabState._project(88, 34);
+    case 'Océanie':
+      return _WorldMapTabState._project(138, -24);
+    default:
+      return const Offset(0.5, 0.5);
+  }
+}
+
+List<_MapCluster> _buildMapClusters({
+  required List<_CountryGeoShape> shapes,
+  required Map<String, CountryVisitStats> visitedByIso,
+  required Size canvasSize,
+  required double currentZoom,
+}) {
+  // Level 1: Continent-level cumulative counters when zoomed out
+  if (currentZoom < 1.55) {
+    final Map<String, List<CountryVisitStats>> byContinent = {};
+    for (final c in visitedByIso.values) {
+      byContinent.putIfAbsent(c.meta.continent, () => []).add(c);
+    }
+    return byContinent.entries.map((entry) {
+      final norm = _continentNormCenter(entry.key);
+      final total = entry.value.fold<int>(0, (acc, c) => acc + c.totalMedia);
+      return _MapCluster(
+        centerCanvas: Offset(norm.dx * canvasSize.width, norm.dy * canvasSize.height),
+        countries: entry.value,
+        totalMedia: total,
+        continentName: entry.key,
+      );
+    }).toList();
+  }
+
+  // Gather individual country positions sorted by media count descending
+  final visitedShapes = shapes.where((s) => visitedByIso.containsKey(s.iso3)).toList()
+    ..sort((a, b) => visitedByIso[b.iso3]!.totalMedia.compareTo(visitedByIso[a.iso3]!.totalMedia));
+
+  // Level 3: Individual country counters when zoomed in >= 2.8x
+  if (currentZoom >= 2.8) {
+    return visitedShapes.map((s) {
+      final stats = visitedByIso[s.iso3]!;
+      return _MapCluster(
+        centerCanvas: Offset(s.centerNorm.dx * canvasSize.width, s.centerNorm.dy * canvasSize.height),
+        countries: [stats],
+        totalMedia: stats.totalMedia,
+      );
+    }).toList();
+  }
+
+  // Level 2: Dynamic spatial clustering between 1.55x and 2.8x — nearby countries merge & sum!
+  final mergeRadiusCanvas = (canvasSize.width < 550 ? 32.0 : 28.0) / currentZoom;
+  final clusters = <({Offset sumPos, List<CountryVisitStats> list, int total})>[];
+
+  for (final s in visitedShapes) {
+    final stats = visitedByIso[s.iso3]!;
+    final pos = Offset(s.centerNorm.dx * canvasSize.width, s.centerNorm.dy * canvasSize.height);
+    int targetIdx = -1;
+    double bestDist = double.infinity;
+    for (int i = 0; i < clusters.length; i++) {
+      final clCenter = clusters[i].sumPos / clusters[i].list.length.toDouble();
+      final d = (clCenter - pos).distance;
+      if (d <= mergeRadiusCanvas && d < bestDist) {
+        bestDist = d;
+        targetIdx = i;
+      }
+    }
+    if (targetIdx == -1) {
+      clusters.add((sumPos: pos, list: [stats], total: stats.totalMedia));
+    } else {
+      final prev = clusters[targetIdx];
+      clusters[targetIdx] = (
+        sumPos: prev.sumPos + pos,
+        list: [...prev.list, stats],
+        total: prev.total + stats.totalMedia,
+      );
+    }
+  }
+
+  return clusters
+      .map(
+        (cl) => _MapCluster(
+          centerCanvas: cl.sumPos / cl.list.length.toDouble(),
+          countries: cl.list,
+          totalMedia: cl.total,
+        ),
+      )
+      .toList();
+}
+
 class _WorldMapPainter extends CustomPainter {
   final List<_CountryGeoShape> shapes;
   final Map<String, CountryVisitStats> visitedByIso;
@@ -1491,45 +1636,43 @@ class _WorldMapPainter extends CustomPainter {
       canvas.drawPath(path, visitedStroke);
     }
 
-    // Draw badges sorted by highest media count first so major countries get priority,
-    // and replace overlapping pills with clean glowing dots until zoomed in!
-    final visitedShapes = shapes.where((s) => visitedByIso.containsKey(s.iso3)).toList()
-      ..sort((a, b) => visitedByIso[b.iso3]!.totalMedia.compareTo(visitedByIso[a.iso3]!.totalMedia));
+    final clusters = _buildMapClusters(
+      shapes: shapes,
+      visitedByIso: visitedByIso,
+      canvasSize: size,
+      currentZoom: currentZoom,
+    );
 
     final invScale = 1.0 / math.sqrt(currentZoom.clamp(1.0, 6.0));
-    final minSpacing = (size.width < 550 ? 22.0 : 18.0) / currentZoom.clamp(1.0, 5.0);
-    final placedCenters = <Offset>[];
-
-    final badgeBg = Paint()..color = const Color(0xFF0B1120).withOpacity(0.92);
-    final badgeBorder = Paint()
+    final singleBg = Paint()..color = const Color(0xFF0B1120).withOpacity(0.92);
+    final singleBorder = Paint()
       ..color = const Color(0xFF38BDF8)
       ..style = PaintingStyle.stroke
       ..strokeWidth = 0.9 * invScale;
-    final dotFill = Paint()..color = const Color(0xFF38BDF8);
-    final dotBorder = Paint()
-      ..color = Colors.white
+
+    final clusterBg = Paint()..color = const Color(0xFF0369A1).withOpacity(0.96);
+    final clusterRing = Paint()
+      ..color = const Color(0xFF38BDF8).withOpacity(0.35)
+      ..style = PaintingStyle.fill;
+    final clusterBorder = Paint()
+      ..color = const Color(0xFFBAE6FD)
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 0.8 * invScale;
+      ..strokeWidth = 1.1 * invScale;
 
-    for (final s in visitedShapes) {
-      final stats = visitedByIso[s.iso3]!;
-      final c = Offset(s.centerNorm.dx * size.width, s.centerNorm.dy * size.height);
-      final overlaps = placedCenters.any((prev) => (prev - c).distance < minSpacing);
+    for (final cl in clusters) {
+      final c = cl.centerCanvas;
+      final isCluster = cl.continentName != null || cl.countries.length > 1;
+      final label = cl.continentName != null
+          ? '${cl.continentName} (${cl.countries.length}) · ${cl.totalMedia}'
+          : (cl.countries.length > 1
+              ? '${cl.countries.length} pays · ${cl.totalMedia}'
+              : '${cl.totalMedia}');
 
-      if (overlaps) {
-        final dotR = 2.8 * invScale;
-        canvas.drawCircle(c, dotR, dotFill);
-        canvas.drawCircle(c, dotR, dotBorder);
-        continue;
-      }
-
-      placedCenters.add(c);
-      final label = '${stats.totalMedia}';
       final tp = TextPainter(
         text: TextSpan(
           text: label,
           style: TextStyle(
-            fontSize: 7.8 * invScale,
+            fontSize: (isCluster ? 8.2 : 7.8) * invScale,
             fontWeight: FontWeight.w700,
             color: Colors.white,
           ),
@@ -1537,14 +1680,25 @@ class _WorldMapPainter extends CustomPainter {
         textDirection: TextDirection.ltr,
       )..layout();
 
-      final pillW = math.max(14.0 * invScale, tp.width + 6.5 * invScale);
-      final pillH = 11.0 * invScale;
+      final pillW = math.max((isCluster ? 22.0 : 14.0) * invScale, tp.width + 8.0 * invScale);
+      final pillH = (isCluster ? 14.0 : 11.0) * invScale;
       final rect = RRect.fromRectAndRadius(
         Rect.fromCenter(center: c, width: pillW, height: pillH),
-        Radius.circular(5.5 * invScale),
+        Radius.circular(7.0 * invScale),
       );
-      canvas.drawRRect(rect, badgeBg);
-      canvas.drawRRect(rect, badgeBorder);
+
+      if (isCluster) {
+        final outerRect = RRect.fromRectAndRadius(
+          Rect.fromCenter(center: c, width: pillW + 4.0 * invScale, height: pillH + 4.0 * invScale),
+          Radius.circular(9.0 * invScale),
+        );
+        canvas.drawRRect(outerRect, clusterRing);
+        canvas.drawRRect(rect, clusterBg);
+        canvas.drawRRect(rect, clusterBorder);
+      } else {
+        canvas.drawRRect(rect, singleBg);
+        canvas.drawRRect(rect, singleBorder);
+      }
       tp.paint(canvas, Offset(c.dx - tp.width / 2, c.dy - tp.height / 2));
     }
   }
