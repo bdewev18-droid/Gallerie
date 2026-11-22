@@ -7,8 +7,8 @@ import 'services/app_update_service.dart';
 import 'services/cloud_sync_service.dart';
 import 'widgets/world_map_tab.dart';
 
-const int appBuildNumber = 9;
-const String appVersionLabel = "1.0.8";
+const int appBuildNumber = 10;
+const String appVersionLabel = "1.0.9";
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -193,11 +193,13 @@ class _HomeScreenState extends State<HomeScreen> {
   final Map<int, List<PhotoLikeRecord>> _likesByPhotoId = {};
   final Set<String> _customAlbumIds = {};
   final Set<String> _deletedAlbumIds = {};
+  final Map<String, String> _albumCountryIsoById = {};
 
   static const String _kPhotosWrapperId = '6cda9b888a514233bc7edbe3753a3c4a';
   static const String _kYearsRootId = '11335cb33a134da79410f393dc77c9b2';
   static const String _kYear2026Id = '8a27a7356de54a4fa7aae6fdea783597';
   static const String _kPaysFolderId = '2956c2bdbaf04c7984849dbacdb605ab';
+  static const String _kCountryMetaParentId = '__country_meta__';
   AuthUserSession _auth = CloudSyncService.currentAuth;
   StreamSubscription<AuthUserSession>? _authSub;
 
@@ -666,8 +668,17 @@ class _HomeScreenState extends State<HomeScreen> {
       if (!mounted) return;
       _cloudTableReady = delta.tableReady;
 
-      // 1. Appliquer les nouveaux dossiers & albums (ainsi que déplacements et suppressions)
+      // 1. Appliquer les nouveaux dossiers & albums (ainsi que déplacements, suppressions et pays assignés)
       for (final ca in delta.customAlbums) {
+        if (ca.parentId == _kCountryMetaParentId || ca.id.startsWith('__country__')) {
+          final targetAlbumId = ca.id.startsWith('__country__') ? ca.id.substring('__country__'.length) : ca.id;
+          if (ca.isDeleted || ca.name.trim().isEmpty) {
+            _albumCountryIsoById.remove(targetAlbumId);
+          } else {
+            _albumCountryIsoById[targetAlbumId] = ca.name.trim();
+          }
+          continue;
+        }
         if (ca.isDeleted) {
           _deletedAlbumIds.add(ca.id);
           _nodesById.remove(ca.id);
@@ -1023,7 +1034,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     icon: Icons.folder_outlined,
                     selectedIcon: Icons.folder,
                     label: "Thématiques",
-                    badge: "${(_childrenByParent[null] ?? const []).length}",
+                    badge: "${_countPhotosInTree(yearsTree: false)}",
                   ),
                   _buildDesktopNavItem(
                     index: 3,
@@ -1031,7 +1042,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     icon: Icons.calendar_today_outlined,
                     selectedIcon: Icons.calendar_today,
                     label: "Années",
-                    badge: "${(_childrenByParent[_kYearsRootId] ?? const []).length}",
+                    badge: "${_countPhotosInTree(yearsTree: true)}",
                   ),
                   _buildDesktopNavItem(
                     index: 4,
@@ -1362,6 +1373,186 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  int _countPhotosInTree({required bool yearsTree}) {
+    final targetAlbumIds = <String>{};
+    for (final node in _nodesById.values) {
+      if (node.id == _kYearsRootId) continue;
+      if (_isInsideYearsTree(node.id) == yearsTree) {
+        targetAlbumIds.add(node.id);
+      }
+    }
+    int count = 0;
+    for (final p in _photosOnly) {
+      if (p.albums.any((a) => targetAlbumIds.contains(a))) {
+        count++;
+      }
+    }
+    return count;
+  }
+
+  String? _getEffectiveCountryIsoForNode(String nodeId) {
+    String? cur = nodeId;
+    final visited = <String>{};
+    while (cur != null && visited.add(cur)) {
+      if (_albumCountryIsoById.containsKey(cur)) {
+        return _albumCountryIsoById[cur];
+      }
+      cur = _nodesById[cur]?.parentId;
+    }
+    if (_isInsideYearsTree(nodeId)) {
+      return 'FRA';
+    }
+    return null;
+  }
+
+  Future<void> _showAssignCountryToAlbumDialog(AlbumNode node) async {
+    final searchCtrl = TextEditingController();
+    String query = '';
+    final sortedCountries = List<WorldCountryMeta>.from(kWorldCountries)
+      ..sort((a, b) => a.nameFr.toLowerCase().compareTo(b.nameFr.toLowerCase()));
+    final usedIsos = _computeVisitedCountryStats().map((c) => c.meta.iso3).toSet();
+    final currentIso = _getEffectiveCountryIsoForNode(node.id);
+
+    await showDialog<void>(
+      context: context,
+      builder: (dialogCtx) => StatefulBuilder(
+        builder: (ctx, setDialogState) {
+          final normQ = normalizeCountryKey(query);
+          final filtered = normQ.isEmpty
+              ? sortedCountries
+              : sortedCountries
+                  .where((c) => normalizeCountryKey(c.nameFr).contains(normQ))
+                  .toList();
+          return AlertDialog(
+            backgroundColor: const Color(0xFF0F172A),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+              side: const BorderSide(color: Colors.white12),
+            ),
+            title: Row(
+              children: [
+                const Icon(Icons.public_rounded, color: Color(0xFF38BDF8), size: 22),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    'Pays pour "${node.name}"',
+                    style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Colors.white),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+            content: SizedBox(
+              width: 400,
+              height: 400,
+              child: Column(
+                children: [
+                  TextField(
+                    controller: searchCtrl,
+                    autofocus: true,
+                    decoration: InputDecoration(
+                      hintText: 'Rechercher un pays...',
+                      prefixIcon: const Icon(Icons.search, size: 18),
+                      filled: true,
+                      fillColor: const Color(0xFF1E293B),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10),
+                        borderSide: BorderSide.none,
+                      ),
+                      isDense: true,
+                    ),
+                    onChanged: (v) => setDialogState(() => query = v),
+                  ),
+                  const SizedBox(height: 10),
+                  Expanded(
+                    child: ListView.builder(
+                      itemCount: filtered.length,
+                      itemBuilder: (_, idx) {
+                        final c = filtered[idx];
+                        final isSelected = c.iso3 == currentIso;
+                        final isUsed = usedIsos.contains(c.iso3);
+                        return ListTile(
+                          dense: true,
+                          selected: isSelected,
+                          selectedTileColor: const Color(0xFF0EA5E9).withOpacity(0.18),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                          leading: Text(c.flag, style: const TextStyle(fontSize: 22)),
+                          title: Text(
+                            c.nameFr,
+                            style: TextStyle(
+                              fontSize: 13.5,
+                              fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                              color: Colors.white,
+                            ),
+                          ),
+                          subtitle: Text(
+                            '${c.continent} · ${c.capital}',
+                            style: const TextStyle(fontSize: 11, color: Colors.white54),
+                          ),
+                          trailing: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              if (isUsed)
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFF0EA5E9).withOpacity(0.2),
+                                    borderRadius: BorderRadius.circular(6),
+                                  ),
+                                  child: const Text(
+                                    'Visité',
+                                    style: TextStyle(fontSize: 10, color: Color(0xFF7DD3FC)),
+                                  ),
+                                ),
+                              if (isSelected) ...[
+                                const SizedBox(width: 6),
+                                const Icon(Icons.check_circle, color: Color(0xFF38BDF8), size: 18),
+                              ],
+                            ],
+                          ),
+                          onTap: () async {
+                            Navigator.of(dialogCtx).pop();
+                            setState(() {
+                              _albumCountryIsoById[node.id] = c.iso3;
+                            });
+                            final ok = await CloudSyncService.createCustomAlbum(
+                              id: '__country__${node.id}',
+                              name: c.iso3,
+                              parentId: _kCountryMetaParentId,
+                              isFolder: false,
+                            );
+                            if (!mounted) return;
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                backgroundColor: const Color(0xFF0F172A),
+                                content: Text(
+                                  ok
+                                      ? '✔ "${node.name}" associé à ${c.flag} ${c.nameFr} sur la carte !'
+                                      : '⚠ Associé localement à ${c.flag} ${c.nameFr}.',
+                                  style: const TextStyle(color: Colors.white, fontSize: 12),
+                                ),
+                              ),
+                            );
+                          },
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(dialogCtx).pop(),
+                child: const Text("Fermer", style: TextStyle(color: Colors.white54)),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
   // --- LA CARTE: World Map Tab ---
   String? _extractDateHint(String name) {
     final mY = RegExp(r'\b(19\d{2}|20\d{2})\b').firstMatch(name);
@@ -1369,25 +1560,73 @@ class _HomeScreenState extends State<HomeScreen> {
     return mMY?.group(1) ?? mY?.group(1);
   }
 
+  DateTime? _parseMediaDate(PhotoItem m) {
+    if (m.captureDate.isNotEmpty) {
+      final dt = DateTime.tryParse(m.captureDate);
+      if (dt != null) return dt;
+    }
+    if (m.dateFolder.isNotEmpty) {
+      final dt = DateTime.tryParse(m.dateFolder);
+      if (dt != null) return dt;
+    }
+    return null;
+  }
+
+  String _fmtFrDate(DateTime d) {
+    final dd = d.day.toString().padLeft(2, '0');
+    final mm = d.month.toString().padLeft(2, '0');
+    return '$dd/$mm/${d.year}';
+  }
+
+  List<String> _computeTravelDateRanges(Iterable<PhotoItem> media) {
+    final Map<int, List<DateTime>> byYear = {};
+    for (final m in media) {
+      final dt = _parseMediaDate(m);
+      if (dt != null && dt.year >= 1980 && dt.year <= 2035) {
+        byYear.putIfAbsent(dt.year, () => []).add(dt);
+      }
+    }
+    if (byYear.isEmpty) return const [];
+    final years = byYear.keys.toList()..sort((a, b) => b.compareTo(a));
+    final ranges = <String>[];
+    for (final y in years.take(6)) {
+      final list = byYear[y]!..sort();
+      final first = list.first;
+      final last = list.last;
+      if (first.year == last.year && first.month == last.month && first.day == last.day) {
+        ranges.add(_fmtFrDate(first));
+      } else {
+        ranges.add('Du ${_fmtFrDate(first)} au ${_fmtFrDate(last)}');
+      }
+    }
+    return ranges;
+  }
+
   List<CountryVisitStats> _computeVisitedCountryStats() {
     final Map<String, Set<int>> photoIdsByIso = {};
     final Map<String, Set<int>> videoIdsByIso = {};
     final Map<String, List<CountryAlbumSummary>> albumsByIso = {};
+    final Map<String, List<CountrySlideshowPhoto>> slidesByIso = {};
+    final Map<String, Set<int>> slideSeenIds = {};
+    final Map<String, Set<String>> addedAlbumIdsByIso = {};
+    final Map<int, PhotoItem> mediaById = {for (final m in _allPhotos) m.id: m};
 
     void ensureIso(String iso) {
       photoIdsByIso.putIfAbsent(iso, () => <int>{});
       videoIdsByIso.putIfAbsent(iso, () => <int>{});
       albumsByIso.putIfAbsent(iso, () => <CountryAlbumSummary>[]);
+      slidesByIso.putIfAbsent(iso, () => <CountrySlideshowPhoto>[]);
+      slideSeenIds.putIfAbsent(iso, () => <int>{});
+      addedAlbumIdsByIso.putIfAbsent(iso, () => <String>{});
     }
 
-    // 1. Scan all direct children of "02 - Pays" (_kPaysFolderId)
+    // 1. Scan all direct children of "02 - Pays" (_kPaysFolderId) -> populates slideshowPhotos too!
     final paysChildren = _childrenByParent[_kPaysFolderId] ?? const <AlbumNode>[];
     for (final child in paysChildren) {
       final meta = matchCountryMeta(child.name);
       if (meta == null) continue;
       ensureIso(meta.iso3);
 
-      // Gather descendant albums (or self if album)
       final descendantIds = _getAllDescendantAlbumIds(child.id);
       for (final m in _allPhotos) {
         if (m.albums.any((a) => descendantIds.contains(a))) {
@@ -1395,14 +1634,27 @@ class _HomeScreenState extends State<HomeScreen> {
             videoIdsByIso[meta.iso3]!.add(m.id);
           } else {
             photoIdsByIso[meta.iso3]!.add(m.id);
+            if ((m.largePreviewUrl ?? m.thumbnailUrl) != null &&
+                slideSeenIds[meta.iso3]!.add(m.id) &&
+                slidesByIso[meta.iso3]!.length < 30) {
+              slidesByIso[meta.iso3]!.add(
+                CountrySlideshowPhoto(
+                  id: m.id,
+                  filename: m.filename,
+                  thumbnailUrl: m.thumbnailUrl,
+                  largePreviewUrl: m.largePreviewUrl,
+                  captureDate: m.captureDate,
+                ),
+              );
+            }
           }
         }
       }
 
-      // List sub-albums (if folder has sub-items) or the country node itself
       final subNodes = child.isFolder ? (_childrenByParent[child.id] ?? const <AlbumNode>[]) : const <AlbumNode>[];
       final nodesToList = subNodes.isNotEmpty ? subNodes : [child];
       for (final node in nodesToList) {
+        if (!addedAlbumIdsByIso[meta.iso3]!.add(node.id)) continue;
         final targetIds = node.isFolder ? _getAllDescendantAlbumIds(node.id) : {node.id};
         int pCount = 0;
         int vCount = 0;
@@ -1420,6 +1672,7 @@ class _HomeScreenState extends State<HomeScreen> {
             albumId: node.id,
             name: node.name,
             dateHint: _extractDateHint(node.name),
+            sourceLabel: 'Pays',
             photoCount: pCount,
             videoCount: vCount,
             isFolder: node.isFolder,
@@ -1428,7 +1681,58 @@ class _HomeScreenState extends State<HomeScreen> {
       }
     }
 
-    // 2. Also include photo/video `country` metadata without double counting
+    // 2. Scan all Années albums (default FRA, or overridden via _albumCountryIsoById)
+    //    plus any Thématiques album with an explicit _albumCountryIsoById override
+    final Map<String, List<PhotoItem>> photosByAlbumId = {};
+    for (final m in _allPhotos) {
+      for (final aId in m.albums) {
+        photosByAlbumId.putIfAbsent(aId, () => []).add(m);
+      }
+    }
+
+    for (final node in _nodesById.values) {
+      if (node.id == _kYearsRootId) continue;
+      final inYears = _isInsideYearsTree(node.id);
+      final hasExplicit = _albumCountryIsoById.containsKey(node.id);
+      if (!inYears && !hasExplicit) continue;
+      // In Années, list leaf albums (or folders with direct photos) so we don't duplicate parent year folders
+      final directMedia = photosByAlbumId[node.id] ?? const <PhotoItem>[];
+      if (node.isFolder && directMedia.isEmpty && !hasExplicit) continue;
+
+      final iso = _getEffectiveCountryIsoForNode(node.id);
+      if (iso == null || !kCountriesByIso.containsKey(iso)) continue;
+      ensureIso(iso);
+
+      final targetIds = node.isFolder ? _getAllDescendantAlbumIds(node.id) : {node.id};
+      int pCount = 0;
+      int vCount = 0;
+      for (final aId in targetIds) {
+        for (final m in (photosByAlbumId[aId] ?? const <PhotoItem>[])) {
+          if (m.isVideo) {
+            vCount++;
+            videoIdsByIso[iso]!.add(m.id);
+          } else {
+            pCount++;
+            photoIdsByIso[iso]!.add(m.id);
+          }
+        }
+      }
+      if ((pCount > 0 || vCount > 0) && addedAlbumIdsByIso[iso]!.add(node.id)) {
+        albumsByIso[iso]!.add(
+          CountryAlbumSummary(
+            albumId: node.id,
+            name: node.name,
+            dateHint: _extractDateHint(node.name),
+            sourceLabel: inYears ? 'Années' : 'Thématiques',
+            photoCount: pCount,
+            videoCount: vCount,
+            isFolder: node.isFolder,
+          ),
+        );
+      }
+    }
+
+    // 3. Also include photo/video `country` metadata without double counting
     for (final m in _allPhotos) {
       final rawCountry = m.country?.trim();
       if (rawCountry == null || rawCountry.isEmpty) continue;
@@ -1439,6 +1743,19 @@ class _HomeScreenState extends State<HomeScreen> {
         videoIdsByIso[meta.iso3]!.add(m.id);
       } else {
         photoIdsByIso[meta.iso3]!.add(m.id);
+        if (slidesByIso[meta.iso3]!.length < 15 &&
+            (m.largePreviewUrl ?? m.thumbnailUrl) != null &&
+            slideSeenIds[meta.iso3]!.add(m.id)) {
+          slidesByIso[meta.iso3]!.add(
+            CountrySlideshowPhoto(
+              id: m.id,
+              filename: m.filename,
+              thumbnailUrl: m.thumbnailUrl,
+              largePreviewUrl: m.largePreviewUrl,
+              captureDate: m.captureDate,
+            ),
+          );
+        }
       }
     }
 
@@ -1450,12 +1767,19 @@ class _HomeScreenState extends State<HomeScreen> {
       final vSet = videoIdsByIso[iso]!;
       final albums = albumsByIso[iso]!
         ..sort((a, b) => (b.photoCount + b.videoCount).compareTo(a.photoCount + a.videoCount));
+
+      final travelDates = iso == 'FRA'
+          ? const <String>[]
+          : _computeTravelDateRanges(pSet.map((id) => mediaById[id]).whereType<PhotoItem>());
+
       result.add(
         CountryVisitStats(
           meta: meta,
           photoCount: pSet.length,
           videoCount: vSet.length,
           albums: albums,
+          slideshowPhotos: slidesByIso[iso] ?? const [],
+          travelDateRanges: travelDates,
         ),
       );
     }
@@ -1481,15 +1805,11 @@ class _HomeScreenState extends State<HomeScreen> {
         }
       },
       onOpenCountryMedia: (stats) {
-        // Collect all media matching either 02-Pays albums for this country OR metadata country
-        final paysChildren = _childrenByParent[_kPaysFolderId] ?? const <AlbumNode>[];
-        final matchingAlbumIds = <String>{};
-        for (final child in paysChildren) {
-          final meta = matchCountryMeta(child.name);
-          if (meta?.iso3 == stats.meta.iso3) {
-            matchingAlbumIds.addAll(_getAllDescendantAlbumIds(child.id));
-          }
-        }
+        final matchingAlbumIds = stats.albums.map((a) => a.albumId).expand((id) {
+          final n = _nodesById[id];
+          return n != null && n.isFolder ? _getAllDescendantAlbumIds(id) : {id};
+        }).toSet();
+
         final countryMedia = _allPhotos.where((m) {
           if (m.albums.any((a) => matchingAlbumIds.contains(a))) return true;
           final rawCountry = m.country?.trim();
@@ -1895,6 +2215,24 @@ class _HomeScreenState extends State<HomeScreen> {
               onTap: () {
                 Navigator.of(dialogCtx).pop();
                 _openPhotosForNode(node);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.public_rounded, color: Color(0xFF38BDF8)),
+              title: const Text("Pays sur la carte", style: TextStyle(fontSize: 14)),
+              subtitle: Builder(
+                builder: (_) {
+                  final iso = _getEffectiveCountryIsoForNode(node.id);
+                  final meta = iso != null ? kCountriesByIso[iso] : null;
+                  final label = meta != null
+                      ? '${meta.flag} ${meta.nameFr}${_albumCountryIsoById.containsKey(node.id) ? '' : ' (par défaut)'}'
+                      : 'Aucun pays assigné';
+                  return Text(label, style: const TextStyle(fontSize: 11, color: Colors.white54));
+                },
+              ),
+              onTap: () {
+                Navigator.of(dialogCtx).pop();
+                _showAssignCountryToAlbumDialog(node);
               },
             ),
             ListTile(

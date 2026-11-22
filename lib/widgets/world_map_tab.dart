@@ -9,6 +9,8 @@ class WorldCountryMeta {
   final String nameFr;
   final String flag;
   final String continent;
+  final String capital;
+  final String population;
   final List<String> aliases;
 
   const WorldCountryMeta({
@@ -16,6 +18,8 @@ class WorldCountryMeta {
     required this.nameFr,
     required this.flag,
     required this.continent,
+    required this.capital,
+    required this.population,
     this.aliases = const [],
   });
 }
@@ -24,6 +28,7 @@ class CountryAlbumSummary {
   final String albumId;
   final String name;
   final String? dateHint;
+  final String sourceLabel; // e.g. "Pays" or "Années"
   final int photoCount;
   final int videoCount;
   final bool isFolder;
@@ -32,9 +37,26 @@ class CountryAlbumSummary {
     required this.albumId,
     required this.name,
     this.dateHint,
+    this.sourceLabel = 'Pays',
     required this.photoCount,
     required this.videoCount,
     this.isFolder = false,
+  });
+}
+
+class CountrySlideshowPhoto {
+  final int id;
+  final String filename;
+  final String? thumbnailUrl;
+  final String? largePreviewUrl;
+  final String? captureDate;
+
+  const CountrySlideshowPhoto({
+    required this.id,
+    required this.filename,
+    this.thumbnailUrl,
+    this.largePreviewUrl,
+    this.captureDate,
   });
 }
 
@@ -43,115 +65,119 @@ class CountryVisitStats {
   final int photoCount;
   final int videoCount;
   final List<CountryAlbumSummary> albums;
+  final List<CountrySlideshowPhoto> slideshowPhotos;
+  final List<String> travelDateRanges;
 
   const CountryVisitStats({
     required this.meta,
     required this.photoCount,
     required this.videoCount,
     required this.albums,
+    this.slideshowPhotos = const [],
+    this.travelDateRanges = const [],
   });
 
   int get totalMedia => photoCount + videoCount;
 }
 
 const List<WorldCountryMeta> kWorldCountries = [
-  WorldCountryMeta(iso3: 'AFG', nameFr: 'Afghanistan', flag: '🇦🇫', continent: 'Asie'),
-  WorldCountryMeta(iso3: 'ZAF', nameFr: 'Afrique du Sud', flag: '🇿🇦', continent: 'Afrique', aliases: ['South Africa']),
-  WorldCountryMeta(iso3: 'ALB', nameFr: 'Albanie', flag: '🇦🇱', continent: 'Europe', aliases: ['Albania']),
-  WorldCountryMeta(iso3: 'DZA', nameFr: 'Algérie', flag: '🇩🇿', continent: 'Afrique', aliases: ['Algeria']),
-  WorldCountryMeta(iso3: 'DEU', nameFr: 'Allemagne', flag: '🇩🇪', continent: 'Europe', aliases: ['Germany']),
-  WorldCountryMeta(iso3: 'SAU', nameFr: 'Arabie saoudite', flag: '🇸🇦', continent: 'Asie', aliases: ['Saudi Arabia']),
-  WorldCountryMeta(iso3: 'ARG', nameFr: 'Argentine', flag: '🇦🇷', continent: 'Amériques', aliases: ['Argentina']),
-  WorldCountryMeta(iso3: 'ARM', nameFr: 'Arménie', flag: '🇦🇲', continent: 'Asie'),
-  WorldCountryMeta(iso3: 'AUS', nameFr: 'Australie', flag: '🇦🇺', continent: 'Océanie', aliases: ['Australia']),
-  WorldCountryMeta(iso3: 'AUT', nameFr: 'Autriche', flag: '🇦🇹', continent: 'Europe', aliases: ['Austria']),
-  WorldCountryMeta(iso3: 'BEL', nameFr: 'Belgique', flag: '🇧🇪', continent: 'Europe', aliases: ['Belgium']),
-  WorldCountryMeta(iso3: 'BOL', nameFr: 'Bolivie', flag: '🇧🇴', continent: 'Amériques'),
-  WorldCountryMeta(iso3: 'BIH', nameFr: 'Bosnie-Herzégovine', flag: '🇧🇦', continent: 'Europe'),
-  WorldCountryMeta(iso3: 'BRA', nameFr: 'Brésil', flag: '🇧🇷', continent: 'Amériques', aliases: ['Brazil', 'Bresil']),
-  WorldCountryMeta(iso3: 'BGR', nameFr: 'Bulgarie', flag: '🇧🇬', continent: 'Europe', aliases: ['Bulgaria']),
-  WorldCountryMeta(iso3: 'KHM', nameFr: 'Cambodge', flag: '🇰🇭', continent: 'Asie', aliases: ['Cambodia']),
-  WorldCountryMeta(iso3: 'CMR', nameFr: 'Cameroun', flag: '🇨🇲', continent: 'Afrique'),
-  WorldCountryMeta(iso3: 'CAN', nameFr: 'Canada', flag: '🇨🇦', continent: 'Amériques'),
-  WorldCountryMeta(iso3: 'CPV', nameFr: 'Cap-Vert', flag: '🇨🇻', continent: 'Afrique', aliases: ['Cap Vert', 'Cape Verde']),
-  WorldCountryMeta(iso3: 'CHL', nameFr: 'Chili', flag: '🇨🇱', continent: 'Amériques', aliases: ['Chile']),
-  WorldCountryMeta(iso3: 'CHN', nameFr: 'Chine', flag: '🇨🇳', continent: 'Asie', aliases: ['China']),
-  WorldCountryMeta(iso3: 'CYP', nameFr: 'Chypre', flag: '🇨🇾', continent: 'Europe', aliases: ['Cyprus']),
-  WorldCountryMeta(iso3: 'COL', nameFr: 'Colombie', flag: '🇨🇴', continent: 'Amériques', aliases: ['Colombia']),
-  WorldCountryMeta(iso3: 'KOR', nameFr: 'Corée du Sud', flag: '🇰🇷', continent: 'Asie', aliases: ['South Korea']),
-  WorldCountryMeta(iso3: 'CRI', nameFr: 'Costa Rica', flag: '🇨🇷', continent: 'Amériques'),
-  WorldCountryMeta(iso3: 'HRV', nameFr: 'Croatie', flag: '🇭🇷', continent: 'Europe', aliases: ['Croatia']),
-  WorldCountryMeta(iso3: 'CUB', nameFr: 'Cuba', flag: '🇨🇺', continent: 'Amériques'),
-  WorldCountryMeta(iso3: 'DNK', nameFr: 'Danemark', flag: '🇩🇰', continent: 'Europe', aliases: ['Denmark']),
-  WorldCountryMeta(iso3: 'DOM', nameFr: 'République dominicaine', flag: '🇩🇴', continent: 'Amériques'),
-  WorldCountryMeta(iso3: 'EGY', nameFr: 'Égypte', flag: '🇪🇬', continent: 'Afrique', aliases: ['Egypte', 'Egypt']),
-  WorldCountryMeta(iso3: 'ARE', nameFr: 'Émirats arabes unis', flag: '🇦🇪', continent: 'Asie', aliases: ['Dubai', 'UAE']),
-  WorldCountryMeta(iso3: 'ECU', nameFr: 'Équateur', flag: '🇪🇨', continent: 'Amériques'),
-  WorldCountryMeta(iso3: 'ESP', nameFr: 'Espagne', flag: '🇪🇸', continent: 'Europe', aliases: ['Spain', 'Canaries', 'Grand Canaria', 'Baléares', 'Baleares', 'Tenerife', 'Majorque']),
-  WorldCountryMeta(iso3: 'EST', nameFr: 'Estonie', flag: '🇪🇪', continent: 'Europe'),
-  WorldCountryMeta(iso3: 'USA', nameFr: 'États-Unis', flag: '🇺🇸', continent: 'Amériques', aliases: ['Etats-Unis', 'USA', 'United States']),
-  WorldCountryMeta(iso3: 'ETH', nameFr: 'Éthiopie', flag: '🇪🇹', continent: 'Afrique'),
-  WorldCountryMeta(iso3: 'FIN', nameFr: 'Finlande', flag: '🇫🇮', continent: 'Europe', aliases: ['Finland']),
-  WorldCountryMeta(iso3: 'FRA', nameFr: 'France', flag: '🇫🇷', continent: 'Europe', aliases: ['Loire', 'Paris', 'Vendée', 'Vendee', 'Corse', 'Bretagne']),
-  WorldCountryMeta(iso3: 'GEO', nameFr: 'Géorgie', flag: '🇬🇪', continent: 'Asie'),
-  WorldCountryMeta(iso3: 'GRC', nameFr: 'Grèce', flag: '🇬🇷', continent: 'Europe', aliases: ['Grece', 'Greece', 'Rhodes', 'Crète', 'Crete', 'Santorin']),
-  WorldCountryMeta(iso3: 'GTM', nameFr: 'Guatemala', flag: '🇬🇹', continent: 'Amériques'),
-  WorldCountryMeta(iso3: 'HUN', nameFr: 'Hongrie', flag: '🇭🇺', continent: 'Europe', aliases: ['Hungary']),
-  WorldCountryMeta(iso3: 'IND', nameFr: 'Inde', flag: '🇮🇳', continent: 'Asie', aliases: ['India']),
-  WorldCountryMeta(iso3: 'IDN', nameFr: 'Indonésie', flag: '🇮🇩', continent: 'Asie', aliases: ['Indonesia', 'Bali']),
-  WorldCountryMeta(iso3: 'IRL', nameFr: 'Irlande', flag: '🇮🇪', continent: 'Europe', aliases: ['Ireland']),
-  WorldCountryMeta(iso3: 'ISL', nameFr: 'Islande', flag: '🇮🇸', continent: 'Europe', aliases: ['Iceland']),
-  WorldCountryMeta(iso3: 'ISR', nameFr: 'Israël', flag: '🇮🇱', continent: 'Asie'),
-  WorldCountryMeta(iso3: 'ITA', nameFr: 'Italie', flag: '🇮🇹', continent: 'Europe', aliases: ['Italy', 'Rome', 'Venise', 'Sicile']),
-  WorldCountryMeta(iso3: 'JPN', nameFr: 'Japon', flag: '🇯🇵', continent: 'Asie', aliases: ['Japan']),
-  WorldCountryMeta(iso3: 'JOR', nameFr: 'Jordanie', flag: '🇯🇴', continent: 'Asie', aliases: ['Jordan']),
-  WorldCountryMeta(iso3: 'KEN', nameFr: 'Kenya', flag: '🇰🇪', continent: 'Afrique'),
-  WorldCountryMeta(iso3: 'LVA', nameFr: 'Lettonie', flag: '🇱🇻', continent: 'Europe'),
-  WorldCountryMeta(iso3: 'LBN', nameFr: 'Liban', flag: '🇱🇧', continent: 'Asie'),
-  WorldCountryMeta(iso3: 'LTU', nameFr: 'Lituanie', flag: '🇱🇹', continent: 'Europe'),
-  WorldCountryMeta(iso3: 'LUX', nameFr: 'Luxembourg', flag: '🇱🇺', continent: 'Europe'),
-  WorldCountryMeta(iso3: 'MDG', nameFr: 'Madagascar', flag: '🇲🇬', continent: 'Afrique'),
-  WorldCountryMeta(iso3: 'MYS', nameFr: 'Malaisie', flag: '🇲🇾', continent: 'Asie', aliases: ['Malaysia']),
-  WorldCountryMeta(iso3: 'MDV', nameFr: 'Maldives', flag: '🇲🇻', continent: 'Asie'),
-  WorldCountryMeta(iso3: 'MLT', nameFr: 'Malte', flag: '🇲🇹', continent: 'Europe', aliases: ['Malta']),
-  WorldCountryMeta(iso3: 'MAR', nameFr: 'Maroc', flag: '🇲🇦', continent: 'Afrique', aliases: ['Morocco']),
-  WorldCountryMeta(iso3: 'MUS', nameFr: 'Île Maurice', flag: '🇲🇺', continent: 'Afrique', aliases: ['Maurice', 'Mauritius']),
-  WorldCountryMeta(iso3: 'MEX', nameFr: 'Mexique', flag: '🇲🇽', continent: 'Amériques', aliases: ['Mexico']),
-  WorldCountryMeta(iso3: 'MNE', nameFr: 'Monténégro', flag: '🇲🇪', continent: 'Europe'),
-  WorldCountryMeta(iso3: 'NAM', nameFr: 'Namibie', flag: '🇳🇦', continent: 'Afrique'),
-  WorldCountryMeta(iso3: 'NPL', nameFr: 'Népal', flag: '🇳🇵', continent: 'Asie'),
-  WorldCountryMeta(iso3: 'NOR', nameFr: 'Norvège', flag: '🇳🇴', continent: 'Europe', aliases: ['Norway']),
-  WorldCountryMeta(iso3: 'NZL', nameFr: 'Nouvelle-Zélande', flag: '🇳🇿', continent: 'Océanie', aliases: ['New Zealand']),
-  WorldCountryMeta(iso3: 'OMN', nameFr: 'Oman', flag: '🇴🇲', continent: 'Asie'),
-  WorldCountryMeta(iso3: 'UZB', nameFr: 'Ouzbékistan', flag: '🇺🇿', continent: 'Asie'),
-  WorldCountryMeta(iso3: 'PAN', nameFr: 'Panama', flag: '🇵🇦', continent: 'Amériques'),
-  WorldCountryMeta(iso3: 'PRY', nameFr: 'Paraguay', flag: '🇵🇾', continent: 'Amériques'),
-  WorldCountryMeta(iso3: 'NLD', nameFr: 'Pays-Bas', flag: '🇳🇱', continent: 'Europe', aliases: ['Netherlands', 'Hollande', 'Amsterdam']),
-  WorldCountryMeta(iso3: 'PER', nameFr: 'Pérou', flag: '🇵🇪', continent: 'Amériques', aliases: ['Peru']),
-  WorldCountryMeta(iso3: 'PHL', nameFr: 'Philippines', flag: '🇵🇭', continent: 'Asie'),
-  WorldCountryMeta(iso3: 'POL', nameFr: 'Pologne', flag: '🇵🇱', continent: 'Europe', aliases: ['Poland']),
-  WorldCountryMeta(iso3: 'PRT', nameFr: 'Portugal', flag: '🇵🇹', continent: 'Europe', aliases: ['Madère', 'Madere', 'Lisbonne']),
-  WorldCountryMeta(iso3: 'QAT', nameFr: 'Qatar', flag: '🇶🇦', continent: 'Asie'),
-  WorldCountryMeta(iso3: 'ROU', nameFr: 'Roumanie', flag: '🇷🇴', continent: 'Europe', aliases: ['Romania']),
-  WorldCountryMeta(iso3: 'GBR', nameFr: 'Royaume-Uni', flag: '🇬🇧', continent: 'Europe', aliases: ['Angleterre', 'United Kingdom', 'UK', 'Ecosse', 'Londres', 'England']),
-  WorldCountryMeta(iso3: 'RUS', nameFr: 'Russie', flag: '🇷🇺', continent: 'Europe', aliases: ['Russia']),
-  WorldCountryMeta(iso3: 'SEN', nameFr: 'Sénégal', flag: '🇸🇳', continent: 'Afrique', aliases: ['Senegal']),
-  WorldCountryMeta(iso3: 'SRB', nameFr: 'Serbie', flag: '🇷🇸', continent: 'Europe'),
-  WorldCountryMeta(iso3: 'SYC', nameFr: 'Seychelles', flag: '🇸🇨', continent: 'Afrique'),
-  WorldCountryMeta(iso3: 'SGP', nameFr: 'Singapour', flag: '🇸🇬', continent: 'Asie', aliases: ['Singapore']),
-  WorldCountryMeta(iso3: 'SVK', nameFr: 'Slovaquie', flag: '🇸🇰', continent: 'Europe'),
-  WorldCountryMeta(iso3: 'SVN', nameFr: 'Slovénie', flag: '🇸🇮', continent: 'Europe'),
-  WorldCountryMeta(iso3: 'LKA', nameFr: 'Sri Lanka', flag: '🇱🇰', continent: 'Asie'),
-  WorldCountryMeta(iso3: 'SWE', nameFr: 'Suède', flag: '🇸🇪', continent: 'Europe', aliases: ['Sweden']),
-  WorldCountryMeta(iso3: 'CHE', nameFr: 'Suisse', flag: '🇨🇭', continent: 'Europe', aliases: ['Switzerland']),
-  WorldCountryMeta(iso3: 'TZA', nameFr: 'Tanzanie', flag: '🇹🇿', continent: 'Afrique', aliases: ['Zanzibar']),
-  WorldCountryMeta(iso3: 'CZE', nameFr: 'Tchéquie', flag: '🇨🇿', continent: 'Europe', aliases: ['Prague', 'Czechia']),
-  WorldCountryMeta(iso3: 'THA', nameFr: 'Thaïlande', flag: '🇹🇭', continent: 'Asie', aliases: ['Thailand']),
-  WorldCountryMeta(iso3: 'TUN', nameFr: 'Tunisie', flag: '🇹🇳', continent: 'Afrique', aliases: ['Tunisia', 'Djerba']),
-  WorldCountryMeta(iso3: 'TUR', nameFr: 'Turquie', flag: '🇹🇷', continent: 'Asie', aliases: ['Turkey']),
-  WorldCountryMeta(iso3: 'UKR', nameFr: 'Ukraine', flag: '🇺🇦', continent: 'Europe'),
-  WorldCountryMeta(iso3: 'URY', nameFr: 'Uruguay', flag: '🇺🇾', continent: 'Amériques'),
-  WorldCountryMeta(iso3: 'VNM', nameFr: 'Viêt Nam', flag: '🇻🇳', continent: 'Asie', aliases: ['Vietnam', 'Viet Nam']),
+  WorldCountryMeta(iso3: 'AFG', nameFr: 'Afghanistan', flag: '🇦🇫', continent: 'Asie', capital: 'Kaboul', population: '42 M'),
+  WorldCountryMeta(iso3: 'ZAF', nameFr: 'Afrique du Sud', flag: '🇿🇦', continent: 'Afrique', capital: 'Pretoria', population: '60 M', aliases: ['South Africa']),
+  WorldCountryMeta(iso3: 'ALB', nameFr: 'Albanie', flag: '🇦🇱', continent: 'Europe', capital: 'Tirana', population: '2,8 M', aliases: ['Albania']),
+  WorldCountryMeta(iso3: 'DZA', nameFr: 'Algérie', flag: '🇩🇿', continent: 'Afrique', capital: 'Alger', population: '45 M', aliases: ['Algeria']),
+  WorldCountryMeta(iso3: 'DEU', nameFr: 'Allemagne', flag: '🇩🇪', continent: 'Europe', capital: 'Berlin', population: '84 M', aliases: ['Germany']),
+  WorldCountryMeta(iso3: 'SAU', nameFr: 'Arabie saoudite', flag: '🇸🇦', continent: 'Asie', capital: 'Riyad', population: '36 M', aliases: ['Saudi Arabia']),
+  WorldCountryMeta(iso3: 'ARG', nameFr: 'Argentine', flag: '🇦🇷', continent: 'Amériques', capital: 'Buenos Aires', population: '46 M', aliases: ['Argentina']),
+  WorldCountryMeta(iso3: 'ARM', nameFr: 'Arménie', flag: '🇦🇲', continent: 'Asie', capital: 'Erevan', population: '2,8 M'),
+  WorldCountryMeta(iso3: 'AUS', nameFr: 'Australie', flag: '🇦🇺', continent: 'Océanie', capital: 'Canberra', population: '26 M', aliases: ['Australia']),
+  WorldCountryMeta(iso3: 'AUT', nameFr: 'Autriche', flag: '🇦🇹', continent: 'Europe', capital: 'Vienne', population: '9,1 M', aliases: ['Austria']),
+  WorldCountryMeta(iso3: 'BEL', nameFr: 'Belgique', flag: '🇧🇪', continent: 'Europe', capital: 'Bruxelles', population: '11,7 M', aliases: ['Belgium']),
+  WorldCountryMeta(iso3: 'BOL', nameFr: 'Bolivie', flag: '🇧🇴', continent: 'Amériques', capital: 'Sucre / La Paz', population: '12,2 M'),
+  WorldCountryMeta(iso3: 'BIH', nameFr: 'Bosnie-Herzégovine', flag: '🇧🇦', continent: 'Europe', capital: 'Sarajevo', population: '3,2 M'),
+  WorldCountryMeta(iso3: 'BRA', nameFr: 'Brésil', flag: '🇧🇷', continent: 'Amériques', capital: 'Brasilia', population: '215 M', aliases: ['Brazil', 'Bresil']),
+  WorldCountryMeta(iso3: 'BGR', nameFr: 'Bulgarie', flag: '🇧🇬', continent: 'Europe', capital: 'Sofia', population: '6,5 M', aliases: ['Bulgaria']),
+  WorldCountryMeta(iso3: 'KHM', nameFr: 'Cambodge', flag: '🇰🇭', continent: 'Asie', capital: 'Phnom Penh', population: '17 M', aliases: ['Cambodia']),
+  WorldCountryMeta(iso3: 'CMR', nameFr: 'Cameroun', flag: '🇨🇲', continent: 'Afrique', capital: 'Yaoundé', population: '28 M'),
+  WorldCountryMeta(iso3: 'CAN', nameFr: 'Canada', flag: '🇨🇦', continent: 'Amériques', capital: 'Ottawa', population: '40 M'),
+  WorldCountryMeta(iso3: 'CPV', nameFr: 'Cap-Vert', flag: '🇨🇻', continent: 'Afrique', capital: 'Praia', population: '0,6 M', aliases: ['Cap Vert', 'Cape Verde']),
+  WorldCountryMeta(iso3: 'CHL', nameFr: 'Chili', flag: '🇨🇱', continent: 'Amériques', capital: 'Santiago', population: '19,6 M', aliases: ['Chile']),
+  WorldCountryMeta(iso3: 'CHN', nameFr: 'Chine', flag: '🇨🇳', continent: 'Asie', capital: 'Pékin', population: '1,41 Md', aliases: ['China']),
+  WorldCountryMeta(iso3: 'CYP', nameFr: 'Chypre', flag: '🇨🇾', continent: 'Europe', capital: 'Nicosie', population: '1,3 M', aliases: ['Cyprus']),
+  WorldCountryMeta(iso3: 'COL', nameFr: 'Colombie', flag: '🇨🇴', continent: 'Amériques', capital: 'Bogota', population: '52 M', aliases: ['Colombia']),
+  WorldCountryMeta(iso3: 'KOR', nameFr: 'Corée du Sud', flag: '🇰🇷', continent: 'Asie', capital: 'Séoul', population: '51,7 M', aliases: ['South Korea']),
+  WorldCountryMeta(iso3: 'CRI', nameFr: 'Costa Rica', flag: '🇨🇷', continent: 'Amériques', capital: 'San José', population: '5,2 M'),
+  WorldCountryMeta(iso3: 'HRV', nameFr: 'Croatie', flag: '🇭🇷', continent: 'Europe', capital: 'Zagreb', population: '3,9 M', aliases: ['Croatia']),
+  WorldCountryMeta(iso3: 'CUB', nameFr: 'Cuba', flag: '🇨🇺', continent: 'Amériques', capital: 'La Havane', population: '11 M'),
+  WorldCountryMeta(iso3: 'DNK', nameFr: 'Danemark', flag: '🇩🇰', continent: 'Europe', capital: 'Copenhague', population: '5,9 M', aliases: ['Denmark']),
+  WorldCountryMeta(iso3: 'EGY', nameFr: 'Égypte', flag: '🇪🇬', continent: 'Afrique', capital: 'Le Caire', population: '111 M', aliases: ['Egypte', 'Egypt']),
+  WorldCountryMeta(iso3: 'ARE', nameFr: 'Émirats arabes unis', flag: '🇦🇪', continent: 'Asie', capital: 'Abou Dabi', population: '9,5 M', aliases: ['Dubai', 'UAE']),
+  WorldCountryMeta(iso3: 'ECU', nameFr: 'Équateur', flag: '🇪🇨', continent: 'Amériques', capital: 'Quito', population: '18 M'),
+  WorldCountryMeta(iso3: 'ESP', nameFr: 'Espagne', flag: '🇪🇸', continent: 'Europe', capital: 'Madrid', population: '48 M', aliases: ['Spain', 'Canaries', 'Grand Canaria', 'Baléares', 'Baleares', 'Tenerife', 'Majorque']),
+  WorldCountryMeta(iso3: 'EST', nameFr: 'Estonie', flag: '🇪🇪', continent: 'Europe', capital: 'Tallinn', population: '1,3 M'),
+  WorldCountryMeta(iso3: 'USA', nameFr: 'États-Unis', flag: '🇺🇸', continent: 'Amériques', capital: 'Washington D.C.', population: '335 M', aliases: ['Etats-Unis', 'USA', 'United States']),
+  WorldCountryMeta(iso3: 'ETH', nameFr: 'Éthiopie', flag: '🇪🇹', continent: 'Afrique', capital: 'Addis-Abeba', population: '126 M'),
+  WorldCountryMeta(iso3: 'FIN', nameFr: 'Finlande', flag: '🇫🇮', continent: 'Europe', capital: 'Helsinki', population: '5,6 M', aliases: ['Finland']),
+  WorldCountryMeta(iso3: 'FRA', nameFr: 'France', flag: '🇫🇷', continent: 'Europe', capital: 'Paris', population: '68 M', aliases: ['Loire', 'Paris', 'Vendée', 'Vendee', 'Corse', 'Bretagne']),
+  WorldCountryMeta(iso3: 'GEO', nameFr: 'Géorgie', flag: '🇬🇪', continent: 'Asie', capital: 'Tbilissi', population: '3,7 M'),
+  WorldCountryMeta(iso3: 'GRC', nameFr: 'Grèce', flag: '🇬🇷', continent: 'Europe', capital: 'Athènes', population: '10,4 M', aliases: ['Grece', 'Greece', 'Rhodes', 'Crète', 'Crete', 'Santorin']),
+  WorldCountryMeta(iso3: 'GTM', nameFr: 'Guatemala', flag: '🇬🇹', continent: 'Amériques', capital: 'Guatemala', population: '18 M'),
+  WorldCountryMeta(iso3: 'HUN', nameFr: 'Hongrie', flag: '🇭🇺', continent: 'Europe', capital: 'Budapest', population: '9,6 M', aliases: ['Hungary']),
+  WorldCountryMeta(iso3: 'MUS', nameFr: 'Île Maurice', flag: '🇲🇺', continent: 'Afrique', capital: 'Port-Louis', population: '1,3 M', aliases: ['Maurice', 'Mauritius']),
+  WorldCountryMeta(iso3: 'IND', nameFr: 'Inde', flag: '🇮🇳', continent: 'Asie', capital: 'New Delhi', population: '1,43 Md', aliases: ['India']),
+  WorldCountryMeta(iso3: 'IDN', nameFr: 'Indonésie', flag: '🇮🇩', continent: 'Asie', capital: 'Jakarta', population: '277 M', aliases: ['Indonesia', 'Bali']),
+  WorldCountryMeta(iso3: 'IRL', nameFr: 'Irlande', flag: '🇮🇪', continent: 'Europe', capital: 'Dublin', population: '5,2 M', aliases: ['Ireland']),
+  WorldCountryMeta(iso3: 'ISL', nameFr: 'Islande', flag: '🇮🇸', continent: 'Europe', capital: 'Reykjavik', population: '0,4 M', aliases: ['Iceland']),
+  WorldCountryMeta(iso3: 'ISR', nameFr: 'Israël', flag: '🇮🇱', continent: 'Asie', capital: 'Jérusalem', population: '9,7 M'),
+  WorldCountryMeta(iso3: 'ITA', nameFr: 'Italie', flag: '🇮🇹', continent: 'Europe', capital: 'Rome', population: '59 M', aliases: ['Italy', 'Rome', 'Venise', 'Sicile']),
+  WorldCountryMeta(iso3: 'JPN', nameFr: 'Japon', flag: '🇯🇵', continent: 'Asie', capital: 'Tokyo', population: '124 M', aliases: ['Japan']),
+  WorldCountryMeta(iso3: 'JOR', nameFr: 'Jordanie', flag: '🇯🇴', continent: 'Asie', capital: 'Amman', population: '11,3 M', aliases: ['Jordan']),
+  WorldCountryMeta(iso3: 'KEN', nameFr: 'Kenya', flag: '🇰🇪', continent: 'Afrique', capital: 'Nairobi', population: '55 M'),
+  WorldCountryMeta(iso3: 'LVA', nameFr: 'Lettonie', flag: '🇱🇻', continent: 'Europe', capital: 'Riga', population: '1,9 M'),
+  WorldCountryMeta(iso3: 'LBN', nameFr: 'Liban', flag: '🇱🇧', continent: 'Asie', capital: 'Beyrouth', population: '5,4 M'),
+  WorldCountryMeta(iso3: 'LTU', nameFr: 'Lituanie', flag: '🇱🇹', continent: 'Europe', capital: 'Vilnius', population: '2,8 M'),
+  WorldCountryMeta(iso3: 'LUX', nameFr: 'Luxembourg', flag: '🇱🇺', continent: 'Europe', capital: 'Luxembourg', population: '0,66 M'),
+  WorldCountryMeta(iso3: 'MDG', nameFr: 'Madagascar', flag: '🇲🇬', continent: 'Afrique', capital: 'Antananarivo', population: '30 M'),
+  WorldCountryMeta(iso3: 'MYS', nameFr: 'Malaisie', flag: '🇲🇾', continent: 'Asie', capital: 'Kuala Lumpur', population: '34 M', aliases: ['Malaysia']),
+  WorldCountryMeta(iso3: 'MDV', nameFr: 'Maldives', flag: '🇲🇻', continent: 'Asie', capital: 'Malé', population: '0,5 M'),
+  WorldCountryMeta(iso3: 'MLT', nameFr: 'Malte', flag: '🇲🇹', continent: 'Europe', capital: 'La Valette', population: '0,54 M', aliases: ['Malta']),
+  WorldCountryMeta(iso3: 'MAR', nameFr: 'Maroc', flag: '🇲🇦', continent: 'Afrique', capital: 'Rabat', population: '37,5 M', aliases: ['Morocco']),
+  WorldCountryMeta(iso3: 'MEX', nameFr: 'Mexique', flag: '🇲🇽', continent: 'Amériques', capital: 'Mexico', population: '128 M', aliases: ['Mexico']),
+  WorldCountryMeta(iso3: 'MNE', nameFr: 'Monténégro', flag: '🇲🇪', continent: 'Europe', capital: 'Podgorica', population: '0,62 M'),
+  WorldCountryMeta(iso3: 'NAM', nameFr: 'Namibie', flag: '🇳🇦', continent: 'Afrique', capital: 'Windhoek', population: '2,6 M'),
+  WorldCountryMeta(iso3: 'NPL', nameFr: 'Népal', flag: '🇳🇵', continent: 'Asie', capital: 'Katmandou', population: '30,9 M'),
+  WorldCountryMeta(iso3: 'NOR', nameFr: 'Norvège', flag: '🇳🇴', continent: 'Europe', capital: 'Oslo', population: '5,5 M', aliases: ['Norway']),
+  WorldCountryMeta(iso3: 'NZL', nameFr: 'Nouvelle-Zélande', flag: '🇳🇿', continent: 'Océanie', capital: 'Wellington', population: '5,2 M', aliases: ['New Zealand']),
+  WorldCountryMeta(iso3: 'OMN', nameFr: 'Oman', flag: '🇴🇲', continent: 'Asie', capital: 'Mascate', population: '4,6 M'),
+  WorldCountryMeta(iso3: 'UZB', nameFr: 'Ouzbékistan', flag: '🇺🇿', continent: 'Asie', capital: 'Tachkent', population: '36 M'),
+  WorldCountryMeta(iso3: 'PAN', nameFr: 'Panama', flag: '🇵🇦', continent: 'Amériques', capital: 'Panama', population: '4,4 M'),
+  WorldCountryMeta(iso3: 'PRY', nameFr: 'Paraguay', flag: '🇵🇾', continent: 'Amériques', capital: 'Asuncion', population: '6,8 M'),
+  WorldCountryMeta(iso3: 'NLD', nameFr: 'Pays-Bas', flag: '🇳🇱', continent: 'Europe', capital: 'Amsterdam', population: '17,8 M', aliases: ['Netherlands', 'Hollande', 'Amsterdam']),
+  WorldCountryMeta(iso3: 'PER', nameFr: 'Pérou', flag: '🇵🇪', continent: 'Amériques', capital: 'Lima', population: '34 M', aliases: ['Peru']),
+  WorldCountryMeta(iso3: 'PHL', nameFr: 'Philippines', flag: '🇵🇭', continent: 'Asie', capital: 'Manille', population: '117 M'),
+  WorldCountryMeta(iso3: 'POL', nameFr: 'Pologne', flag: '🇵🇱', continent: 'Europe', capital: 'Varsovie', population: '37 M', aliases: ['Poland']),
+  WorldCountryMeta(iso3: 'PRT', nameFr: 'Portugal', flag: '🇵🇹', continent: 'Europe', capital: 'Lisbonne', population: '10,4 M', aliases: ['Madère', 'Madere', 'Lisbonne']),
+  WorldCountryMeta(iso3: 'QAT', nameFr: 'Qatar', flag: '🇶🇦', continent: 'Asie', capital: 'Doha', population: '2,7 M'),
+  WorldCountryMeta(iso3: 'DOM', nameFr: 'République dominicaine', flag: '🇩🇴', continent: 'Amériques', capital: 'Saint-Domingue', population: '11,3 M'),
+  WorldCountryMeta(iso3: 'ROU', nameFr: 'Roumanie', flag: '🇷🇴', continent: 'Europe', capital: 'Bucarest', population: '19 M', aliases: ['Romania']),
+  WorldCountryMeta(iso3: 'GBR', nameFr: 'Royaume-Uni', flag: '🇬🇧', continent: 'Europe', capital: 'Londres', population: '67,7 M', aliases: ['Angleterre', 'United Kingdom', 'UK', 'Ecosse', 'Londres', 'England']),
+  WorldCountryMeta(iso3: 'RUS', nameFr: 'Russie', flag: '🇷🇺', continent: 'Europe', capital: 'Moscou', population: '144 M', aliases: ['Russia']),
+  WorldCountryMeta(iso3: 'SEN', nameFr: 'Sénégal', flag: '🇸🇳', continent: 'Afrique', capital: 'Dakar', population: '18 M', aliases: ['Senegal']),
+  WorldCountryMeta(iso3: 'SRB', nameFr: 'Serbie', flag: '🇷🇸', continent: 'Europe', capital: 'Belgrade', population: '6,6 M'),
+  WorldCountryMeta(iso3: 'SYC', nameFr: 'Seychelles', flag: '🇸🇨', continent: 'Afrique', capital: 'Victoria', population: '0,1 M'),
+  WorldCountryMeta(iso3: 'SGP', nameFr: 'Singapour', flag: '🇸🇬', continent: 'Asie', capital: 'Singapour', population: '5,9 M', aliases: ['Singapore']),
+  WorldCountryMeta(iso3: 'SVK', nameFr: 'Slovaquie', flag: '🇸🇰', continent: 'Europe', capital: 'Bratislava', population: '5,4 M'),
+  WorldCountryMeta(iso3: 'SVN', nameFr: 'Slovénie', flag: '🇸🇮', continent: 'Europe', capital: 'Ljubljana', population: '2,1 M'),
+  WorldCountryMeta(iso3: 'LKA', nameFr: 'Sri Lanka', flag: '🇱🇰', continent: 'Asie', capital: 'Sri Jayawardenapura', population: '22 M'),
+  WorldCountryMeta(iso3: 'SWE', nameFr: 'Suède', flag: '🇸🇪', continent: 'Europe', capital: 'Stockholm', population: '10,5 M', aliases: ['Sweden']),
+  WorldCountryMeta(iso3: 'CHE', nameFr: 'Suisse', flag: '🇨🇭', continent: 'Europe', capital: 'Berne', population: '8,9 M', aliases: ['Switzerland']),
+  WorldCountryMeta(iso3: 'TZA', nameFr: 'Tanzanie', flag: '🇹🇿', continent: 'Afrique', capital: 'Dodoma', population: '67 M', aliases: ['Zanzibar']),
+  WorldCountryMeta(iso3: 'CZE', nameFr: 'Tchéquie', flag: '🇨🇿', continent: 'Europe', capital: 'Prague', population: '10,8 M', aliases: ['Prague', 'Czechia']),
+  WorldCountryMeta(iso3: 'THA', nameFr: 'Thaïlande', flag: '🇹🇭', continent: 'Asie', capital: 'Bangkok', population: '71,8 M', aliases: ['Thailand']),
+  WorldCountryMeta(iso3: 'TUN', nameFr: 'Tunisie', flag: '🇹🇳', continent: 'Afrique', capital: 'Tunis', population: '12,4 M', aliases: ['Tunisia', 'Djerba']),
+  WorldCountryMeta(iso3: 'TUR', nameFr: 'Turquie', flag: '🇹🇷', continent: 'Asie', capital: 'Ankara', population: '85 M', aliases: ['Turkey']),
+  WorldCountryMeta(iso3: 'UKR', nameFr: 'Ukraine', flag: '🇺🇦', continent: 'Europe', capital: 'Kiev', population: '37 M'),
+  WorldCountryMeta(iso3: 'URY', nameFr: 'Uruguay', flag: '🇺🇾', continent: 'Amériques', capital: 'Montevideo', population: '3,4 M'),
+  WorldCountryMeta(iso3: 'VNM', nameFr: 'Viêt Nam', flag: '🇻🇳', continent: 'Asie', capital: 'Hanoï', population: '99 M', aliases: ['Vietnam', 'Viet Nam']),
 ];
 
 String normalizeCountryKey(String input) {
@@ -172,14 +198,12 @@ WorldCountryMeta? matchCountryMeta(String rawName) {
   final norm = normalizeCountryKey(rawName);
   if (norm.isEmpty) return null;
 
-  // 1. Exact name or alias match
   for (final c in kWorldCountries) {
     if (normalizeCountryKey(c.nameFr) == norm) return c;
     for (final a in c.aliases) {
       if (normalizeCountryKey(a) == norm) return c;
     }
   }
-  // 2. Prefix or token match (e.g. "Spain - Grand Canaria", "Grèce - Rhodes", "France - Paris")
   final firstSegment = normalizeCountryKey(rawName.split(RegExp(r'[-–—(:]')).first);
   if (firstSegment.isNotEmpty) {
     for (final c in kWorldCountries) {
@@ -189,7 +213,6 @@ WorldCountryMeta? matchCountryMeta(String rawName) {
       }
     }
   }
-  // 3. Substring match on normalized words
   for (final c in kWorldCountries) {
     final cNorm = normalizeCountryKey(c.nameFr);
     if (cNorm.length >= 4 && norm.contains(cNorm)) return c;
@@ -204,7 +227,7 @@ WorldCountryMeta? matchCountryMeta(String rawName) {
 class _CountryGeoShape {
   final String iso3;
   final String name;
-  final Offset centerNorm; // normalized [0..1, 0..1]
+  final Offset centerNorm;
   final List<List<Offset>> polygonsNorm;
 
   const _CountryGeoShape({
@@ -241,20 +264,29 @@ class _WorldMapTabState extends State<WorldMapTab> {
   static List<_CountryGeoShape>? _cachedShapes;
   List<_CountryGeoShape>? _shapes;
   final TransformationController _transformController = TransformationController();
+  double _currentZoom = 1.0;
   String _selectedContinent = 'Monde';
   String? _highlightedIso;
   bool _showListMode = false;
-
-  static const Size _mapCanvasSize = Size(1200, 620);
+  Size _lastViewportSize = const Size(800, 420);
 
   @override
   void initState() {
     super.initState();
+    _transformController.addListener(_onTransformChanged);
     _loadGeoJson();
+  }
+
+  void _onTransformChanged() {
+    final nextZoom = _transformController.value.getMaxScaleOnAxis();
+    if ((nextZoom - _currentZoom).abs() > 0.05) {
+      setState(() => _currentZoom = nextZoom);
+    }
   }
 
   @override
   void dispose() {
+    _transformController.removeListener(_onTransformChanged);
     _transformController.dispose();
     super.dispose();
   }
@@ -291,12 +323,9 @@ class _WorldMapTabState extends State<WorldMapTab> {
       }
       _cachedShapes = parsed;
       if (mounted) setState(() => _shapes = parsed);
-    } catch (_) {
-      // Fallback empty shapes handled gracefully
-    }
+    } catch (_) {}
   }
 
-  /// Equirectangular projection cropped to lat [-58..82] for cleaner framing
   static Offset _project(double lon, double lat) {
     final x = ((lon + 180.0) / 360.0).clamp(0.0, 1.0);
     final clampedLat = lat.clamp(-58.0, 82.0);
@@ -311,42 +340,79 @@ class _WorldMapTabState extends State<WorldMapTab> {
       _transformController.value = Matrix4.identity();
       return;
     }
-    // Target normalized focal point and scale per continent
     final Offset normTarget;
     final double zoom;
     switch (continent) {
       case 'Europe':
-        normTarget = _project(12, 48);
-        zoom = 3.2;
+        normTarget = _project(12, 47);
+        zoom = 3.6;
         break;
       case 'Afrique':
         normTarget = _project(18, 6);
-        zoom = 2.3;
+        zoom = 2.5;
         break;
       case 'Amériques':
         normTarget = _project(-72, 2);
-        zoom = 1.9;
+        zoom = 2.0;
         break;
       case 'Asie':
         normTarget = _project(88, 30);
-        zoom = 2.3;
+        zoom = 2.4;
         break;
       case 'Océanie':
         normTarget = _project(138, -24);
-        zoom = 2.6;
+        zoom = 2.8;
         break;
       default:
         normTarget = const Offset(0.5, 0.5);
         zoom = 1.0;
     }
-    final cx = normTarget.dx * viewportSize.width;
-    final cy = normTarget.dy * viewportSize.height;
+    final mapBox = _computeMapBoxSize(viewportSize);
+    final offsetX = (viewportSize.width - mapBox.width) / 2;
+    final offsetY = (viewportSize.height - mapBox.height) / 2;
+    final cx = offsetX + normTarget.dx * mapBox.width;
+    final cy = offsetY + normTarget.dy * mapBox.height;
     final tx = viewportSize.width / 2 - cx * zoom;
     final ty = viewportSize.height / 2 - cy * zoom;
     final matrix = Matrix4.identity()
-      ..translate(tx.clamp(-viewportSize.width * (zoom - 1), 0.0), ty.clamp(-viewportSize.height * (zoom - 1), 0.0))
+      ..translate(
+        tx.clamp(-viewportSize.width * (zoom - 1), 0.0),
+        ty.clamp(-viewportSize.height * (zoom - 1), 0.0),
+      )
       ..scale(zoom);
     _transformController.value = matrix;
+  }
+
+  void _stepZoom(double factor) {
+    final currentScale = _transformController.value.getMaxScaleOnAxis();
+    final targetScale = (currentScale * factor).clamp(1.0, 7.0);
+    if ((targetScale - currentScale).abs() < 0.01) return;
+    if (targetScale <= 1.02) {
+      _transformController.value = Matrix4.identity();
+      return;
+    }
+    final ratio = targetScale / currentScale;
+    final cx = _lastViewportSize.width / 2;
+    final cy = _lastViewportSize.height / 2;
+    final focal = Matrix4.identity()
+      ..translate(cx, cy)
+      ..scale(ratio)
+      ..translate(-cx, -cy);
+    _transformController.value = focal * _transformController.value;
+  }
+
+  Size _computeMapBoxSize(Size viewport) {
+    // On mobile portrait, render map wider than viewport so it fills vertically nicely & can pan/zoom cleanly
+    const aspect = 1200.0 / 620.0;
+    final maxW = viewport.width;
+    final maxH = viewport.height;
+    double boxW = maxW;
+    double boxH = boxW / aspect;
+    if (boxH > maxH) {
+      boxH = maxH;
+      boxW = boxH * aspect;
+    }
+    return Size(math.max(boxW, 300), math.max(boxH, 200));
   }
 
   bool _pointInPolygon(Offset p, List<Offset> poly) {
@@ -365,7 +431,6 @@ class _WorldMapTabState extends State<WorldMapTab> {
     final shapes = _shapes;
     if (shapes == null) return;
 
-    // Convert viewport tap to child coordinates via inverse matrix
     final inverse = Matrix4.inverted(_transformController.value);
     final scenePoint = MatrixUtils.transformPoint(inverse, details.localPosition);
     final normPoint = Offset(
@@ -373,7 +438,6 @@ class _WorldMapTabState extends State<WorldMapTab> {
       (scenePoint.dy / mapBoxSize.height).clamp(0.0, 1.0),
     );
 
-    // 1. Check visited country badge centers first (generous mobile touch target)
     final currentScale = _transformController.value.getMaxScaleOnAxis();
     final hitRadius = 0.025 / currentScale.clamp(1.0, 4.0);
     _CountryGeoShape? bestBadgeHit;
@@ -391,7 +455,6 @@ class _WorldMapTabState extends State<WorldMapTab> {
       return;
     }
 
-    // 2. Check polygon hit-testing (visited first, then unvisited)
     for (final s in shapes) {
       if (!visitedByIso.containsKey(s.iso3)) continue;
       for (final poly in s.polygonsNorm) {
@@ -402,7 +465,6 @@ class _WorldMapTabState extends State<WorldMapTab> {
       }
     }
 
-    // 3. If tapped on an unvisited country, show a friendly snackbar with quick-add CTA
     for (final s in shapes) {
       for (final poly in s.polygonsNorm) {
         if (_pointInPolygon(normPoint, poly)) {
@@ -444,11 +506,23 @@ class _WorldMapTabState extends State<WorldMapTab> {
           borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
         ),
         builder: (ctx) => DraggableScrollableSheet(
-          initialChildSize: 0.56,
-          minChildSize: 0.35,
-          maxChildSize: 0.88,
+          initialChildSize: 0.72,
+          minChildSize: 0.42,
+          maxChildSize: 0.94,
           expand: false,
-          builder: (_, scrollCtrl) => _buildCountryDetailBody(stats, scrollCtrl, ctx),
+          builder: (_, scrollCtrl) => _CountryDetailSheet(
+            stats: stats,
+            scrollController: scrollCtrl,
+            onOpenAlbum: (id) {
+              Navigator.of(ctx).pop();
+              widget.onOpenAlbum(id);
+            },
+            onOpenCountryMedia: () {
+              Navigator.of(ctx).pop();
+              widget.onOpenCountryMedia(stats);
+            },
+            onClose: () => Navigator.of(ctx).pop(),
+          ),
         ),
       );
     } else {
@@ -461,221 +535,24 @@ class _WorldMapTabState extends State<WorldMapTab> {
             side: const BorderSide(color: Colors.white12),
           ),
           child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 480, maxHeight: 580),
-            child: _buildCountryDetailBody(stats, ScrollController(), ctx),
+            constraints: const BoxConstraints(maxWidth: 540, maxHeight: 680),
+            child: _CountryDetailSheet(
+              stats: stats,
+              scrollController: ScrollController(),
+              onOpenAlbum: (id) {
+                Navigator.of(ctx).pop();
+                widget.onOpenAlbum(id);
+              },
+              onOpenCountryMedia: () {
+                Navigator.of(ctx).pop();
+                widget.onOpenCountryMedia(stats);
+              },
+              onClose: () => Navigator.of(ctx).pop(),
+            ),
           ),
         ),
       );
     }
-  }
-
-  Widget _buildCountryDetailBody(
-    CountryVisitStats stats,
-    ScrollController scrollCtrl,
-    BuildContext sheetCtx,
-  ) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        const SizedBox(height: 10),
-        Container(
-          width: 40,
-          height: 4,
-          decoration: BoxDecoration(
-            color: Colors.white24,
-            borderRadius: BorderRadius.circular(4),
-          ),
-        ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(20, 16, 16, 12),
-          child: Row(
-            children: [
-              Container(
-                width: 52,
-                height: 52,
-                decoration: BoxDecoration(
-                  color: const Color(0xFF0EA5E9).withOpacity(0.16),
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: const Color(0xFF38BDF8).withOpacity(0.45)),
-                ),
-                alignment: Alignment.center,
-                child: Text(stats.meta.flag, style: const TextStyle(fontSize: 28)),
-              ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      stats.meta.nameFr,
-                      style: const TextStyle(
-                        fontSize: 19,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.white,
-                      ),
-                    ),
-                    const SizedBox(height: 3),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 4,
-                      children: [
-                        _statChip(Icons.public_rounded, stats.meta.continent, const Color(0xFF94A3B8)),
-                        _statChip(Icons.photo_library_outlined, '${stats.photoCount} photos', const Color(0xFF38BDF8)),
-                        if (stats.videoCount > 0)
-                          _statChip(Icons.videocam_outlined, '${stats.videoCount} vidéos', const Color(0xFFA78BFA)),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-              IconButton(
-                onPressed: () => Navigator.of(sheetCtx).pop(),
-                icon: const Icon(Icons.close, color: Colors.white54),
-              ),
-            ],
-          ),
-        ),
-        const Divider(height: 1, color: Colors.white10),
-        Expanded(
-          child: ListView(
-            controller: scrollCtrl,
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-            children: [
-              Row(
-                children: [
-                  const Text(
-                    'ALBUMS & DOSSIERS',
-                    style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: 1.0,
-                      color: Colors.white54,
-                    ),
-                  ),
-                  const Spacer(),
-                  Text(
-                    '${stats.albums.length} ${stats.albums.length > 1 ? 'éléments' : 'élément'}',
-                    style: const TextStyle(fontSize: 11, color: Colors.white38),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 10),
-              if (stats.albums.isEmpty)
-                Container(
-                  padding: const EdgeInsets.all(14),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.03),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: Colors.white10),
-                  ),
-                  child: const Text(
-                    'Pays détecté via les métadonnées des photos (aucun sous-dossier dédié dans 02 - Pays).',
-                    style: TextStyle(fontSize: 12, color: Colors.white60),
-                  ),
-                )
-              else
-                ...stats.albums.map((alb) {
-                  return Padding(
-                    padding: const EdgeInsets.only(bottom: 8),
-                    child: Material(
-                      color: const Color(0xFF1E293B).withOpacity(0.75),
-                      borderRadius: BorderRadius.circular(12),
-                      child: InkWell(
-                        borderRadius: BorderRadius.circular(12),
-                        onTap: () {
-                          Navigator.of(sheetCtx).pop();
-                          widget.onOpenAlbum(alb.albumId);
-                        },
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
-                          child: Row(
-                            children: [
-                              Icon(
-                                alb.isFolder ? Icons.folder_rounded : Icons.photo_album_outlined,
-                                color: alb.isFolder ? const Color(0xFFFBBF24) : const Color(0xFF38BDF8),
-                                size: 22,
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      alb.name,
-                                      style: const TextStyle(
-                                        fontSize: 13.5,
-                                        fontWeight: FontWeight.w600,
-                                        color: Colors.white,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 2),
-                                    Row(
-                                      children: [
-                                        if (alb.dateHint != null) ...[
-                                          const Icon(Icons.calendar_today_outlined, size: 11, color: Color(0xFF38BDF8)),
-                                          const SizedBox(width: 4),
-                                          Text(
-                                            alb.dateHint!,
-                                            style: const TextStyle(fontSize: 11, color: Color(0xFF7DD3FC)),
-                                          ),
-                                          const SizedBox(width: 10),
-                                        ],
-                                        Text(
-                                          '${alb.photoCount} photos${alb.videoCount > 0 ? ' · ${alb.videoCount} vidéos' : ''}',
-                                          style: const TextStyle(fontSize: 11.5, color: Colors.white54),
-                                        ),
-                                      ],
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              const Icon(Icons.chevron_right_rounded, color: Colors.white38, size: 20),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
-                  );
-                }),
-            ],
-          ),
-        ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
-          child: SizedBox(
-            width: double.infinity,
-            child: FilledButton.icon(
-              style: FilledButton.styleFrom(
-                backgroundColor: const Color(0xFF0EA5E9),
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(vertical: 13),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-              ),
-              onPressed: () {
-                Navigator.of(sheetCtx).pop();
-                widget.onOpenCountryMedia(stats);
-              },
-              icon: const Icon(Icons.grid_view_rounded, size: 18),
-              label: Text(
-                'Voir tous les médias (${stats.totalMedia})',
-                style: const TextStyle(fontWeight: FontWeight.w600),
-              ),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _statChip(IconData icon, String label, Color color) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(icon, size: 12.5, color: color),
-        const SizedBox(width: 4),
-        Text(label, style: TextStyle(fontSize: 11.5, color: color, fontWeight: FontWeight.w500)),
-      ],
-    );
   }
 
   @override
@@ -690,9 +567,8 @@ class _WorldMapTabState extends State<WorldMapTab> {
 
     return Column(
       children: [
-        // Top Header + Stats + View Toggle
         Container(
-          padding: EdgeInsets.fromLTRB(isCompact ? 12 : 20, 12, isCompact ? 12 : 20, 8),
+          padding: EdgeInsets.fromLTRB(isCompact ? 12 : 20, 10, isCompact ? 12 : 20, 8),
           decoration: const BoxDecoration(
             color: Color(0xFF0B1120),
             border: Border(bottom: BorderSide(color: Colors.white10)),
@@ -778,45 +654,38 @@ class _WorldMapTabState extends State<WorldMapTab> {
                   ),
                 ],
               ),
-              const SizedBox(height: 10),
-              // Continent filter chips
-              LayoutBuilder(
-                builder: (ctx, constraints) {
-                  return SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    child: Row(
-                      children: ['Monde', 'Europe', 'Afrique', 'Amériques', 'Asie', 'Océanie'].map((cont) {
-                        final selected = _selectedContinent == cont;
-                        return Padding(
-                          padding: const EdgeInsets.only(right: 6),
-                          child: ChoiceChip(
-                            label: Text(cont),
-                            selected: selected,
-                            onSelected: (_) => _focusContinent(cont, Size(constraints.maxWidth, 380)),
-                            labelStyle: TextStyle(
-                              fontSize: 11.5,
-                              fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
-                              color: selected ? Colors.white : Colors.white70,
-                            ),
-                            backgroundColor: const Color(0xFF1E293B),
-                            selectedColor: const Color(0xFF0EA5E9).withOpacity(0.35),
-                            side: BorderSide(
-                              color: selected ? const Color(0xFF38BDF8) : Colors.white12,
-                            ),
-                            visualDensity: VisualDensity.compact,
-                            padding: const EdgeInsets.symmetric(horizontal: 6),
-                          ),
-                        );
-                      }).toList(),
-                    ),
-                  );
-                },
+              const SizedBox(height: 8),
+              SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  children: ['Monde', 'Europe', 'Afrique', 'Amériques', 'Asie', 'Océanie'].map((cont) {
+                    final selected = _selectedContinent == cont;
+                    return Padding(
+                      padding: const EdgeInsets.only(right: 6),
+                      child: ChoiceChip(
+                        label: Text(cont),
+                        selected: selected,
+                        onSelected: (_) => _focusContinent(cont, _lastViewportSize),
+                        labelStyle: TextStyle(
+                          fontSize: 11.5,
+                          fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
+                          color: selected ? Colors.white : Colors.white70,
+                        ),
+                        backgroundColor: const Color(0xFF1E293B),
+                        selectedColor: const Color(0xFF0EA5E9).withOpacity(0.35),
+                        side: BorderSide(
+                          color: selected ? const Color(0xFF38BDF8) : Colors.white12,
+                        ),
+                        visualDensity: VisualDensity.compact,
+                        padding: const EdgeInsets.symmetric(horizontal: 6),
+                      ),
+                    );
+                  }).toList(),
+                ),
               ),
             ],
           ),
         ),
-
-        // Main Map or List Area
         Expanded(
           child: _showListMode
               ? _buildCountryListView(filteredCountries)
@@ -893,7 +762,7 @@ class _WorldMapTabState extends State<WorldMapTab> {
                         ),
                         const SizedBox(height: 3),
                         Text(
-                          '${c.meta.continent} · ${c.albums.length} album${c.albums.length > 1 ? 's' : ''}',
+                          '${c.meta.capital} · ${c.albums.length} album${c.albums.length > 1 ? 's' : ''}',
                           style: const TextStyle(fontSize: 11.5, color: Colors.white54),
                         ),
                       ],
@@ -947,21 +816,12 @@ class _WorldMapTabState extends State<WorldMapTab> {
             children: [
               LayoutBuilder(
                 builder: (ctx, constraints) {
-                  // Fit 1200:620 aspect ratio comfortably inside available viewport
-                  final aspect = _mapCanvasSize.width / _mapCanvasSize.height;
-                  final maxW = constraints.maxWidth;
-                  final maxH = constraints.maxHeight;
-                  double boxW = maxW;
-                  double boxH = boxW / aspect;
-                  if (boxH > maxH) {
-                    boxH = maxH;
-                    boxW = boxH * aspect;
-                  }
-                  final mapBoxSize = Size(math.max(boxW, 300), math.max(boxH, 200));
+                  _lastViewportSize = Size(constraints.maxWidth, constraints.maxHeight);
+                  final mapBoxSize = _computeMapBoxSize(_lastViewportSize);
 
                   return Container(
-                    width: maxW,
-                    height: maxH,
+                    width: constraints.maxWidth,
+                    height: constraints.maxHeight,
                     decoration: const BoxDecoration(
                       gradient: RadialGradient(
                         center: Alignment(0, -0.1),
@@ -973,7 +833,7 @@ class _WorldMapTabState extends State<WorldMapTab> {
                       transformationController: _transformController,
                       minScale: 1.0,
                       maxScale: 7.0,
-                      boundaryMargin: const EdgeInsets.all(60),
+                      boundaryMargin: const EdgeInsets.all(80),
                       child: Center(
                         child: GestureDetector(
                           onTapUp: (details) => _handleMapTap(details, mapBoxSize, visitedByIso),
@@ -985,6 +845,7 @@ class _WorldMapTabState extends State<WorldMapTab> {
                                 shapes: shapes,
                                 visitedByIso: visitedByIso,
                                 highlightedIso: _highlightedIso,
+                                currentZoom: _currentZoom,
                               ),
                             ),
                           ),
@@ -994,7 +855,6 @@ class _WorldMapTabState extends State<WorldMapTab> {
                   );
                 },
               ),
-              // Reset Zoom floating button
               Positioned(
                 right: 12,
                 bottom: 12,
@@ -1002,10 +862,28 @@ class _WorldMapTabState extends State<WorldMapTab> {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     FloatingActionButton.small(
-                      heroTag: 'map_reset_zoom',
+                      heroTag: 'map_zoom_in',
+                      backgroundColor: const Color(0xFF0F172A).withOpacity(0.9),
+                      foregroundColor: Colors.white,
+                      tooltip: 'Zoomer',
+                      onPressed: () => _stepZoom(1.5),
+                      child: const Icon(Icons.add, size: 18),
+                    ),
+                    const SizedBox(height: 6),
+                    FloatingActionButton.small(
+                      heroTag: 'map_zoom_out',
                       backgroundColor: const Color(0xFF0F172A).withOpacity(0.9),
                       foregroundColor: Colors.white70,
-                      tooltip: 'Réinitialiser le zoom',
+                      tooltip: 'Dézoomer',
+                      onPressed: () => _stepZoom(0.66),
+                      child: const Icon(Icons.remove, size: 18),
+                    ),
+                    const SizedBox(height: 6),
+                    FloatingActionButton.small(
+                      heroTag: 'map_reset_zoom',
+                      backgroundColor: const Color(0xFF0F172A).withOpacity(0.9),
+                      foregroundColor: const Color(0xFF38BDF8),
+                      tooltip: 'Réinitialiser la vue',
                       onPressed: () {
                         setState(() => _selectedContinent = 'Monde');
                         _transformController.value = Matrix4.identity();
@@ -1015,14 +893,13 @@ class _WorldMapTabState extends State<WorldMapTab> {
                   ],
                 ),
               ),
-              // Subtle legend top-left
               Positioned(
                 left: 12,
                 top: 10,
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                   decoration: BoxDecoration(
-                    color: const Color(0xFF0B1120).withOpacity(0.82),
+                    color: const Color(0xFF0B1120).withOpacity(0.84),
                     borderRadius: BorderRadius.circular(10),
                     border: Border.all(color: Colors.white10),
                   ),
@@ -1044,9 +921,11 @@ class _WorldMapTabState extends State<WorldMapTab> {
                         ),
                       ),
                       const SizedBox(width: 6),
-                      const Text(
-                        'Pays visités (cliquer pour détails)',
-                        style: TextStyle(fontSize: 11, color: Colors.white70),
+                      Text(
+                        _currentZoom < 1.8 && isCompact
+                            ? 'Zoomez ou choisissez un continent'
+                            : 'Pays visités (cliquer pour détails)',
+                        style: const TextStyle(fontSize: 11, color: Colors.white70),
                       ),
                     ],
                   ),
@@ -1055,7 +934,6 @@ class _WorldMapTabState extends State<WorldMapTab> {
             ],
           ),
         ),
-        // Bottom quick-access horizontal strip of visited countries (super handy on mobile!)
         Container(
           height: isCompact ? 62 : 66,
           padding: const EdgeInsets.symmetric(vertical: 8),
@@ -1122,20 +1000,444 @@ class _WorldMapTabState extends State<WorldMapTab> {
   }
 }
 
+class _CountryDetailSheet extends StatefulWidget {
+  final CountryVisitStats stats;
+  final ScrollController scrollController;
+  final void Function(String albumId) onOpenAlbum;
+  final VoidCallback onOpenCountryMedia;
+  final VoidCallback onClose;
+
+  const _CountryDetailSheet({
+    required this.stats,
+    required this.scrollController,
+    required this.onOpenAlbum,
+    required this.onOpenCountryMedia,
+    required this.onClose,
+  });
+
+  @override
+  State<_CountryDetailSheet> createState() => _CountryDetailSheetState();
+}
+
+class _CountryDetailSheetState extends State<_CountryDetailSheet> {
+  int _slideIndex = 0;
+
+  @override
+  Widget build(BuildContext context) {
+    final stats = widget.stats;
+    final slides = stats.slideshowPhotos;
+    final currentSlide = slides.isNotEmpty ? slides[_slideIndex % slides.length] : null;
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        const SizedBox(height: 10),
+        Container(
+          width: 40,
+          height: 4,
+          decoration: BoxDecoration(
+            color: Colors.white24,
+            borderRadius: BorderRadius.circular(4),
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(18, 14, 14, 10),
+          child: Row(
+            children: [
+              Container(
+                width: 50,
+                height: 50,
+                decoration: BoxDecoration(
+                  color: const Color(0xFF0EA5E9).withOpacity(0.16),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: const Color(0xFF38BDF8).withOpacity(0.45)),
+                ),
+                alignment: Alignment.center,
+                child: Text(stats.meta.flag, style: const TextStyle(fontSize: 28)),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      stats.meta.nameFr,
+                      style: const TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Wrap(
+                      spacing: 10,
+                      runSpacing: 4,
+                      children: [
+                        _infoChip(Icons.location_city_outlined, stats.meta.capital, const Color(0xFFCBD5E1)),
+                        _infoChip(Icons.groups_outlined, stats.meta.population, const Color(0xFFCBD5E1)),
+                        _infoChip(Icons.public_rounded, stats.meta.continent, const Color(0xFF94A3B8)),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    Wrap(
+                      spacing: 10,
+                      runSpacing: 4,
+                      children: [
+                        _infoChip(Icons.photo_library_outlined, '${stats.photoCount} photos', const Color(0xFF38BDF8)),
+                        if (stats.videoCount > 0)
+                          _infoChip(Icons.videocam_outlined, '${stats.videoCount} vidéos', const Color(0xFFA78BFA)),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              IconButton(
+                onPressed: widget.onClose,
+                icon: const Icon(Icons.close, color: Colors.white54),
+              ),
+            ],
+          ),
+        ),
+        const Divider(height: 1, color: Colors.white10),
+        Expanded(
+          child: ListView(
+            controller: widget.scrollController,
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+            children: [
+              // Travel Dates (from / to) for countries other than France
+              if (stats.meta.iso3 != 'FRA' && stats.travelDateRanges.isNotEmpty) ...[
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  margin: const EdgeInsets.only(bottom: 14),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF0EA5E9).withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: const Color(0xFF38BDF8).withOpacity(0.28)),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Row(
+                        children: [
+                          Icon(Icons.flight_takeoff_rounded, size: 15, color: Color(0xFF38BDF8)),
+                          SizedBox(width: 6),
+                          Text(
+                            'DATES DES VOYAGES',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                              letterSpacing: 0.9,
+                              color: Color(0xFF7DD3FC),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 6),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 6,
+                        children: stats.travelDateRanges
+                            .map(
+                              (r) => Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFF0F172A),
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(color: Colors.white12),
+                                ),
+                                child: Text(
+                                  r,
+                                  style: const TextStyle(fontSize: 11.5, color: Colors.white, fontWeight: FontWeight.w500),
+                                ),
+                              ),
+                            )
+                            .toList(),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+
+              // Slideshow ("mode diapo" with prev/next arrows from Thématique / Pays)
+              if (currentSlide != null && (currentSlide.largePreviewUrl ?? currentSlide.thumbnailUrl) != null) ...[
+                Row(
+                  children: [
+                    const Text(
+                      'DIAPORAMA (THÉMATIQUE PAYS)',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 1.0,
+                        color: Colors.white54,
+                      ),
+                    ),
+                    const Spacer(),
+                    Text(
+                      '${(_slideIndex % slides.length) + 1} / ${slides.length}',
+                      style: const TextStyle(fontSize: 11, color: Color(0xFF7DD3FC), fontWeight: FontWeight.w600),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Container(
+                  height: 200,
+                  decoration: BoxDecoration(
+                    color: Colors.black,
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: Colors.white12),
+                  ),
+                  clipBehavior: Clip.antiAlias,
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      Image.network(
+                        currentSlide.largePreviewUrl ?? currentSlide.thumbnailUrl!,
+                        key: ValueKey(currentSlide.id),
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) => const Center(
+                          child: Icon(Icons.image_outlined, color: Colors.white24, size: 36),
+                        ),
+                      ),
+                      Positioned(
+                        left: 8,
+                        top: 0,
+                        bottom: 0,
+                        child: Center(
+                          child: CircleAvatar(
+                            radius: 18,
+                            backgroundColor: Colors.black.withOpacity(0.6),
+                            child: IconButton(
+                              padding: EdgeInsets.zero,
+                              icon: const Icon(Icons.chevron_left, color: Colors.white),
+                              onPressed: () {
+                                setState(() {
+                                  _slideIndex = (_slideIndex - 1 + slides.length) % slides.length;
+                                });
+                              },
+                            ),
+                          ),
+                        ),
+                      ),
+                      Positioned(
+                        right: 8,
+                        top: 0,
+                        bottom: 0,
+                        child: Center(
+                          child: CircleAvatar(
+                            radius: 18,
+                            backgroundColor: Colors.black.withOpacity(0.6),
+                            child: IconButton(
+                              padding: EdgeInsets.zero,
+                              icon: const Icon(Icons.chevron_right, color: Colors.white),
+                              onPressed: () {
+                                setState(() {
+                                  _slideIndex = (_slideIndex + 1) % slides.length;
+                                });
+                              },
+                            ),
+                          ),
+                        ),
+                      ),
+                      Positioned(
+                        left: 0,
+                        right: 0,
+                        bottom: 0,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              begin: Alignment.bottomCenter,
+                              end: Alignment.topCenter,
+                              colors: [Colors.black.withOpacity(0.8), Colors.transparent],
+                            ),
+                          ),
+                          child: Text(
+                            currentSlide.filename,
+                            style: const TextStyle(fontSize: 11, color: Colors.white70),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 14),
+              ],
+
+              Row(
+                children: [
+                  const Text(
+                    'ALBUMS & DOSSIERS',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 1.0,
+                      color: Colors.white54,
+                    ),
+                  ),
+                  const Spacer(),
+                  Text(
+                    '${stats.albums.length} ${stats.albums.length > 1 ? 'éléments' : 'élément'}',
+                    style: const TextStyle(fontSize: 11, color: Colors.white38),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              if (stats.albums.isEmpty)
+                Container(
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.03),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.white10),
+                  ),
+                  child: const Text(
+                    'Pays détecté via les métadonnées des photos (aucun album dédié assigné).',
+                    style: TextStyle(fontSize: 12, color: Colors.white60),
+                  ),
+                )
+              else
+                ...stats.albums.map((alb) {
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: Material(
+                      color: const Color(0xFF1E293B).withOpacity(0.75),
+                      borderRadius: BorderRadius.circular(12),
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(12),
+                        onTap: () => widget.onOpenAlbum(alb.albumId),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                          child: Row(
+                            children: [
+                              Icon(
+                                alb.isFolder ? Icons.folder_rounded : Icons.photo_album_outlined,
+                                color: alb.isFolder ? const Color(0xFFFBBF24) : const Color(0xFF38BDF8),
+                                size: 22,
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      children: [
+                                        Expanded(
+                                          child: Text(
+                                            alb.name,
+                                            style: const TextStyle(
+                                              fontSize: 13.5,
+                                              fontWeight: FontWeight.w600,
+                                              color: Colors.white,
+                                            ),
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                        ),
+                                        const SizedBox(width: 6),
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                          decoration: BoxDecoration(
+                                            color: alb.sourceLabel == 'Années'
+                                                ? const Color(0xFF6366F1).withOpacity(0.25)
+                                                : const Color(0xFF0EA5E9).withOpacity(0.2),
+                                            borderRadius: BorderRadius.circular(6),
+                                          ),
+                                          child: Text(
+                                            alb.sourceLabel,
+                                            style: TextStyle(
+                                              fontSize: 9.5,
+                                              fontWeight: FontWeight.w600,
+                                              color: alb.sourceLabel == 'Années'
+                                                  ? const Color(0xFFA5B4FC)
+                                                  : const Color(0xFF7DD3FC),
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 2),
+                                    Row(
+                                      children: [
+                                        if (alb.dateHint != null) ...[
+                                          const Icon(Icons.calendar_today_outlined, size: 11, color: Color(0xFF38BDF8)),
+                                          const SizedBox(width: 4),
+                                          Text(
+                                            alb.dateHint!,
+                                            style: const TextStyle(fontSize: 11, color: Color(0xFF7DD3FC)),
+                                          ),
+                                          const SizedBox(width: 10),
+                                        ],
+                                        Text(
+                                          '${alb.photoCount} photos${alb.videoCount > 0 ? ' · ${alb.videoCount} vidéos' : ''}',
+                                          style: const TextStyle(fontSize: 11.5, color: Colors.white54),
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const Icon(Icons.chevron_right_rounded, color: Colors.white38, size: 20),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  );
+                }),
+            ],
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+          child: SizedBox(
+            width: double.infinity,
+            child: FilledButton.icon(
+              style: FilledButton.styleFrom(
+                backgroundColor: const Color(0xFF0EA5E9),
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 13),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+              onPressed: widget.onOpenCountryMedia,
+              icon: const Icon(Icons.grid_view_rounded, size: 18),
+              label: Text(
+                'Voir tous les médias (${stats.totalMedia})',
+                style: const TextStyle(fontWeight: FontWeight.w600),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _infoChip(IconData icon, String label, Color color) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 12.5, color: color),
+        const SizedBox(width: 4),
+        Text(label, style: TextStyle(fontSize: 11.5, color: color, fontWeight: FontWeight.w500)),
+      ],
+    );
+  }
+}
+
 class _WorldMapPainter extends CustomPainter {
   final List<_CountryGeoShape> shapes;
   final Map<String, CountryVisitStats> visitedByIso;
   final String? highlightedIso;
+  final double currentZoom;
 
   _WorldMapPainter({
     required this.shapes,
     required this.visitedByIso,
     this.highlightedIso,
+    this.currentZoom = 1.0,
   });
 
   @override
   void paint(Canvas canvas, Size size) {
-    // 1. Subtle graticule grid
     final gridPaint = Paint()
       ..color = Colors.white.withOpacity(0.04)
       ..strokeWidth = 0.7;
@@ -1171,7 +1473,6 @@ class _WorldMapPainter extends CustomPainter {
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1.0;
 
-    // 2. Draw unvisited countries first
     for (final s in shapes) {
       if (visitedByIso.containsKey(s.iso3)) continue;
       final path = _buildPath(s, size);
@@ -1179,7 +1480,6 @@ class _WorldMapPainter extends CustomPainter {
       canvas.drawPath(path, unvisitedStroke);
     }
 
-    // 3. Draw visited countries on top with glow
     for (final s in shapes) {
       if (!visitedByIso.containsKey(s.iso3)) continue;
       final path = _buildPath(s, size);
@@ -1191,23 +1491,45 @@ class _WorldMapPainter extends CustomPainter {
       canvas.drawPath(path, visitedStroke);
     }
 
-    // 4. Draw count badges on visited countries
+    // Draw badges sorted by highest media count first so major countries get priority,
+    // and replace overlapping pills with clean glowing dots until zoomed in!
+    final visitedShapes = shapes.where((s) => visitedByIso.containsKey(s.iso3)).toList()
+      ..sort((a, b) => visitedByIso[b.iso3]!.totalMedia.compareTo(visitedByIso[a.iso3]!.totalMedia));
+
+    final invScale = 1.0 / math.sqrt(currentZoom.clamp(1.0, 6.0));
+    final minSpacing = (size.width < 550 ? 22.0 : 18.0) / currentZoom.clamp(1.0, 5.0);
+    final placedCenters = <Offset>[];
+
     final badgeBg = Paint()..color = const Color(0xFF0B1120).withOpacity(0.92);
     final badgeBorder = Paint()
       ..color = const Color(0xFF38BDF8)
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.0;
+      ..strokeWidth = 0.9 * invScale;
+    final dotFill = Paint()..color = const Color(0xFF38BDF8);
+    final dotBorder = Paint()
+      ..color = Colors.white
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 0.8 * invScale;
 
-    for (final s in shapes) {
-      final stats = visitedByIso[s.iso3];
-      if (stats == null) continue;
+    for (final s in visitedShapes) {
+      final stats = visitedByIso[s.iso3]!;
       final c = Offset(s.centerNorm.dx * size.width, s.centerNorm.dy * size.height);
+      final overlaps = placedCenters.any((prev) => (prev - c).distance < minSpacing);
+
+      if (overlaps) {
+        final dotR = 2.8 * invScale;
+        canvas.drawCircle(c, dotR, dotFill);
+        canvas.drawCircle(c, dotR, dotBorder);
+        continue;
+      }
+
+      placedCenters.add(c);
       final label = '${stats.totalMedia}';
       final tp = TextPainter(
         text: TextSpan(
           text: label,
-          style: const TextStyle(
-            fontSize: 7.8,
+          style: TextStyle(
+            fontSize: 7.8 * invScale,
             fontWeight: FontWeight.w700,
             color: Colors.white,
           ),
@@ -1215,11 +1537,11 @@ class _WorldMapPainter extends CustomPainter {
         textDirection: TextDirection.ltr,
       )..layout();
 
-      final pillW = math.max(15.0, tp.width + 7.0);
-      const pillH = 11.5;
+      final pillW = math.max(14.0 * invScale, tp.width + 6.5 * invScale);
+      final pillH = 11.0 * invScale;
       final rect = RRect.fromRectAndRadius(
         Rect.fromCenter(center: c, width: pillW, height: pillH),
-        const Radius.circular(6),
+        Radius.circular(5.5 * invScale),
       );
       canvas.drawRRect(rect, badgeBg);
       canvas.drawRRect(rect, badgeBorder);
@@ -1244,6 +1566,7 @@ class _WorldMapPainter extends CustomPainter {
   bool shouldRepaint(covariant _WorldMapPainter oldDelegate) {
     return oldDelegate.visitedByIso != visitedByIso ||
         oldDelegate.highlightedIso != highlightedIso ||
-        oldDelegate.shapes != shapes;
+        oldDelegate.shapes != shapes ||
+        (oldDelegate.currentZoom - currentZoom).abs() > 0.05;
   }
 }
