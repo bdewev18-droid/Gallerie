@@ -7,8 +7,8 @@ import 'services/app_update_service.dart';
 import 'services/cloud_sync_service.dart';
 import 'widgets/world_map_tab.dart';
 
-const int appBuildNumber = 12;
-const String appVersionLabel = "1.0.11";
+const int appBuildNumber = 13;
+const String appVersionLabel = "1.0.12";
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -180,7 +180,11 @@ class _HomeScreenState extends State<HomeScreen> {
   List<YearItem> _videoYears = [];
 
   int _mediaMode = 0; // 0 = Photos, 1 = Vidéos
-  int _currentIndex = 0; // For Photos: 0 = La carte, 1 = Galerie, 2 = Thématiques, 3 = Années, 4 = Recherche
+  int _currentIndex = 0; // 0 = La carte, 1 = Galerie, 2 = Thématiques, 3 = Années, 4 = Recherche
+  bool _showPreHome = true;
+  RemoteAppVersion? _pendingUpdate;
+  bool _isCheckingUpdate = true;
+  bool _updateSkipped = false;
   final List<AlbumNode> _navHistory = [];
   String _albumSearch = '';
   final TextEditingController _albumSearchController = TextEditingController();
@@ -200,6 +204,7 @@ class _HomeScreenState extends State<HomeScreen> {
   static const String _kYear2026Id = '8a27a7356de54a4fa7aae6fdea783597';
   static const String _kPaysFolderId = '2956c2bdbaf04c7984849dbacdb605ab';
   static const String _kCountryMetaParentId = '__country_meta__';
+  static const String _kCollabTripAlbumId = 'collab_voyage_en_cours';
   AuthUserSession _auth = CloudSyncService.currentAuth;
   StreamSubscription<AuthUserSession>? _authSub;
 
@@ -212,8 +217,16 @@ class _HomeScreenState extends State<HomeScreen> {
       }
     });
     _loadCatalog();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      AppUpdateService.checkAndPrompt(context);
+    _checkLaunchUpdate();
+  }
+
+  Future<void> _checkLaunchUpdate() async {
+    if (mounted) setState(() => _isCheckingUpdate = true);
+    final update = await AppUpdateService.checkUpdate();
+    if (!mounted) return;
+    setState(() {
+      _pendingUpdate = update;
+      _isCheckingUpdate = false;
     });
   }
 
@@ -412,36 +425,30 @@ class _HomeScreenState extends State<HomeScreen> {
     if (_auth.isSignedIn) {
       return Padding(
         padding: const EdgeInsets.only(right: 6),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(20),
-          onTap: _showUserAccountSheet,
-          child: Container(
-            padding: EdgeInsets.symmetric(horizontal: compact ? 8 : 10, vertical: 5),
-            decoration: BoxDecoration(
-              color: const Color(0xFF1E293B),
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: const Color(0xFF4ADE80).withValues(alpha: 0.5)),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  width: 8,
-                  height: 8,
-                  decoration: const BoxDecoration(
-                    color: Color(0xFF4ADE80),
-                    shape: BoxShape.circle,
-                  ),
+        child: Container(
+          padding: EdgeInsets.symmetric(horizontal: compact ? 8 : 10, vertical: 5),
+          decoration: BoxDecoration(
+            color: const Color(0xFF1E293B),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: const Color(0xFF4ADE80).withValues(alpha: 0.45)),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 8,
+                height: 8,
+                decoration: const BoxDecoration(
+                  color: Color(0xFF4ADE80),
+                  shape: BoxShape.circle,
                 ),
-                const SizedBox(width: 6),
-                Text(
-                  _auth.shortLabel,
-                  style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.white),
-                ),
-                const SizedBox(width: 4),
-                const Icon(Icons.expand_more, size: 14, color: Colors.white70),
-              ],
-            ),
+              ),
+              const SizedBox(width: 6),
+              Text(
+                _auth.shortLabel,
+                style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.white),
+              ),
+            ],
           ),
         ),
       );
@@ -820,6 +827,10 @@ class _HomeScreenState extends State<HomeScreen> {
       );
     }
 
+    if (_showPreHome) {
+      return _buildPreHomeScreen();
+    }
+
     final screenWidth = MediaQuery.of(context).size.width;
     final isWide = screenWidth >= 900;
 
@@ -829,21 +840,447 @@ class _HomeScreenState extends State<HomeScreen> {
     return _buildMobileScaffold();
   }
 
+  Future<void> _openCollaborativeTripAlbum() async {
+    // Ensure collaborative album exists locally & in cloud
+    if (!_nodesById.containsKey(_kCollabTripAlbumId)) {
+      _nodesById[_kCollabTripAlbumId] = AlbumNode(
+        id: _kCollabTripAlbumId,
+        name: 'Voyage en cours (Collaboratif)',
+        parentId: _kYearsRootId,
+        isFolder: false,
+        directCount: 0,
+        totalCount: 0,
+      );
+      _customAlbumIds.add(_kCollabTripAlbumId);
+      _recalculateAlbumCounts();
+      CloudSyncService.createCustomAlbum(
+        id: _kCollabTripAlbumId,
+        name: 'Voyage en cours (Collaboratif)',
+        parentId: _kYearsRootId,
+        isFolder: false,
+      );
+    }
+
+    final collabMedia = _allPhotos
+        .where((p) => p.albums.contains(_kCollabTripAlbumId))
+        .toList();
+
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => Scaffold(
+          appBar: AppBar(
+            backgroundColor: const Color(0xFF0F172A),
+            title: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('✈️ Voyage en cours (Collaboratif)', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
+                Text('${collabMedia.length} média(s) partagé(s) par la famille', style: const TextStyle(fontSize: 11, color: Colors.white54)),
+              ],
+            ),
+            actions: [
+              TextButton.icon(
+                style: TextButton.styleFrom(foregroundColor: const Color(0xFF4ADE80)),
+                onPressed: () => _showAddPhotoDialog(defaultAlbumId: _kCollabTripAlbumId),
+                icon: const Icon(Icons.add_photo_alternate_outlined, size: 18),
+                label: const Text('Déposer', style: TextStyle(fontWeight: FontWeight.bold)),
+              ),
+              const SizedBox(width: 6),
+            ],
+          ),
+          body: collabMedia.isEmpty
+              ? Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(18),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF0EA5E9).withValues(alpha: 0.14),
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(Icons.flight_takeoff_rounded, size: 42, color: Color(0xFF38BDF8)),
+                        ),
+                        const SizedBox(height: 16),
+                        const Text(
+                          'Album collaboratif du voyage en cours',
+                          style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: Colors.white),
+                          textAlign: TextAlign.center,
+                        ),
+                        const SizedBox(height: 8),
+                        const Text(
+                          'Chaque membre de la famille peut déposer ici ses photos et vidéos pour les partager en direct.',
+                          style: TextStyle(fontSize: 13, color: Colors.white60),
+                          textAlign: TextAlign.center,
+                        ),
+                        const SizedBox(height: 20),
+                        FilledButton.icon(
+                          style: FilledButton.styleFrom(
+                            backgroundColor: const Color(0xFF0EA5E9),
+                            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 13),
+                          ),
+                          onPressed: () => _showAddPhotoDialog(defaultAlbumId: _kCollabTripAlbumId),
+                          icon: const Icon(Icons.add_photo_alternate_outlined),
+                          label: const Text('Déposer une photo ou vidéo'),
+                        ),
+                      ],
+                    ),
+                  ),
+                )
+              : PhotoGridBody(
+                  photos: collabMedia,
+                  nodesById: _nodesById,
+                  gdriveUrl: _gdriveUrl,
+                  likesByPhotoId: _likesByPhotoId,
+                  currentUserEmail: _auth.email,
+                  onToggleLike: _handleTogglePhotoLike,
+                  onAssignAlbum: _handleAssignAlbumToPhoto,
+                  onDeletePhoto: _handleDeletePhoto,
+                  onBulkAssignAlbum: _handleBulkAssignAlbumToPhotos,
+                  onBulkDeletePhotos: _handleBulkDeletePhotos,
+                ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPreHomeScreen() {
+    final collabCount = _allPhotos.where((p) => p.albums.contains(_kCollabTripAlbumId)).length;
+    final hasPendingUpdate = _pendingUpdate != null && !_updateSkipped;
+
+    return Scaffold(
+      body: SafeArea(
+        child: Center(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 540),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  // Logo & Version header
+                  Row(
+                    children: [
+                      Container(
+                        width: 48,
+                        height: 48,
+                        decoration: BoxDecoration(
+                          gradient: const LinearGradient(
+                            colors: [Color(0xFF0284C7), Color(0xFF38BDF8)],
+                            begin: Alignment.bottomLeft,
+                            end: Alignment.topRight,
+                          ),
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                        child: const Icon(Icons.photo_library_outlined, color: Colors.white, size: 26),
+                      ),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Medias Familly',
+                              style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: Colors.white),
+                            ),
+                            Text(
+                              'v$appVersionLabel • Build $appBuildNumber · ${_allPhotos.length} médias',
+                              style: const TextStyle(fontSize: 12, color: Colors.white54),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 20),
+
+                  // 1. Module Connexion Google
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF0F172A),
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(
+                        color: _auth.isSignedIn
+                            ? const Color(0xFF4ADE80).withValues(alpha: 0.4)
+                            : Colors.white12,
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        CircleAvatar(
+                          radius: 22,
+                          backgroundColor: _auth.isSignedIn
+                              ? const Color(0xFF4ADE80).withValues(alpha: 0.2)
+                              : const Color(0xFF1E293B),
+                          child: Icon(
+                            _auth.isSignedIn ? Icons.verified_user_rounded : Icons.person_outline_rounded,
+                            color: _auth.isSignedIn ? const Color(0xFF4ADE80) : Colors.white54,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                _auth.isSignedIn ? _auth.shortLabel : 'Non connecté',
+                                style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Colors.white),
+                              ),
+                              Text(
+                                _auth.isSignedIn
+                                    ? (_auth.email ?? 'Connecté avec Google')
+                                    : 'Connectez-vous pour liker et déposer des médias',
+                                style: const TextStyle(fontSize: 11.5, color: Colors.white54),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        if (_auth.status == AuthStatus.signingIn)
+                          const SizedBox(
+                            width: 22,
+                            height: 22,
+                            child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF38BDF8)),
+                          )
+                        else if (_auth.isSignedIn)
+                          TextButton(
+                            onPressed: _handleSignOut,
+                            child: const Text('Déconnexion', style: TextStyle(fontSize: 12, color: Color(0xFFF87171))),
+                          )
+                        else
+                          FilledButton.icon(
+                            style: FilledButton.styleFrom(
+                              backgroundColor: const Color(0xFF0284C7),
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                            ),
+                            onPressed: _handleGoogleSignIn,
+                            icon: const Icon(Icons.login, size: 16),
+                            label: const Text('Connexion', style: TextStyle(fontSize: 12)),
+                          ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+
+                  // 2. Module Version & Mise à jour (avec possibilité de passer)
+                  Container(
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: hasPendingUpdate
+                          ? const Color(0xFF0C4A6E).withValues(alpha: 0.4)
+                          : const Color(0xFF0F172A),
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(
+                        color: hasPendingUpdate ? const Color(0xFF38BDF8) : Colors.white10,
+                      ),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Icon(
+                              hasPendingUpdate ? Icons.system_update_alt_rounded : Icons.check_circle_outline_rounded,
+                              size: 18,
+                              color: hasPendingUpdate ? const Color(0xFF38BDF8) : const Color(0xFF4ADE80),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                _isCheckingUpdate
+                                    ? 'Vérification des mises à jour...'
+                                    : hasPendingUpdate
+                                        ? 'Mise à jour disponible : v${_pendingUpdate!.version} (Build ${_pendingUpdate!.buildNumber})'
+                                        : (_updateSkipped && _pendingUpdate != null
+                                            ? 'Mise à jour v${_pendingUpdate!.version} passée'
+                                            : 'Application à jour (v$appVersionLabel)'),
+                                style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Colors.white),
+                              ),
+                            ),
+                            if (!_isCheckingUpdate && !hasPendingUpdate)
+                              IconButton(
+                                tooltip: 'Vérifier les mises à jour',
+                                icon: const Icon(Icons.refresh, size: 18, color: Colors.white54),
+                                onPressed: () {
+                                  setState(() => _updateSkipped = false);
+                                  _checkLaunchUpdate();
+                                },
+                              ),
+                          ],
+                        ),
+                        if (hasPendingUpdate) ...[
+                          if ((_pendingUpdate!.releaseNotes ?? '').isNotEmpty) ...[
+                            const SizedBox(height: 6),
+                            Text(
+                              _pendingUpdate!.releaseNotes!,
+                              style: const TextStyle(fontSize: 12, color: Colors.white70),
+                            ),
+                          ],
+                          const SizedBox(height: 10),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: FilledButton.icon(
+                                  style: FilledButton.styleFrom(backgroundColor: const Color(0xFF0EA5E9)),
+                                  onPressed: () => AppUpdateService.promptUpdate(context, _pendingUpdate!, isForced: true),
+                                  icon: const Icon(Icons.download_rounded, size: 17),
+                                  label: const Text('Mettre à jour'),
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              OutlinedButton(
+                                style: OutlinedButton.styleFrom(
+                                  foregroundColor: Colors.white70,
+                                  side: const BorderSide(color: Colors.white24),
+                                ),
+                                onPressed: () => setState(() => _updateSkipped = true),
+                                child: const Text('Passer'),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 22),
+
+                  const Text(
+                    'CHOISIR UN ESPACE',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 1.1,
+                      color: Colors.white54,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+
+                  // 3. Mode Photos
+                  _buildPreHomeModeCard(
+                    icon: Icons.photo_library_rounded,
+                    color: const Color(0xFF38BDF8),
+                    title: 'Mode Photos',
+                    subtitle: '${_photosOnly.length} photos · Carte du monde, Thématiques & Années',
+                    onTap: () => setState(() {
+                      _mediaMode = 0;
+                      _currentIndex = 0;
+                      _showPreHome = false;
+                    }),
+                  ),
+                  const SizedBox(height: 12),
+
+                  // 4. Mode Vidéos
+                  _buildPreHomeModeCard(
+                    icon: Icons.videocam_rounded,
+                    color: const Color(0xFFA78BFA),
+                    title: 'Mode Vidéos',
+                    subtitle: '${_videosOnly.length} vidéos · Carte du monde, Thématiques & Années',
+                    onTap: () => setState(() {
+                      _mediaMode = 1;
+                      _currentIndex = 0;
+                      _showPreHome = false;
+                    }),
+                  ),
+                  const SizedBox(height: 12),
+
+                  // 5. Album collaboratif (Voyage en cours)
+                  _buildPreHomeModeCard(
+                    icon: Icons.flight_takeoff_rounded,
+                    color: const Color(0xFF4ADE80),
+                    title: 'Album collaboratif · Voyage en cours',
+                    subtitle: '$collabCount média(s) · Chaque membre peut déposer ses photos',
+                    onTap: _openCollaborativeTripAlbum,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPreHomeModeCard({
+    required IconData icon,
+    required Color color,
+    required String title,
+    required String subtitle,
+    required VoidCallback onTap,
+  }) {
+    return Material(
+      color: const Color(0xFF0F172A),
+      borderRadius: BorderRadius.circular(16),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: color.withValues(alpha: 0.35)),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 48,
+                height: 48,
+                decoration: BoxDecoration(
+                  color: color.withValues(alpha: 0.16),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Icon(icon, color: color, size: 26),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      subtitle,
+                      style: const TextStyle(fontSize: 12, color: Colors.white60),
+                    ),
+                  ],
+                ),
+              ),
+              Icon(Icons.arrow_forward_ios_rounded, size: 16, color: color),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildDesktopScaffold() {
-    final activeNavIndex = _mediaMode == 0 ? _currentIndex : _currentIndex.clamp(0, 2);
+    final activeNavIndex = _currentIndex;
+    final isVideos = _mediaMode == 1;
 
     return Scaffold(
       appBar: AppBar(
         backgroundColor: const Color(0xFF0F172A),
         surfaceTintColor: Colors.transparent,
         toolbarHeight: 64,
-        titleSpacing: 20,
+        titleSpacing: 16,
         shape: const Border(bottom: BorderSide(color: Colors.white10)),
         title: Row(
           children: [
+            IconButton(
+              tooltip: 'Accueil (Pré-homepage)',
+              icon: const Icon(Icons.home_outlined, color: Color(0xFF38BDF8)),
+              onPressed: () => setState(() => _showPreHome = true),
+            ),
+            const SizedBox(width: 4),
             Container(
-              width: 36,
-              height: 36,
+              width: 34,
+              height: 34,
               decoration: BoxDecoration(
                 gradient: const LinearGradient(
                   colors: [Color(0xFF0284C7), Color(0xFF38BDF8)],
@@ -852,33 +1289,16 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
                 borderRadius: BorderRadius.circular(10),
               ),
-              child: const Icon(Icons.photo_library_outlined, color: Colors.white, size: 20),
+              child: const Icon(Icons.photo_library_outlined, color: Colors.white, size: 19),
             ),
-            const SizedBox(width: 12),
+            const SizedBox(width: 10),
             Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
-                Row(
-                  children: [
-                    const Text(
-                      "Medias Familly",
-                      style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16, letterSpacing: -0.3),
-                    ),
-                    const SizedBox(width: 8),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF0284C7).withValues(alpha: 0.25),
-                        borderRadius: BorderRadius.circular(6),
-                        border: Border.all(color: const Color(0xFF38BDF8).withValues(alpha: 0.4)),
-                      ),
-                      child: const Text(
-                        "HD",
-                        style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: Color(0xFF38BDF8)),
-                      ),
-                    ),
-                  ],
+                const Text(
+                  "Medias Familly",
+                  style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16, letterSpacing: -0.3),
                 ),
                 Text(
                   "${_allPhotos.length} médias indexés",
@@ -886,8 +1306,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               ],
             ),
-            const SizedBox(width: 32),
-            // Sélecteur Photos / Vidéos compact et centré/aligné proprement
+            const SizedBox(width: 24),
             SizedBox(
               width: 320,
               child: SegmentedButton<int>(
@@ -915,9 +1334,6 @@ class _HomeScreenState extends State<HomeScreen> {
                 selected: {_mediaMode},
                 onSelectionChanged: (set) => setState(() {
                   _mediaMode = set.first;
-                  if (_mediaMode == 1 && _currentIndex > 2) {
-                    _currentIndex = 0;
-                  }
                 }),
               ),
             ),
@@ -928,19 +1344,10 @@ class _HomeScreenState extends State<HomeScreen> {
           IconButton(
             tooltip: "Ajouter un média Google Drive",
             icon: const Icon(Icons.add_photo_alternate_outlined, color: Color(0xFF4ADE80), size: 22),
-            onPressed: () => _showAddPhotoDialog(),
+            onPressed: () => _showAddPhotoDialog(defaultIsVideo: isVideos),
           ),
           IconButton(
-            tooltip: "Créer un dossier ou album",
-            icon: const Icon(Icons.create_new_folder_outlined, color: Color(0xFFFBBF24), size: 21),
-            onPressed: () => _showCreateAlbumDialog(
-              defaultParentId: _currentIndex == 3
-                  ? (_yearsNavHistory.isEmpty ? _kYearsRootId : _yearsNavHistory.last.id)
-                  : (_navHistory.isEmpty ? null : _navHistory.last.id),
-            ),
-          ),
-          IconButton(
-            tooltip: "Synchroniser les nouveautés (Supabase Cloud)",
+            tooltip: "Forcer la synchronisation (Supabase Cloud)",
             icon: _isSyncingCloud
                 ? const SizedBox(
                     width: 18,
@@ -950,43 +1357,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 : const Icon(Icons.sync, color: Color(0xFF38BDF8), size: 20),
             onPressed: () => _syncWithCloud(silent: false),
           ),
-          IconButton(
-            tooltip: "Mises à jour (v$appVersionLabel)",
-            icon: const Icon(Icons.system_update_alt_outlined, color: Color(0xFF38BDF8), size: 20),
-            onPressed: () async {
-              final update = await AppUpdateService.checkUpdate();
-              if (!context.mounted) return;
-              if (update != null) {
-                await AppUpdateService.promptUpdate(context, update, isForced: true);
-              } else {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    backgroundColor: Color(0xFF0F172A),
-                    content: Text(
-                      'Votre application Medias Familly est à jour (v$appVersionLabel).',
-                      style: TextStyle(color: Colors.white),
-                    ),
-                  ),
-                );
-              }
-            },
-          ),
-          const SizedBox(width: 4),
-          Padding(
-            padding: const EdgeInsets.only(right: 16),
-            child: OutlinedButton.icon(
-              style: OutlinedButton.styleFrom(
-                foregroundColor: Colors.white,
-                backgroundColor: const Color(0xFF1E293B),
-                side: const BorderSide(color: Colors.white12),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-              ),
-              onPressed: () => _openUrl(_gdriveUrl),
-              icon: const Icon(Icons.cloud_outlined, size: 16, color: Color(0xFF38BDF8)),
-              label: const Text("Google Drive HD", style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500)),
-            ),
-          ),
+          const SizedBox(width: 10),
         ],
       ),
       body: Row(
@@ -1000,11 +1371,11 @@ class _HomeScreenState extends State<HomeScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                const Padding(
-                  padding: EdgeInsets.fromLTRB(16, 16, 16, 8),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
                   child: Text(
-                    "NAVIGATION",
-                    style: TextStyle(
+                    isVideos ? "NAVIGATION VIDÉOS" : "NAVIGATION PHOTOS",
+                    style: const TextStyle(
                       fontSize: 10,
                       fontWeight: FontWeight.bold,
                       letterSpacing: 1.1,
@@ -1012,70 +1383,44 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                   ),
                 ),
-                if (_mediaMode == 0) ...[
-                  _buildDesktopNavItem(
-                    index: 0,
-                    activeIndex: activeNavIndex,
-                    icon: Icons.public_outlined,
-                    selectedIcon: Icons.public,
-                    label: "La carte",
-                  ),
-                  _buildDesktopNavItem(
-                    index: 1,
-                    activeIndex: activeNavIndex,
-                    icon: Icons.photo_library_outlined,
-                    selectedIcon: Icons.photo_library,
-                    label: "Galerie",
-                    badge: "${_photosOnly.length}",
-                  ),
-                  _buildDesktopNavItem(
-                    index: 2,
-                    activeIndex: activeNavIndex,
-                    icon: Icons.folder_outlined,
-                    selectedIcon: Icons.folder,
-                    label: "Thématiques",
-                    badge: "${_countPhotosInTree(yearsTree: false)}",
-                  ),
-                  _buildDesktopNavItem(
-                    index: 3,
-                    activeIndex: activeNavIndex,
-                    icon: Icons.calendar_today_outlined,
-                    selectedIcon: Icons.calendar_today,
-                    label: "Années",
-                    badge: "${_countPhotosInTree(yearsTree: true)}",
-                  ),
-                  _buildDesktopNavItem(
-                    index: 4,
-                    activeIndex: activeNavIndex,
-                    icon: Icons.search,
-                    selectedIcon: Icons.search,
-                    label: "Recherche",
-                  ),
-                ] else ...[
-                  _buildDesktopNavItem(
-                    index: 0,
-                    activeIndex: activeNavIndex,
-                    icon: Icons.video_library_outlined,
-                    selectedIcon: Icons.video_library,
-                    label: "Galerie Vidéos",
-                    badge: "${_videosOnly.length}",
-                  ),
-                  _buildDesktopNavItem(
-                    index: 1,
-                    activeIndex: activeNavIndex,
-                    icon: Icons.calendar_today_outlined,
-                    selectedIcon: Icons.calendar_today,
-                    label: "Années Vidéos",
-                    badge: "${_videoYears.length}",
-                  ),
-                  _buildDesktopNavItem(
-                    index: 2,
-                    activeIndex: activeNavIndex,
-                    icon: Icons.search,
-                    selectedIcon: Icons.search,
-                    label: "Recherche",
-                  ),
-                ],
+                _buildDesktopNavItem(
+                  index: 0,
+                  activeIndex: activeNavIndex,
+                  icon: Icons.public_outlined,
+                  selectedIcon: Icons.public,
+                  label: "La carte",
+                ),
+                _buildDesktopNavItem(
+                  index: 1,
+                  activeIndex: activeNavIndex,
+                  icon: isVideos ? Icons.video_library_outlined : Icons.photo_library_outlined,
+                  selectedIcon: isVideos ? Icons.video_library : Icons.photo_library,
+                  label: "Galerie",
+                  badge: "${isVideos ? _videosOnly.length : _photosOnly.length}",
+                ),
+                _buildDesktopNavItem(
+                  index: 2,
+                  activeIndex: activeNavIndex,
+                  icon: Icons.folder_outlined,
+                  selectedIcon: Icons.folder,
+                  label: "Thématiques",
+                  badge: "${_countPhotosInTree(yearsTree: false, videosOnly: isVideos)}",
+                ),
+                _buildDesktopNavItem(
+                  index: 3,
+                  activeIndex: activeNavIndex,
+                  icon: Icons.calendar_today_outlined,
+                  selectedIcon: Icons.calendar_today,
+                  label: "Années",
+                  badge: "${_countPhotosInTree(yearsTree: true, videosOnly: isVideos)}",
+                ),
+                _buildDesktopNavItem(
+                  index: 4,
+                  activeIndex: activeNavIndex,
+                  icon: Icons.search,
+                  selectedIcon: Icons.search,
+                  label: "Recherche",
+                ),
                 const Spacer(),
                 Container(
                   margin: const EdgeInsets.all(12),
@@ -1085,50 +1430,25 @@ class _HomeScreenState extends State<HomeScreen> {
                     borderRadius: BorderRadius.circular(10),
                     border: Border.all(color: Colors.white10),
                   ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Row(
-                        children: [
-                          Icon(Icons.cloud_done_outlined, size: 15, color: Color(0xFF4ADE80)),
-                          SizedBox(width: 6),
-                          Text(
-                            "Google Drive synchronisé",
-                            style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Colors.white),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        "v$appVersionLabel • Build $appBuildNumber",
-                        style: const TextStyle(fontSize: 10, color: Colors.white38),
-                      ),
-                    ],
+                  child: Text(
+                    "v$appVersionLabel • Build $appBuildNumber",
+                    style: const TextStyle(fontSize: 10, color: Colors.white38),
                   ),
                 ),
               ],
             ),
           ),
           Expanded(
-            child: _mediaMode == 0
-                ? IndexedStack(
-                    index: _currentIndex,
-                    children: [
-                      _buildWorldMapTab(),
-                      _buildGalleryTab(_photosOnly, isVideo: false),
-                      _buildAlbumsTab(),
-                      _buildPhotoYearsTab(),
-                      _buildSearchTab(),
-                    ],
-                  )
-                : IndexedStack(
-                    index: _currentIndex.clamp(0, 2),
-                    children: [
-                      _buildGalleryTab(_videosOnly, isVideo: true),
-                      _buildVideoYearsTab(),
-                      _buildSearchTab(),
-                    ],
-                  ),
+            child: IndexedStack(
+              index: _currentIndex,
+              children: [
+                _buildWorldMapTab(videosOnly: isVideos),
+                _buildGalleryTab(isVideos ? _videosOnly : _photosOnly, isVideo: isVideos),
+                _buildAlbumsTab(),
+                _buildPhotoYearsTab(),
+                _buildSearchTab(),
+              ],
+            ),
           ),
         ],
       ),
@@ -1200,34 +1520,25 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildMobileScaffold() {
+    final isVideos = _mediaMode == 1;
     return Scaffold(
       appBar: AppBar(
         backgroundColor: const Color(0xFF0F172A),
-        title: const Row(
-          children: [
-            Icon(Icons.photo_library_outlined, color: Color(0xFF38BDF8), size: 22),
-            SizedBox(width: 8),
-            Text("Medias Familly", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
-          ],
+        leading: IconButton(
+          tooltip: 'Accueil (Pré-homepage)',
+          icon: const Icon(Icons.home_outlined, color: Color(0xFF38BDF8)),
+          onPressed: () => setState(() => _showPreHome = true),
         ),
+        title: const Text("Medias Familly", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 17)),
         actions: [
           _buildAuthHeaderChip(compact: true),
           IconButton(
             tooltip: "Ajouter un média Google Drive",
             icon: const Icon(Icons.add_photo_alternate_outlined, color: Color(0xFF4ADE80)),
-            onPressed: () => _showAddPhotoDialog(),
+            onPressed: () => _showAddPhotoDialog(defaultIsVideo: isVideos),
           ),
           IconButton(
-            tooltip: "Créer un dossier ou album",
-            icon: const Icon(Icons.create_new_folder_outlined, color: Color(0xFFFBBF24)),
-            onPressed: () => _showCreateAlbumDialog(
-              defaultParentId: _currentIndex == 3
-                  ? (_yearsNavHistory.isEmpty ? _kYearsRootId : _yearsNavHistory.last.id)
-                  : (_navHistory.isEmpty ? null : _navHistory.last.id),
-            ),
-          ),
-          IconButton(
-            tooltip: "Synchroniser les nouveautés (Supabase Cloud)",
+            tooltip: "Forcer la synchronisation (Supabase Cloud)",
             icon: _isSyncingCloud
                 ? const SizedBox(
                     width: 18,
@@ -1236,32 +1547,6 @@ class _HomeScreenState extends State<HomeScreen> {
                   )
                 : const Icon(Icons.sync, color: Color(0xFF38BDF8)),
             onPressed: () => _syncWithCloud(silent: false),
-          ),
-          IconButton(
-            tooltip: "Mises à jour (v$appVersionLabel)",
-            icon: const Icon(Icons.system_update_alt_outlined, color: Color(0xFF38BDF8)),
-            onPressed: () async {
-              final update = await AppUpdateService.checkUpdate();
-              if (!context.mounted) return;
-              if (update != null) {
-                await AppUpdateService.promptUpdate(context, update, isForced: true);
-              } else {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    backgroundColor: Color(0xFF0F172A),
-                    content: Text(
-                      'Votre application Medias Familly est à jour (v$appVersionLabel).',
-                      style: TextStyle(color: Colors.white),
-                    ),
-                  ),
-                );
-              }
-            },
-          ),
-          IconButton(
-            tooltip: "Ouvrir Google Drive HD",
-            icon: const Icon(Icons.cloud_outlined, color: Color(0xFF38BDF8)),
-            onPressed: () => _openUrl(_gdriveUrl),
           ),
         ],
         bottom: PreferredSize(
@@ -1291,89 +1576,59 @@ class _HomeScreenState extends State<HomeScreen> {
                 selected: {_mediaMode},
                 onSelectionChanged: (set) => setState(() {
                   _mediaMode = set.first;
-                  if (_mediaMode == 1 && _currentIndex > 2) {
-                    _currentIndex = 0;
-                  }
                 }),
               ),
             ),
           ),
         ),
       ),
-      body: _mediaMode == 0
-          ? IndexedStack(
-              index: _currentIndex,
-              children: [
-                _buildWorldMapTab(),
-                _buildGalleryTab(_photosOnly, isVideo: false),
-                _buildAlbumsTab(),
-                _buildPhotoYearsTab(),
-                _buildSearchTab(),
-              ],
-            )
-          : IndexedStack(
-              index: _currentIndex.clamp(0, 2),
-              children: [
-                _buildGalleryTab(_videosOnly, isVideo: true),
-                _buildVideoYearsTab(),
-                _buildSearchTab(),
-              ],
-            ),
+      body: IndexedStack(
+        index: _currentIndex,
+        children: [
+          _buildWorldMapTab(videosOnly: isVideos),
+          _buildGalleryTab(isVideos ? _videosOnly : _photosOnly, isVideo: isVideos),
+          _buildAlbumsTab(),
+          _buildPhotoYearsTab(),
+          _buildSearchTab(),
+        ],
+      ),
       bottomNavigationBar: NavigationBar(
-        selectedIndex: _mediaMode == 0 ? _currentIndex : _currentIndex.clamp(0, 2),
+        selectedIndex: _currentIndex,
         onDestinationSelected: (idx) => setState(() => _currentIndex = idx),
         backgroundColor: const Color(0xFF0F172A),
         indicatorColor: const Color(0xFF0284C7).withValues(alpha: 0.3),
-        destinations: _mediaMode == 0
-            ? const [
-                NavigationDestination(
-                  icon: Icon(Icons.public_outlined),
-                  selectedIcon: Icon(Icons.public, color: Color(0xFF38BDF8)),
-                  label: "La carte",
-                ),
-                NavigationDestination(
-                  icon: Icon(Icons.photo_library_outlined),
-                  selectedIcon: Icon(Icons.photo_library, color: Color(0xFF38BDF8)),
-                  label: "Galerie",
-                ),
-                NavigationDestination(
-                  icon: Icon(Icons.folder_outlined),
-                  selectedIcon: Icon(Icons.folder, color: Color(0xFF38BDF8)),
-                  label: "Thématiques",
-                ),
-                NavigationDestination(
-                  icon: Icon(Icons.calendar_today_outlined),
-                  selectedIcon: Icon(Icons.calendar_today, color: Color(0xFF38BDF8)),
-                  label: "Années",
-                ),
-                NavigationDestination(
-                  icon: Icon(Icons.search),
-                  selectedIcon: Icon(Icons.search, color: Color(0xFF38BDF8)),
-                  label: "Recherche",
-                ),
-              ]
-            : const [
-                NavigationDestination(
-                  icon: Icon(Icons.video_library_outlined),
-                  selectedIcon: Icon(Icons.video_library, color: Color(0xFF38BDF8)),
-                  label: "Galerie",
-                ),
-                NavigationDestination(
-                  icon: Icon(Icons.calendar_today_outlined),
-                  selectedIcon: Icon(Icons.calendar_today, color: Color(0xFF38BDF8)),
-                  label: "Années",
-                ),
-                NavigationDestination(
-                  icon: Icon(Icons.search),
-                  selectedIcon: Icon(Icons.search, color: Color(0xFF38BDF8)),
-                  label: "Recherche",
-                ),
-              ],
+        destinations: [
+          const NavigationDestination(
+            icon: Icon(Icons.public_outlined),
+            selectedIcon: Icon(Icons.public, color: Color(0xFF38BDF8)),
+            label: "La carte",
+          ),
+          NavigationDestination(
+            icon: Icon(isVideos ? Icons.video_library_outlined : Icons.photo_library_outlined),
+            selectedIcon: Icon(isVideos ? Icons.video_library : Icons.photo_library, color: const Color(0xFF38BDF8)),
+            label: "Galerie",
+          ),
+          const NavigationDestination(
+            icon: Icon(Icons.folder_outlined),
+            selectedIcon: Icon(Icons.folder, color: Color(0xFF38BDF8)),
+            label: "Thématiques",
+          ),
+          const NavigationDestination(
+            icon: Icon(Icons.calendar_today_outlined),
+            selectedIcon: Icon(Icons.calendar_today, color: Color(0xFF38BDF8)),
+            label: "Années",
+          ),
+          const NavigationDestination(
+            icon: Icon(Icons.search),
+            selectedIcon: Icon(Icons.search, color: Color(0xFF38BDF8)),
+            label: "Recherche",
+          ),
+        ],
       ),
     );
   }
 
-  int _countPhotosInTree({required bool yearsTree}) {
+  int _countPhotosInTree({required bool yearsTree, bool videosOnly = false}) {
     final targetAlbumIds = <String>{};
     for (final node in _nodesById.values) {
       if (node.id == _kYearsRootId) continue;
@@ -1382,7 +1637,8 @@ class _HomeScreenState extends State<HomeScreen> {
       }
     }
     int count = 0;
-    for (final p in _photosOnly) {
+    final pool = videosOnly ? _videosOnly : _photosOnly;
+    for (final p in pool) {
       if (p.albums.any((a) => targetAlbumIds.contains(a))) {
         count++;
       }
@@ -1602,14 +1858,15 @@ class _HomeScreenState extends State<HomeScreen> {
     return ranges;
   }
 
-  List<CountryVisitStats> _computeVisitedCountryStats() {
+  List<CountryVisitStats> _computeVisitedCountryStats({bool videosOnly = false}) {
+    final mediaPool = videosOnly ? _videosOnly : _allPhotos;
     final Map<String, Set<int>> photoIdsByIso = {};
     final Map<String, Set<int>> videoIdsByIso = {};
     final Map<String, List<CountryAlbumSummary>> albumsByIso = {};
     final Map<String, List<CountrySlideshowPhoto>> slidesByIso = {};
     final Map<String, Set<int>> slideSeenIds = {};
     final Map<String, Set<String>> addedAlbumIdsByIso = {};
-    final Map<int, PhotoItem> mediaById = {for (final m in _allPhotos) m.id: m};
+    final Map<int, PhotoItem> mediaById = {for (final m in mediaPool) m.id: m};
 
     void ensureIso(String iso) {
       photoIdsByIso.putIfAbsent(iso, () => <int>{});
@@ -1628,7 +1885,7 @@ class _HomeScreenState extends State<HomeScreen> {
       ensureIso(meta.iso3);
 
       final descendantIds = _getAllDescendantAlbumIds(child.id);
-      for (final m in _allPhotos) {
+      for (final m in mediaPool) {
         if (m.albums.any((a) => descendantIds.contains(a))) {
           if (m.isVideo) {
             videoIdsByIso[meta.iso3]!.add(m.id);
@@ -1658,7 +1915,7 @@ class _HomeScreenState extends State<HomeScreen> {
         final targetIds = node.isFolder ? _getAllDescendantAlbumIds(node.id) : {node.id};
         int pCount = 0;
         int vCount = 0;
-        for (final m in _allPhotos) {
+        for (final m in mediaPool) {
           if (m.albums.any((a) => targetIds.contains(a))) {
             if (m.isVideo) {
               vCount++;
@@ -1667,6 +1924,7 @@ class _HomeScreenState extends State<HomeScreen> {
             }
           }
         }
+        if (videosOnly && vCount == 0) continue;
         albumsByIso[meta.iso3]!.add(
           CountryAlbumSummary(
             albumId: node.id,
@@ -1684,7 +1942,7 @@ class _HomeScreenState extends State<HomeScreen> {
     // 2. Scan all Années albums (default FRA, or overridden via _albumCountryIsoById)
     //    plus any Thématiques album with an explicit _albumCountryIsoById override
     final Map<String, List<PhotoItem>> photosByAlbumId = {};
-    for (final m in _allPhotos) {
+    for (final m in mediaPool) {
       for (final aId in m.albums) {
         photosByAlbumId.putIfAbsent(aId, () => []).add(m);
       }
@@ -1695,7 +1953,6 @@ class _HomeScreenState extends State<HomeScreen> {
       final inYears = _isInsideYearsTree(node.id);
       final hasExplicit = _albumCountryIsoById.containsKey(node.id);
       if (!inYears && !hasExplicit) continue;
-      // In Années, list leaf albums (or folders with direct photos) so we don't duplicate parent year folders
       final directMedia = photosByAlbumId[node.id] ?? const <PhotoItem>[];
       if (node.isFolder && directMedia.isEmpty && !hasExplicit) continue;
 
@@ -1733,7 +1990,7 @@ class _HomeScreenState extends State<HomeScreen> {
     }
 
     // 3. Also include photo/video `country` metadata without double counting
-    for (final m in _allPhotos) {
+    for (final m in mediaPool) {
       final rawCountry = m.country?.trim();
       if (rawCountry == null || rawCountry.isEmpty) continue;
       final meta = matchCountryMeta(rawCountry);
@@ -1765,12 +2022,16 @@ class _HomeScreenState extends State<HomeScreen> {
       if (meta == null) continue;
       final pSet = photoIdsByIso[iso]!;
       final vSet = videoIdsByIso[iso]!;
+      if (videosOnly && vSet.isEmpty) continue;
+      if (!videosOnly && pSet.isEmpty && vSet.isEmpty) continue;
       final albums = albumsByIso[iso]!
         ..sort((a, b) => (b.photoCount + b.videoCount).compareTo(a.photoCount + a.videoCount));
 
       final travelDates = iso == 'FRA'
           ? const <String>[]
-          : _computeTravelDateRanges(pSet.map((id) => mediaById[id]).whereType<PhotoItem>());
+          : _computeTravelDateRanges(
+              [...pSet, ...vSet].map((id) => mediaById[id]).whereType<PhotoItem>(),
+            );
 
       result.add(
         CountryVisitStats(
@@ -1788,10 +2049,11 @@ class _HomeScreenState extends State<HomeScreen> {
     return result;
   }
 
-  Widget _buildWorldMapTab() {
-    final visited = _computeVisitedCountryStats();
+  Widget _buildWorldMapTab({bool videosOnly = false}) {
+    final visited = _computeVisitedCountryStats(videosOnly: videosOnly);
     final totalP = visited.fold<int>(0, (acc, c) => acc + c.photoCount);
     final totalV = visited.fold<int>(0, (acc, c) => acc + c.videoCount);
+    final mediaPool = videosOnly ? _videosOnly : _allPhotos;
 
     return WorldMapTab(
       visitedCountries: visited,
@@ -1810,7 +2072,7 @@ class _HomeScreenState extends State<HomeScreen> {
           return n != null && n.isFolder ? _getAllDescendantAlbumIds(id) : {id};
         }).toSet();
 
-        final countryMedia = _allPhotos.where((m) {
+        final countryMedia = mediaPool.where((m) {
           if (m.albums.any((a) => matchingAlbumIds.contains(a))) return true;
           final rawCountry = m.country?.trim();
           if (rawCountry != null && rawCountry.isNotEmpty) {
@@ -2158,7 +2420,8 @@ class _HomeScreenState extends State<HomeScreen> {
 
   void _openPhotosForNode(AlbumNode node) {
     final targetIds = node.isFolder ? _getAllDescendantAlbumIds(node.id) : {node.id};
-    final albumPhotos = _photosOnly.where((p) => p.albums.any((aId) => targetIds.contains(aId))).toList();
+    final pool = _mediaMode == 1 ? _videosOnly : _photosOnly;
+    final albumPhotos = pool.where((p) => p.albums.any((aId) => targetIds.contains(aId))).toList();
     Navigator.push(
       context,
       MaterialPageRoute(
@@ -2626,7 +2889,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _buildSearchTab() {
     return PhotoSearchScreen(
-      allPhotos: _photosOnly,
+      allPhotos: _mediaMode == 1 ? _videosOnly : _photosOnly,
       nodesById: _nodesById,
       gdriveUrl: _gdriveUrl,
       likesByPhotoId: _likesByPhotoId,
@@ -2836,14 +3099,14 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Future<void> _showAddPhotoDialog({bool defaultIsVideo = false}) async {
+  Future<void> _showAddPhotoDialog({bool defaultIsVideo = false, String? defaultAlbumId}) async {
     final driveLinkController = TextEditingController();
     final filenameController = TextEditingController();
     final yearController = TextEditingController(text: DateTime.now().year.toString());
     final countryController = TextEditingController();
     final cityController = TextEditingController();
     bool isVideo = defaultIsVideo;
-    String? selectedAlbumId = _navHistory.isNotEmpty ? _navHistory.last.id : null;
+    String? selectedAlbumId = defaultAlbumId ?? (_navHistory.isNotEmpty ? _navHistory.last.id : null);
 
     final allAlbumsSorted = _nodesById.values.toList()
       ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
@@ -4500,12 +4763,12 @@ class _PhotoGridTileState extends State<_PhotoGridTile> {
                 ),
               if (photo.isVideo)
                 Positioned(
-                  bottom: 24,
+                  bottom: 6,
                   right: 6,
                   child: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                     decoration: BoxDecoration(
-                      color: Colors.black.withValues(alpha: 0.8),
+                      color: Colors.black.withValues(alpha: 0.78),
                       borderRadius: BorderRadius.circular(4),
                       border: Border.all(color: Colors.white24),
                     ),
@@ -4515,26 +4778,6 @@ class _PhotoGridTileState extends State<_PhotoGridTile> {
                         Icon(Icons.play_arrow, size: 11, color: Colors.white),
                         SizedBox(width: 2),
                         Text("Vidéo", style: TextStyle(fontSize: 9, color: Colors.white, fontWeight: FontWeight.bold)),
-                      ],
-                    ),
-                  ),
-                ),
-              if (photo.driveId == null)
-                Positioned(
-                  top: 6,
-                  left: 6,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFD97706).withValues(alpha: 0.9),
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                    child: const Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.cloud_off, size: 10, color: Colors.white),
-                        SizedBox(width: 3),
-                        Text("En attente Drive", style: TextStyle(fontSize: 8, color: Colors.white, fontWeight: FontWeight.bold)),
                       ],
                     ),
                   ),
@@ -4565,72 +4808,6 @@ class _PhotoGridTileState extends State<_PhotoGridTile> {
                     ),
                   ),
                 ),
-              // Bouton Like (❤️) en haut à droite de la vignette
-              if (widget.onToggleLike != null || widget.likeCount > 0)
-                Positioned(
-                  top: 6,
-                  right: 6,
-                  child: GestureDetector(
-                    onTap: widget.onToggleLike,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-                      decoration: BoxDecoration(
-                        color: widget.isLikedByMe
-                            ? const Color(0xFFE11D48).withValues(alpha: 0.9)
-                            : Colors.black.withValues(alpha: 0.6),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(
-                          color: widget.isLikedByMe ? const Color(0xFFFDA4AF) : Colors.white24,
-                        ),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            widget.isLikedByMe ? Icons.favorite : Icons.favorite_border,
-                            size: 13,
-                            color: widget.isLikedByMe ? Colors.white : Colors.white70,
-                          ),
-                          if (widget.likeCount > 0) ...[
-                            const SizedBox(width: 3),
-                            Text(
-                              "${widget.likeCount}",
-                              style: const TextStyle(
-                                fontSize: 10,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.white,
-                              ),
-                            ),
-                          ],
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-              Positioned(
-                bottom: 0,
-                left: 0,
-                right: 0,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.bottomCenter,
-                      end: Alignment.topCenter,
-                      colors: [
-                        Colors.black.withValues(alpha: 0.8),
-                        Colors.black.withValues(alpha: 0.0),
-                      ],
-                    ),
-                  ),
-                  child: Text(
-                    photo.filename,
-                    style: const TextStyle(fontSize: 10, color: Colors.white70, fontWeight: FontWeight.w500),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-              ),
             ],
           ),
         ),
