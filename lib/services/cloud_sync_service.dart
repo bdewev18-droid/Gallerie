@@ -486,12 +486,13 @@ class CloudSyncService {
     }
   }
 
-  /// Crée un nouveau dossier ou album dans Supabase avec l'auteur connecté
+  /// Crée ou modifie (déplace, renomme, supprime) un dossier ou album dans Supabase
   static Future<bool> createCustomAlbum({
     required String id,
     required String name,
     String? parentId,
     required bool isFolder,
+    bool isDeleted = false,
   }) async {
     try {
       final uri = Uri.parse('$supabaseUrl/rest/v1/custom_albums');
@@ -500,7 +501,8 @@ class CloudSyncService {
         'name': name.trim(),
         'parent_id': parentId,
         'is_folder': isFolder,
-        'is_deleted': false,
+        'is_deleted': isDeleted,
+        'updated_at': DateTime.now().toUtc().toIso8601String(),
       };
       if (_currentAuth.isSignedIn) {
         payload['created_by_email'] = _currentAuth.email;

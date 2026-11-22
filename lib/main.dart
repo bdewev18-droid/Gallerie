@@ -6,8 +6,8 @@ import 'package:url_launcher/url_launcher.dart';
 import 'services/app_update_service.dart';
 import 'services/cloud_sync_service.dart';
 
-const int appBuildNumber = 7;
-const String appVersionLabel = "1.0.6";
+const int appBuildNumber = 8;
+const String appVersionLabel = "1.0.7";
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -99,7 +99,7 @@ class PhotoItem {
       : null;
 
   String? get largePreviewUrl => driveId != null
-      ? 'https://lh3.googleusercontent.com/d/$driveId=w1200'
+      ? 'https://lh3.googleusercontent.com/d/$driveId=w1920'
       : null;
 
   String getDriveViewUrl(String defaultFolderUrl) {
@@ -179,15 +179,23 @@ class _HomeScreenState extends State<HomeScreen> {
   List<YearItem> _videoYears = [];
 
   int _mediaMode = 0; // 0 = Photos, 1 = Vidéos
-  int _currentIndex = 0; // For Photos: 0 = Galerie, 1 = Albums, 2 = Années, 3 = Recherche
+  int _currentIndex = 0; // For Photos: 0 = Galerie, 1 = Thématiques, 2 = Années, 3 = Recherche
   final List<AlbumNode> _navHistory = [];
   String _albumSearch = '';
   final TextEditingController _albumSearchController = TextEditingController();
+  final List<AlbumNode> _yearsNavHistory = [];
+  String _yearsSearch = '';
+  final TextEditingController _yearsSearchController = TextEditingController();
   bool _isSyncingCloud = false;
   bool _cloudTableReady = true;
   final Map<int, PhotoOverrideRecord> _overridesByPhotoId = {};
   final Map<int, List<PhotoLikeRecord>> _likesByPhotoId = {};
   final Set<String> _customAlbumIds = {};
+  final Set<String> _deletedAlbumIds = {};
+
+  static const String _kPhotosWrapperId = '6cda9b888a514233bc7edbe3753a3c4a';
+  static const String _kYearsRootId = '11335cb33a134da79410f393dc77c9b2';
+  static const String _kYear2026Id = '8a27a7356de54a4fa7aae6fdea783597';
   AuthUserSession _auth = CloudSyncService.currentAuth;
   StreamSubscription<AuthUserSession>? _authSub;
 
@@ -209,6 +217,7 @@ class _HomeScreenState extends State<HomeScreen> {
   void dispose() {
     _authSub?.cancel();
     _albumSearchController.dispose();
+    _yearsSearchController.dispose();
     super.dispose();
   }
 
@@ -483,6 +492,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final albumsList = rawAlbums.map((e) => AlbumNode.fromJson(e)).toList();
 
     _nodesById = {for (var a in albumsList) a.id: a};
+    _normalizeAlbumHierarchy();
     _rebuildChildrenTree();
 
     final rawYears = data['years'] as List<dynamic>;
@@ -545,13 +555,64 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  void _normalizeAlbumHierarchy() {
+    // 1. Supprimer les dossiers marqués comme supprimés dans Supabase
+    for (final delId in _deletedAlbumIds) {
+      _nodesById.remove(delId);
+    }
+
+    // 2. Supprimer le niveau inutile "Photos" (6cda9b888a514233bc7edbe3753a3c4a)
+    //    et remonter ses enfants directs (01 - Meilleures, 02 - Pays, Print, etc.) à la racine (parentId = null)
+    _nodesById.remove(_kPhotosWrapperId);
+    final updated = <String, AlbumNode>{};
+    for (final entry in _nodesById.entries) {
+      final node = entry.value;
+      String? newParentId = node.parentId;
+      if (newParentId == _kPhotosWrapperId) {
+        newParentId = null;
+      }
+      // 3. Placer le dossier "2026" dans "00 - Années" s'il était à la racine
+      if (node.id == _kYear2026Id && (newParentId == null || newParentId == _kPhotosWrapperId)) {
+        newParentId = _kYearsRootId;
+      }
+      updated[node.id] = AlbumNode(
+        id: node.id,
+        name: node.name,
+        parentId: newParentId,
+        isFolder: node.isFolder,
+        directCount: node.directCount,
+        totalCount: node.totalCount,
+        createdByName: node.createdByName,
+      );
+    }
+    _nodesById = updated;
+  }
+
+  bool _isInsideYearsTree(String? nodeId) {
+    String? cur = nodeId;
+    final visited = <String>{};
+    while (cur != null && visited.add(cur)) {
+      if (cur == _kYearsRootId) return true;
+      cur = _nodesById[cur]?.parentId;
+    }
+    return false;
+  }
+
   void _rebuildChildrenTree() {
     _childrenByParent = {};
     for (var a in _nodesById.values) {
+      // Ne pas afficher le conteneur "00 - Années" dans la racine de Thématiques
+      if (a.id == _kYearsRootId) continue;
       _childrenByParent.putIfAbsent(a.parentId, () => []).add(a);
     }
-    for (var list in _childrenByParent.values) {
+    for (var entry in _childrenByParent.entries) {
+      final parentId = entry.key;
+      final list = entry.value;
       list.sort((a, b) {
+        // Pour la racine de "00 - Années", trier les années de la plus récente (2026) à la plus ancienne (2004)
+        if (parentId == _kYearsRootId) {
+          return b.name.toLowerCase().compareTo(a.name.toLowerCase());
+        }
         if (a.isFolder != b.isFolder) {
           return a.isFolder ? -1 : 1;
         }
@@ -603,25 +664,28 @@ class _HomeScreenState extends State<HomeScreen> {
       if (!mounted) return;
       _cloudTableReady = delta.tableReady;
 
-      // 1. Appliquer les nouveaux dossiers & albums
+      // 1. Appliquer les nouveaux dossiers & albums (ainsi que déplacements et suppressions)
       for (final ca in delta.customAlbums) {
         if (ca.isDeleted) {
+          _deletedAlbumIds.add(ca.id);
           _nodesById.remove(ca.id);
           _customAlbumIds.remove(ca.id);
         } else {
+          _deletedAlbumIds.remove(ca.id);
           _customAlbumIds.add(ca.id);
           final existing = _nodesById[ca.id];
           _nodesById[ca.id] = AlbumNode(
             id: ca.id,
             name: ca.name,
-            parentId: ca.parentId,
+            parentId: ca.parentId == _kPhotosWrapperId ? null : ca.parentId,
             isFolder: ca.isFolder,
             directCount: existing?.directCount ?? 0,
             totalCount: existing?.totalCount ?? 0,
-            createdByName: ca.createdByName,
+            createdByName: ca.createdByName ?? existing?.createdByName,
           );
         }
       }
+      _normalizeAlbumHierarchy();
       _rebuildChildrenTree();
 
       // 2. Appliquer les nouvelles photos ajoutées depuis l'app
@@ -723,9 +787,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<void> _openUrl(String url) async {
     final uri = Uri.parse(url);
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
-    }
+    await launchUrl(uri, mode: LaunchMode.externalApplication);
   }
 
   @override
@@ -859,7 +921,9 @@ class _HomeScreenState extends State<HomeScreen> {
             tooltip: "Créer un dossier ou album",
             icon: const Icon(Icons.create_new_folder_outlined, color: Color(0xFFFBBF24), size: 21),
             onPressed: () => _showCreateAlbumDialog(
-              defaultParentId: _navHistory.isEmpty ? null : _navHistory.last.id,
+              defaultParentId: _currentIndex == 2
+                  ? (_yearsNavHistory.isEmpty ? _kYearsRootId : _yearsNavHistory.last.id)
+                  : (_navHistory.isEmpty ? null : _navHistory.last.id),
             ),
           ),
           IconButton(
@@ -950,7 +1014,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     icon: Icons.folder_outlined,
                     selectedIcon: Icons.folder,
                     label: "Thématiques",
-                    badge: "${_nodesById.length}",
+                    badge: "${(_childrenByParent[null] ?? const []).length}",
                   ),
                   _buildDesktopNavItem(
                     index: 2,
@@ -958,7 +1022,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     icon: Icons.calendar_today_outlined,
                     selectedIcon: Icons.calendar_today,
                     label: "Années",
-                    badge: "${_photoYears.length}",
+                    badge: "${(_childrenByParent[_kYearsRootId] ?? const []).length}",
                   ),
                   _buildDesktopNavItem(
                     index: 3,
@@ -1136,7 +1200,9 @@ class _HomeScreenState extends State<HomeScreen> {
             tooltip: "Créer un dossier ou album",
             icon: const Icon(Icons.create_new_folder_outlined, color: Color(0xFFFBBF24)),
             onPressed: () => _showCreateAlbumDialog(
-              defaultParentId: _navHistory.isEmpty ? null : _navHistory.last.id,
+              defaultParentId: _currentIndex == 2
+                  ? (_yearsNavHistory.isEmpty ? _kYearsRootId : _yearsNavHistory.last.id)
+                  : (_navHistory.isEmpty ? null : _navHistory.last.id),
             ),
           ),
           IconButton(
@@ -1350,12 +1416,50 @@ class _HomeScreenState extends State<HomeScreen> {
 
   // --- PHOTOS: Lightroom Thematics Tab ---
   Widget _buildAlbumsTab() {
-    final currentParentId = _navHistory.isEmpty ? null : _navHistory.last.id;
+    return _buildTreeExplorer(
+      rootParentId: null,
+      rootTitle: "Thématiques",
+      history: _navHistory,
+      searchQuery: _albumSearch,
+      searchController: _albumSearchController,
+      onSearchChanged: (val) => setState(() => _albumSearch = val),
+      isYearsTab: false,
+    );
+  }
+
+  // --- PHOTOS: Years Tab (Arborescence de 00 - Années + 2026) ---
+  Widget _buildPhotoYearsTab() {
+    return _buildTreeExplorer(
+      rootParentId: _kYearsRootId,
+      rootTitle: "Années",
+      history: _yearsNavHistory,
+      searchQuery: _yearsSearch,
+      searchController: _yearsSearchController,
+      onSearchChanged: (val) => setState(() => _yearsSearch = val),
+      isYearsTab: true,
+    );
+  }
+
+  Widget _buildTreeExplorer({
+    required String? rootParentId,
+    required String rootTitle,
+    required List<AlbumNode> history,
+    required String searchQuery,
+    required TextEditingController searchController,
+    required ValueChanged<String> onSearchChanged,
+    required bool isYearsTab,
+  }) {
+    final currentParentId = history.isEmpty ? rootParentId : history.last.id;
     final currentChildren = _childrenByParent[currentParentId] ?? [];
 
-    final filtered = _albumSearch.isEmpty
+    final filtered = searchQuery.isEmpty
         ? currentChildren
-        : _nodesById.values.where((a) => a.name.toLowerCase().contains(_albumSearch.toLowerCase())).toList();
+        : _nodesById.values.where((a) {
+            if (a.id == _kYearsRootId) return false;
+            final inYears = _isInsideYearsTree(a.id);
+            if (isYearsTab != inYears) return false;
+            return a.name.toLowerCase().contains(searchQuery.toLowerCase());
+          }).toList();
 
     return Column(
       children: [
@@ -1365,10 +1469,10 @@ class _HomeScreenState extends State<HomeScreen> {
           color: const Color(0xFF0F172A),
           child: Row(
             children: [
-              if (_navHistory.isNotEmpty)
+              if (history.isNotEmpty)
                 IconButton(
                   icon: const Icon(Icons.arrow_back, size: 20, color: Color(0xFF38BDF8)),
-                  onPressed: () => setState(() => _navHistory.removeLast()),
+                  onPressed: () => setState(() => history.removeLast()),
                   tooltip: "Retour au dossier parent",
                 ),
               Expanded(
@@ -1377,33 +1481,33 @@ class _HomeScreenState extends State<HomeScreen> {
                   child: Row(
                     children: [
                       InkWell(
-                        onTap: () => setState(() => _navHistory.clear()),
+                        onTap: () => setState(() => history.clear()),
                         child: Text(
-                          "Racine",
+                          rootTitle,
                           style: TextStyle(
                             fontSize: 13,
-                            fontWeight: _navHistory.isEmpty ? FontWeight.bold : FontWeight.normal,
-                            color: _navHistory.isEmpty ? const Color(0xFF38BDF8) : Colors.white60,
+                            fontWeight: history.isEmpty ? FontWeight.bold : FontWeight.normal,
+                            color: history.isEmpty ? const Color(0xFF38BDF8) : Colors.white60,
                           ),
                         ),
                       ),
-                      for (int i = 0; i < _navHistory.length; i++) ...[
+                      for (int i = 0; i < history.length; i++) ...[
                         const Padding(
                           padding: EdgeInsets.symmetric(horizontal: 4),
                           child: Icon(Icons.chevron_right, size: 16, color: Colors.white30),
                         ),
                         InkWell(
                           onTap: () => setState(() {
-                            while (_navHistory.length > i + 1) {
-                              _navHistory.removeLast();
+                            while (history.length > i + 1) {
+                              history.removeLast();
                             }
                           }),
                           child: Text(
-                            _navHistory[i].name,
+                            history[i].name,
                             style: TextStyle(
                               fontSize: 13,
-                              fontWeight: i == _navHistory.length - 1 ? FontWeight.bold : FontWeight.normal,
-                              color: i == _navHistory.length - 1 ? const Color(0xFF38BDF8) : Colors.white60,
+                              fontWeight: i == history.length - 1 ? FontWeight.bold : FontWeight.normal,
+                              color: i == history.length - 1 ? const Color(0xFF38BDF8) : Colors.white60,
                             ),
                           ),
                         ),
@@ -1429,22 +1533,22 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ),
 
-        // Search in albums
+        // Search in folders/albums
         Padding(
-          padding: const EdgeInsets.all(12),
+          padding: const EdgeInsets.fromLTRB(12, 10, 12, 6),
           child: TextField(
-            controller: _albumSearchController,
+            controller: searchController,
             decoration: InputDecoration(
-              hintText: _albumSearch.isEmpty && _navHistory.isNotEmpty
-                  ? "Filtrer dans ${_navHistory.last.name}..."
-                  : "Rechercher une thématique...",
+              hintText: searchQuery.isEmpty && history.isNotEmpty
+                  ? "Filtrer dans ${history.last.name}..."
+                  : (isYearsTab ? "Rechercher une année, un mois ou événement..." : "Rechercher une thématique..."),
               prefixIcon: const Icon(Icons.search, size: 20),
-              suffixIcon: _albumSearch.isNotEmpty
+              suffixIcon: searchQuery.isNotEmpty
                   ? IconButton(
                       icon: const Icon(Icons.clear, size: 18),
                       onPressed: () {
-                        _albumSearchController.clear();
-                        setState(() => _albumSearch = '');
+                        searchController.clear();
+                        onSearchChanged('');
                       },
                     )
                   : null,
@@ -1453,42 +1557,19 @@ class _HomeScreenState extends State<HomeScreen> {
               border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
               contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 0),
             ),
-            onChanged: (val) => setState(() => _albumSearch = val),
+            onChanged: onSearchChanged,
           ),
         ),
-
-        // "Toutes les photos" at root level
-        if (_navHistory.isEmpty && _albumSearch.isEmpty) ...[
-          ListTile(
-            tileColor: const Color(0xFF1E293B).withValues(alpha: 0.6),
-            leading: Container(
-              width: 42,
-              height: 42,
-              decoration: BoxDecoration(
-                color: const Color(0xFF0284C7).withValues(alpha: 0.25),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: const Icon(Icons.photo_library_outlined, color: Color(0xFF38BDF8), size: 24),
+        const Padding(
+          padding: EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+          child: Align(
+            alignment: Alignment.centerLeft,
+            child: Text(
+              "💡 Astuce : maintenez appuyé sur un dossier/album (ou cliquez sur ⋮) pour le déplacer, le renommer ou le supprimer.",
+              style: TextStyle(fontSize: 10, color: Colors.white38),
             ),
-            title: const Text("Toutes les photos", style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
-            subtitle: const Text("Dernières photos créées en tête (Maroc 10/2026)", style: TextStyle(fontSize: 11, color: Colors.white54)),
-            trailing: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-              decoration: BoxDecoration(
-                color: const Color(0xFF0284C7).withValues(alpha: 0.3),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Text(
-                "${_photosOnly.length}",
-                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF38BDF8)),
-              ),
-            ),
-            onTap: () {
-              setState(() => _currentIndex = 0);
-            },
           ),
-          const Divider(height: 1, color: Colors.white10),
-        ],
+        ),
 
         // List
         Expanded(
@@ -1500,7 +1581,8 @@ class _HomeScreenState extends State<HomeScreen> {
                   itemCount: filtered.length,
                   itemBuilder: (context, idx) {
                     final node = filtered[idx];
-                    final hasChildren = (_childrenByParent[node.id] ?? []).isNotEmpty;
+                    final children = _childrenByParent[node.id] ?? [];
+                    final hasChildren = children.isNotEmpty;
 
                     return ListTile(
                       leading: Container(
@@ -1511,7 +1593,9 @@ class _HomeScreenState extends State<HomeScreen> {
                           borderRadius: BorderRadius.circular(8),
                         ),
                         child: Icon(
-                          node.isFolder ? Icons.folder_outlined : Icons.photo_library_outlined,
+                          node.isFolder
+                              ? (isYearsTab && history.isEmpty ? Icons.calendar_month_outlined : Icons.folder_outlined)
+                              : Icons.photo_library_outlined,
                           color: node.isFolder ? const Color(0xFFFBBF24) : const Color(0xFF38BDF8),
                           size: 22,
                         ),
@@ -1524,8 +1608,8 @@ class _HomeScreenState extends State<HomeScreen> {
                         ),
                       ),
                       subtitle: Text(
-                        "${node.isFolder ? '${node.totalCount} photos cumulées' : '${node.directCount} photos'}"
-                        "${node.createdByName != null && node.createdByName!.isNotEmpty ? ' • créé par ${node.createdByName}' : ''}",
+                        "${node.isFolder ? '${children.length} sous-dossiers/albums • ${node.totalCount} photos' : '${node.directCount} photos'}"
+                        "${node.createdByName != null && node.createdByName!.isNotEmpty ? ' • par ${node.createdByName}' : ''}",
                         style: const TextStyle(fontSize: 11, color: Colors.white54),
                       ),
                       trailing: Row(
@@ -1533,20 +1617,26 @@ class _HomeScreenState extends State<HomeScreen> {
                         children: [
                           if (node.isFolder && node.totalCount > 0)
                             IconButton(
-                              icon: const Icon(Icons.grid_view, size: 18, color: Colors.white38),
+                              icon: const Icon(Icons.grid_view, size: 18, color: Colors.white54),
                               tooltip: "Voir toutes les photos du dossier",
                               onPressed: () => _openPhotosForNode(node),
                             ),
+                          IconButton(
+                            icon: const Icon(Icons.more_vert, size: 18, color: Colors.white54),
+                            tooltip: "Actions (Déplacer, Renommer, Supprimer)",
+                            onPressed: () => _showNodeActionsSheet(node),
+                          ),
                           if (hasChildren)
                             const Icon(Icons.chevron_right, size: 20, color: Colors.white38),
                         ],
                       ),
+                      onLongPress: () => _showNodeActionsSheet(node),
                       onTap: () {
-                        if (hasChildren) {
+                        if (hasChildren || node.isFolder) {
                           setState(() {
-                            _navHistory.add(node);
-                            _albumSearch = '';
-                            _albumSearchController.clear();
+                            history.add(node);
+                            searchController.clear();
+                            onSearchChanged('');
                           });
                         } else {
                           _openPhotosForNode(node);
@@ -1590,53 +1680,316 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // --- PHOTOS: Years Tab ---
-  Widget _buildPhotoYearsTab() {
-    return ListView.builder(
-      itemCount: _photoYears.length,
-      itemBuilder: (context, idx) {
-        final year = _photoYears[idx];
-        final label = year.year == 'unknown_date' ? 'Photos sans date' : "Année ${year.year}";
-        return ListTile(
-          leading: Container(
-            width: 42,
-            height: 42,
-            decoration: BoxDecoration(
-              color: const Color(0xFF1E293B),
-              borderRadius: BorderRadius.circular(8),
+  void _showNodeActionsSheet(AlbumNode node) {
+    showDialog<void>(
+      context: context,
+      builder: (dialogCtx) => AlertDialog(
+        backgroundColor: const Color(0xFF0F172A),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+          side: const BorderSide(color: Colors.white12),
+        ),
+        title: Row(
+          children: [
+            Icon(
+              node.isFolder ? Icons.folder_outlined : Icons.photo_library_outlined,
+              color: node.isFolder ? const Color(0xFFFBBF24) : const Color(0xFF38BDF8),
+              size: 22,
             ),
-            child: const Icon(Icons.date_range_outlined, color: Color(0xFF38BDF8), size: 22),
-          ),
-          title: Text(label, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
-          trailing: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            decoration: BoxDecoration(
-              color: const Color(0xFF1E293B),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Text("${year.count}", style: const TextStyle(fontSize: 11, color: Colors.white70)),
-          ),
-          onTap: () {
-            final yearPhotos = _photosOnly.where((p) => p.year == year.year).toList();
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => PhotoGridScreen(
-                  title: label,
-                  photos: yearPhotos,
-                  nodesById: _nodesById,
-                  gdriveUrl: _gdriveUrl,
-                  likesByPhotoId: _likesByPhotoId,
-                  currentUserEmail: _auth.email,
-                  onToggleLike: _handleTogglePhotoLike,
-                  onAssignAlbum: _handleAssignAlbumToPhoto,
-                  onDeletePhoto: _handleDeletePhoto,
-                ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                node.name,
+                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white),
+                overflow: TextOverflow.ellipsis,
               ),
-            );
-          },
-        );
-      },
+            ),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.grid_view, color: Color(0xFF38BDF8)),
+              title: const Text("Voir toutes les photos", style: TextStyle(fontSize: 14)),
+              subtitle: Text("${node.totalCount} photos", style: const TextStyle(fontSize: 11, color: Colors.white54)),
+              onTap: () {
+                Navigator.of(dialogCtx).pop();
+                _openPhotosForNode(node);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.drive_file_move_outlined, color: Color(0xFFFBBF24)),
+              title: const Text("Déplacer vers un autre niveau / dossier", style: TextStyle(fontSize: 14)),
+              onTap: () {
+                Navigator.of(dialogCtx).pop();
+                _showMoveNodeDialog(node);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.edit_outlined, color: Colors.white70),
+              title: const Text("Renommer", style: TextStyle(fontSize: 14)),
+              onTap: () {
+                Navigator.of(dialogCtx).pop();
+                _showRenameNodeDialog(node);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.delete_outline, color: Color(0xFFF87171)),
+              title: const Text("Supprimer ce dossier / album", style: TextStyle(fontSize: 14, color: Color(0xFFF87171))),
+              onTap: () {
+                Navigator.of(dialogCtx).pop();
+                _confirmDeleteNodeDialog(node);
+              },
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogCtx).pop(),
+            child: const Text("Fermer", style: TextStyle(color: Colors.white54)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _showMoveNodeDialog(AlbumNode node) async {
+    final descendants = _getAllDescendantAlbumIds(node.id);
+    final candidateFolders = _nodesById.values
+        .where((f) => f.isFolder && !descendants.contains(f.id) && f.id != _kYearsRootId)
+        .toList()
+      ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+
+    String? selectedParentId = node.parentId;
+
+    await showDialog<void>(
+      context: context,
+      builder: (dialogCtx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          backgroundColor: const Color(0xFF0F172A),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+            side: const BorderSide(color: Colors.white12),
+          ),
+          title: Text(
+            'Déplacer "${node.name}"',
+            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white),
+          ),
+          content: SizedBox(
+            width: 400,
+            child: DropdownButtonFormField<String?>(
+              value: selectedParentId == null ||
+                      selectedParentId == _kYearsRootId ||
+                      candidateFolders.any((f) => f.id == selectedParentId)
+                  ? selectedParentId
+                  : null,
+              isExpanded: true,
+              dropdownColor: const Color(0xFF1E293B),
+              decoration: InputDecoration(
+                labelText: "Nouveau dossier parent",
+                filled: true,
+                fillColor: const Color(0xFF1E293B),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+              ),
+              items: [
+                const DropdownMenuItem<String?>(
+                  value: null,
+                  child: Text("📁 Racine de Thématiques"),
+                ),
+                const DropdownMenuItem<String?>(
+                  value: _kYearsRootId,
+                  child: Text("📅 Racine de Années (00 - Années)"),
+                ),
+                ...candidateFolders.map(
+                  (f) => DropdownMenuItem<String?>(
+                    value: f.id,
+                    child: Text(
+                      "${_isInsideYearsTree(f.id) ? '📅' : '📁'} ${f.name}",
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ),
+              ],
+              onChanged: (val) => setDialogState(() => selectedParentId = val),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogCtx).pop(),
+              child: const Text("Annuler", style: TextStyle(color: Colors.white54)),
+            ),
+            ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF0284C7),
+                foregroundColor: Colors.white,
+              ),
+              icon: const Icon(Icons.check, size: 18),
+              label: const Text("Déplacer"),
+              onPressed: () async {
+                Navigator.of(dialogCtx).pop();
+                setState(() {
+                  _nodesById[node.id] = AlbumNode(
+                    id: node.id,
+                    name: node.name,
+                    parentId: selectedParentId,
+                    isFolder: node.isFolder,
+                    directCount: node.directCount,
+                    totalCount: node.totalCount,
+                    createdByName: node.createdByName,
+                  );
+                  _recalculateAlbumCounts();
+                });
+
+                final ok = await CloudSyncService.createCustomAlbum(
+                  id: node.id,
+                  name: node.name,
+                  parentId: selectedParentId,
+                  isFolder: node.isFolder,
+                );
+                if (!mounted) return;
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    backgroundColor: const Color(0xFF0F172A),
+                    content: Text(
+                      ok
+                          ? '✔ "${node.name}" déplacé et synchronisé pour tout le monde !'
+                          : '⚠ Déplacé localement.',
+                      style: const TextStyle(color: Colors.white, fontSize: 12),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showRenameNodeDialog(AlbumNode node) async {
+    final nameController = TextEditingController(text: node.name);
+    await showDialog<void>(
+      context: context,
+      builder: (dialogCtx) => AlertDialog(
+        backgroundColor: const Color(0xFF0F172A),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+          side: const BorderSide(color: Colors.white12),
+        ),
+        title: const Text(
+          "Renommer le dossier / album",
+          style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white),
+        ),
+        content: TextField(
+          controller: nameController,
+          autofocus: true,
+          decoration: InputDecoration(
+            labelText: "Nouveau nom",
+            filled: true,
+            fillColor: const Color(0xFF1E293B),
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogCtx).pop(),
+            child: const Text("Annuler", style: TextStyle(color: Colors.white54)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF0284C7),
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () async {
+              final newName = nameController.text.trim();
+              if (newName.isEmpty) return;
+              Navigator.of(dialogCtx).pop();
+              setState(() {
+                _nodesById[node.id] = AlbumNode(
+                  id: node.id,
+                  name: newName,
+                  parentId: node.parentId,
+                  isFolder: node.isFolder,
+                  directCount: node.directCount,
+                  totalCount: node.totalCount,
+                  createdByName: node.createdByName,
+                );
+                _rebuildChildrenTree();
+              });
+              await CloudSyncService.createCustomAlbum(
+                id: node.id,
+                name: newName,
+                parentId: node.parentId,
+                isFolder: node.isFolder,
+              );
+            },
+            child: const Text("Enregistrer"),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _confirmDeleteNodeDialog(AlbumNode node) async {
+    await showDialog<void>(
+      context: context,
+      builder: (dialogCtx) => AlertDialog(
+        backgroundColor: const Color(0xFF0F172A),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+          side: const BorderSide(color: Colors.white12),
+        ),
+        title: Text(
+          'Supprimer "${node.name}" ?',
+          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white),
+        ),
+        content: const Text(
+          'Ce dossier ou album sera supprimé de l\'arborescence pour tous les utilisateurs (les photos elles-mêmes restent dans la Galerie).',
+          style: TextStyle(fontSize: 12, color: Colors.white70),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogCtx).pop(),
+            child: const Text("Annuler", style: TextStyle(color: Colors.white54)),
+          ),
+          ElevatedButton.icon(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFFEF4444),
+              foregroundColor: Colors.white,
+            ),
+            icon: const Icon(Icons.delete_outline, size: 18),
+            label: const Text("Supprimer"),
+            onPressed: () async {
+              Navigator.of(dialogCtx).pop();
+              setState(() {
+                _deletedAlbumIds.add(node.id);
+                _nodesById.remove(node.id);
+                _navHistory.removeWhere((n) => n.id == node.id);
+                _yearsNavHistory.removeWhere((n) => n.id == node.id);
+                _recalculateAlbumCounts();
+              });
+              final ok = await CloudSyncService.createCustomAlbum(
+                id: node.id,
+                name: node.name,
+                parentId: node.parentId,
+                isFolder: node.isFolder,
+                isDeleted: true,
+              );
+              if (!mounted) return;
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  backgroundColor: const Color(0xFF0F172A),
+                  content: Text(
+                    ok ? '✔ "${node.name}" supprimé.' : '⚠ Supprimé localement.',
+                    style: const TextStyle(color: Colors.white, fontSize: 12),
+                  ),
+                ),
+              );
+            },
+          ),
+        ],
+      ),
     );
   }
 
@@ -1755,7 +2108,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final nameController = TextEditingController();
     bool isFolder = false;
     String? selectedParentId = defaultParentId;
-    final folderNodes = _nodesById.values.where((n) => n.isFolder).toList()
+    final folderNodes = _nodesById.values.where((n) => n.isFolder && n.id != _kYearsRootId).toList()
       ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
 
     await showDialog<void>(
@@ -1798,7 +2151,11 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
                 const SizedBox(height: 14),
                 DropdownButtonFormField<String?>(
-                  value: folderNodes.any((f) => f.id == selectedParentId) ? selectedParentId : null,
+                  value: selectedParentId == null ||
+                          selectedParentId == _kYearsRootId ||
+                          folderNodes.any((f) => f.id == selectedParentId)
+                      ? selectedParentId
+                      : null,
                   isExpanded: true,
                   dropdownColor: const Color(0xFF1E293B),
                   decoration: InputDecoration(
@@ -1810,12 +2167,19 @@ class _HomeScreenState extends State<HomeScreen> {
                   items: [
                     const DropdownMenuItem<String?>(
                       value: null,
-                      child: Text("Racine (Niveau principal)"),
+                      child: Text("📁 Racine de Thématiques"),
+                    ),
+                    const DropdownMenuItem<String?>(
+                      value: _kYearsRootId,
+                      child: Text("📅 Racine de Années (00 - Années)"),
                     ),
                     ...folderNodes.map(
                       (f) => DropdownMenuItem<String?>(
                         value: f.id,
-                        child: Text(f.name, overflow: TextOverflow.ellipsis),
+                        child: Text(
+                          "${_isInsideYearsTree(f.id) ? '📅' : '📁'} ${f.name}",
+                          overflow: TextOverflow.ellipsis,
+                        ),
                       ),
                     ),
                   ],
@@ -2416,6 +2780,86 @@ class _PhotoGridBodyState extends State<PhotoGridBody> {
     );
   }
 
+  Future<void> _launchDriveUrl(BuildContext context, String url) async {
+    try {
+      final uri = Uri.parse(url);
+      final launched = await launchUrl(uri, mode: LaunchMode.externalApplication);
+      if (!launched) {
+        await launchUrl(uri, mode: LaunchMode.platformDefault);
+      }
+    } catch (e) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          backgroundColor: const Color(0xFF0F172A),
+          content: Text("Impossible d'ouvrir le lien Drive : $e", style: const TextStyle(color: Colors.white)),
+        ),
+      );
+    }
+  }
+
+  void _openFullScreenZoom(BuildContext context, PhotoItem photo, String fileViewUrl) {
+    final previewUrl = photo.largePreviewUrl ?? photo.thumbnailUrl;
+    if (previewUrl == null) {
+      _launchDriveUrl(context, fileViewUrl);
+      return;
+    }
+    showDialog<void>(
+      context: context,
+      barrierColor: Colors.black.withValues(alpha: 0.94),
+      builder: (zoomCtx) => Scaffold(
+        backgroundColor: Colors.transparent,
+        appBar: AppBar(
+          backgroundColor: Colors.black54,
+          title: Text(photo.filename, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
+          actions: [
+            TextButton.icon(
+              style: TextButton.styleFrom(
+                foregroundColor: const Color(0xFF38BDF8),
+              ),
+              onPressed: () => _launchDriveUrl(zoomCtx, fileViewUrl),
+              icon: const Icon(Icons.open_in_new, size: 17),
+              label: const Text("Ouvrir sur Google Drive", style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+            ),
+            const SizedBox(width: 8),
+          ],
+        ),
+        body: Stack(
+          fit: StackFit.expand,
+          children: [
+            InteractiveViewer(
+              minScale: 0.8,
+              maxScale: 5.0,
+              child: Center(
+                child: Image.network(
+                  previewUrl,
+                  fit: BoxFit.contain,
+                  loadingBuilder: (ctx, child, progress) {
+                    if (progress == null) return child;
+                    return const Center(
+                      child: CircularProgressIndicator(color: Color(0xFF38BDF8)),
+                    );
+                  },
+                ),
+              ),
+            ),
+            const Positioned(
+              bottom: 16,
+              left: 0,
+              right: 0,
+              child: Center(
+                child: Text(
+                  "Pincez ou utilisez la molette pour zoomer (jusqu'à 5x)",
+                  style: TextStyle(fontSize: 11, color: Colors.white54),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   void _openLightbox(BuildContext context, PhotoItem photo) {
     final isWide = MediaQuery.of(context).size.width >= 900;
     final photoAlbumNames = photo.albums
@@ -2436,7 +2880,7 @@ class _PhotoGridBodyState extends State<PhotoGridBody> {
             side: const BorderSide(color: Colors.white12),
           ),
           child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 720, maxHeight: 760),
+            constraints: const BoxConstraints(maxWidth: 920, maxHeight: 860),
             child: Padding(
               padding: const EdgeInsets.all(24),
               child: Column(
@@ -2453,6 +2897,11 @@ class _PhotoGridBodyState extends State<PhotoGridBody> {
                         ),
                       ),
                       IconButton(
+                        tooltip: "Agrandir en plein écran",
+                        icon: const Icon(Icons.fullscreen, color: Color(0xFF38BDF8)),
+                        onPressed: () => _openFullScreenZoom(context, photo, fileViewUrl),
+                      ),
+                      IconButton(
                         icon: const Icon(Icons.close, color: Colors.white70),
                         onPressed: () => Navigator.of(dialogCtx).pop(),
                       ),
@@ -2461,40 +2910,72 @@ class _PhotoGridBodyState extends State<PhotoGridBody> {
                   const SizedBox(height: 12),
                   if (photo.largePreviewUrl != null)
                     Flexible(
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(12),
-                        child: Container(
-                          constraints: const BoxConstraints(maxHeight: 380),
-                          color: Colors.black45,
-                          child: Stack(
-                            alignment: Alignment.center,
-                            children: [
-                              Image.network(
-                                photo.largePreviewUrl!,
-                                fit: BoxFit.contain,
-                                loadingBuilder: (ctx, child, progress) {
-                                  if (progress == null) return child;
-                                  return const Center(
-                                    child: Padding(
-                                      padding: EdgeInsets.all(32),
-                                      child: CircularProgressIndicator(color: Color(0xFF38BDF8)),
-                                    ),
-                                  );
-                                },
-                                errorBuilder: (ctx, err, stack) => const SizedBox.shrink(),
-                              ),
-                              if (photo.isVideo)
-                                Container(
-                                  width: 56,
-                                  height: 56,
-                                  decoration: BoxDecoration(
-                                    color: Colors.black.withValues(alpha: 0.6),
-                                    shape: BoxShape.circle,
-                                    border: Border.all(color: Colors.white38),
+                      child: GestureDetector(
+                        onTap: () {
+                          if (photo.isVideo) {
+                            _launchDriveUrl(context, fileViewUrl);
+                          } else {
+                            _openFullScreenZoom(context, photo, fileViewUrl);
+                          }
+                        },
+                        child: MouseRegion(
+                          cursor: SystemMouseCursors.zoomIn,
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(12),
+                            child: Container(
+                              constraints: const BoxConstraints(maxHeight: 520),
+                              color: Colors.black45,
+                              child: Stack(
+                                alignment: Alignment.center,
+                                children: [
+                                  Image.network(
+                                    photo.largePreviewUrl!,
+                                    fit: BoxFit.contain,
+                                    loadingBuilder: (ctx, child, progress) {
+                                      if (progress == null) return child;
+                                      return const Center(
+                                        child: Padding(
+                                          padding: EdgeInsets.all(32),
+                                          child: CircularProgressIndicator(color: Color(0xFF38BDF8)),
+                                        ),
+                                      );
+                                    },
+                                    errorBuilder: (ctx, err, stack) => const SizedBox.shrink(),
                                   ),
-                                  child: const Icon(Icons.play_arrow, color: Colors.white, size: 34),
-                                ),
-                            ],
+                                  if (photo.isVideo)
+                                    Container(
+                                      width: 56,
+                                      height: 56,
+                                      decoration: BoxDecoration(
+                                        color: Colors.black.withValues(alpha: 0.6),
+                                        shape: BoxShape.circle,
+                                        border: Border.all(color: Colors.white38),
+                                      ),
+                                      child: const Icon(Icons.play_arrow, color: Colors.white, size: 34),
+                                    )
+                                  else
+                                    Positioned(
+                                      bottom: 8,
+                                      right: 8,
+                                      child: Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                        decoration: BoxDecoration(
+                                          color: Colors.black.withValues(alpha: 0.65),
+                                          borderRadius: BorderRadius.circular(6),
+                                        ),
+                                        child: const Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Icon(Icons.zoom_out_map, size: 13, color: Colors.white70),
+                                            SizedBox(width: 4),
+                                            Text("Cliquer pour agrandir", style: TextStyle(fontSize: 10, color: Colors.white70)),
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                ],
+                              ),
+                            ),
                           ),
                         ),
                       ),
@@ -2627,12 +3108,7 @@ class _PhotoGridBodyState extends State<PhotoGridBody> {
                     label: Text(photo.isVideo
                         ? (photo.driveId != null ? "Lire la vidéo HD sur Google Drive" : "Ouvrir Google Drive")
                         : (photo.driveId != null ? "Ouvrir l'original HD sur Google Drive" : "Ouvrir le dossier Google Drive")),
-                    onPressed: () async {
-                      final uri = Uri.parse(fileViewUrl);
-                      if (await canLaunchUrl(uri)) {
-                        await launchUrl(uri, mode: LaunchMode.externalApplication);
-                      }
-                    },
+                    onPressed: () => _launchDriveUrl(dialogCtx, fileViewUrl),
                   ),
                 ],
               ),
@@ -2650,9 +3126,9 @@ class _PhotoGridBodyState extends State<PhotoGridBody> {
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
-      builder: (context) {
+      builder: (sheetCtx) {
         return DraggableScrollableSheet(
-          initialChildSize: 0.7,
+          initialChildSize: 0.78,
           maxChildSize: 0.95,
           minChildSize: 0.4,
           expand: false,
@@ -2673,40 +3149,69 @@ class _PhotoGridBodyState extends State<PhotoGridBody> {
                 ),
                 const SizedBox(height: 16),
                 if (photo.largePreviewUrl != null)
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(12),
-                    child: Container(
-                      constraints: const BoxConstraints(maxHeight: 260),
-                      color: Colors.black38,
-                      child: Stack(
-                        alignment: Alignment.center,
-                        children: [
-                          Image.network(
-                            photo.largePreviewUrl!,
-                            fit: BoxFit.contain,
-                            loadingBuilder: (ctx, child, progress) {
-                              if (progress == null) return child;
-                              return const Center(
-                                child: Padding(
-                                  padding: EdgeInsets.all(32),
-                                  child: CircularProgressIndicator(color: Color(0xFF38BDF8)),
-                                ),
-                              );
-                            },
-                            errorBuilder: (ctx, err, stack) => const SizedBox.shrink(),
-                          ),
-                          if (photo.isVideo)
-                            Container(
-                              width: 52,
-                              height: 52,
-                              decoration: BoxDecoration(
-                                color: Colors.black.withValues(alpha: 0.6),
-                                shape: BoxShape.circle,
-                                border: Border.all(color: Colors.white38),
-                              ),
-                              child: const Icon(Icons.play_arrow, color: Colors.white, size: 32),
+                  GestureDetector(
+                    onTap: () {
+                      if (photo.isVideo) {
+                        _launchDriveUrl(sheetCtx, fileViewUrl);
+                      } else {
+                        _openFullScreenZoom(sheetCtx, photo, fileViewUrl);
+                      }
+                    },
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(12),
+                      child: Container(
+                        constraints: const BoxConstraints(maxHeight: 360),
+                        color: Colors.black38,
+                        child: Stack(
+                          alignment: Alignment.center,
+                          children: [
+                            Image.network(
+                              photo.largePreviewUrl!,
+                              fit: BoxFit.contain,
+                              loadingBuilder: (ctx, child, progress) {
+                                if (progress == null) return child;
+                                return const Center(
+                                  child: Padding(
+                                    padding: EdgeInsets.all(32),
+                                    child: CircularProgressIndicator(color: Color(0xFF38BDF8)),
+                                  ),
+                                );
+                              },
+                              errorBuilder: (ctx, err, stack) => const SizedBox.shrink(),
                             ),
-                        ],
+                            if (photo.isVideo)
+                              Container(
+                                width: 52,
+                                height: 52,
+                                decoration: BoxDecoration(
+                                  color: Colors.black.withValues(alpha: 0.6),
+                                  shape: BoxShape.circle,
+                                  border: Border.all(color: Colors.white38),
+                                ),
+                                child: const Icon(Icons.play_arrow, color: Colors.white, size: 32),
+                              )
+                            else
+                              Positioned(
+                                bottom: 8,
+                                right: 8,
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                  decoration: BoxDecoration(
+                                    color: Colors.black.withValues(alpha: 0.65),
+                                    borderRadius: BorderRadius.circular(6),
+                                  ),
+                                  child: const Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(Icons.zoom_out_map, size: 13, color: Colors.white70),
+                                      SizedBox(width: 4),
+                                      Text("Toucher pour agrandir", style: TextStyle(fontSize: 10, color: Colors.white70)),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
                       ),
                     ),
                   ),
@@ -2838,12 +3343,7 @@ class _PhotoGridBodyState extends State<PhotoGridBody> {
                   label: Text(photo.isVideo
                       ? (photo.driveId != null ? "Lire la vidéo HD sur Google Drive" : "Ouvrir Google Drive")
                       : (photo.driveId != null ? "Ouvrir l'original HD sur Google Drive" : "Ouvrir le dossier Google Drive")),
-                  onPressed: () async {
-                    final uri = Uri.parse(fileViewUrl);
-                    if (await canLaunchUrl(uri)) {
-                      await launchUrl(uri, mode: LaunchMode.externalApplication);
-                    }
-                  },
+                  onPressed: () => _launchDriveUrl(sheetCtx, fileViewUrl),
                 ),
               ],
             );
