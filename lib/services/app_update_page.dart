@@ -85,7 +85,9 @@ class _AppUpdatePageState extends State<AppUpdatePage> {
         } catch (_) {}
       }
 
-      final request = http.Request('GET', Uri.parse(widget.update.apkUrl));
+      final separator = widget.update.apkUrl.contains('?') ? '&' : '?';
+      final freshApkUrl = '${widget.update.apkUrl}${separator}t=${DateTime.now().millisecondsSinceEpoch}';
+      final request = http.Request('GET', Uri.parse(freshApkUrl));
       final response = await _httpClient!.send(request);
 
       if (response.statusCode >= 400) {

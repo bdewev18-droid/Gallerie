@@ -1,6 +1,6 @@
 {
-  "version": "1.0.12",
-  "buildNumber": 13,
+  "version": "1.0.14",
+  "buildNumber": 15,
   "apkUrl": "https://github.com/bdewev18-droid/Gallerie/releases/latest/download/app-release.apk",
-  "releaseNotes": "v1.0.1 : Chargement progressif des médias, interface responsive grand écran (sidebar + modale), correction CORS des vignettes Drive et auto-retry."
+  "releaseNotes": "v1.0.14 : Thème Vacances Soleil & Lagon, drapeaux sur la carte, double-tap zoom + swipe photo plein écran, pré-homepage et correction mise à jour APK."
 }

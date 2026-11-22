@@ -7,8 +7,8 @@ import 'services/app_update_service.dart';
 import 'services/cloud_sync_service.dart';
 import 'widgets/world_map_tab.dart';
 
-const int appBuildNumber = 13;
-const String appVersionLabel = "1.0.12";
+const int appBuildNumber = 15;
+const String appVersionLabel = "1.0.14";
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -28,11 +28,21 @@ class GallerieApp extends StatelessWidget {
         useMaterial3: true,
         brightness: Brightness.dark,
         colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF0284C7),
+          seedColor: const Color(0xFF06B6D4),
+          secondary: const Color(0xFFFBBF24),
+          tertiary: const Color(0xFFFB7185),
           brightness: Brightness.dark,
-          surface: const Color(0xFF0F172A),
+          surface: const Color(0xFF0C273B),
         ),
-        scaffoldBackgroundColor: const Color(0xFF090D16),
+        scaffoldBackgroundColor: const Color(0xFF071A29),
+        appBarTheme: const AppBarTheme(
+          backgroundColor: Color(0xFF0C273B),
+          surfaceTintColor: Colors.transparent,
+        ),
+        navigationBarTheme: NavigationBarThemeData(
+          backgroundColor: const Color(0xFF0C273B),
+          indicatorColor: const Color(0xFF06B6D4).withValues(alpha: 0.28),
+        ),
       ),
       home: const HomeScreen(),
     );
@@ -960,39 +970,54 @@ class _HomeScreenState extends State<HomeScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  // Logo & Version header
-                  Row(
-                    children: [
-                      Container(
-                        width: 48,
-                        height: 48,
-                        decoration: BoxDecoration(
-                          gradient: const LinearGradient(
-                            colors: [Color(0xFF0284C7), Color(0xFF38BDF8)],
-                            begin: Alignment.bottomLeft,
-                            end: Alignment.topRight,
+                  // Logo & Version header — Thème Vacances Soleil & Lagon
+                  Container(
+                    padding: const EdgeInsets.all(18),
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        colors: [Color(0xFF0E7490), Color(0xFF0284C7), Color(0xFFF59E0B)],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ),
+                      borderRadius: BorderRadius.circular(20),
+                      boxShadow: [
+                        BoxShadow(
+                          color: const Color(0xFF06B6D4).withValues(alpha: 0.25),
+                          blurRadius: 18,
+                          offset: const Offset(0, 6),
+                        ),
+                      ],
+                    ),
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 52,
+                          height: 52,
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.2),
+                            borderRadius: BorderRadius.circular(15),
                           ),
-                          borderRadius: BorderRadius.circular(14),
+                          child: const Icon(Icons.beach_access_rounded, color: Colors.white, size: 28),
                         ),
-                        child: const Icon(Icons.photo_library_outlined, color: Colors.white, size: 26),
-                      ),
-                      const SizedBox(width: 14),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text(
-                              'Medias Familly',
-                              style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: Colors.white),
-                            ),
-                            Text(
-                              'v$appVersionLabel • Build $appBuildNumber · ${_allPhotos.length} médias',
-                              style: const TextStyle(fontSize: 12, color: Colors.white54),
-                            ),
-                          ],
+                        const SizedBox(width: 14),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text(
+                                'Medias Familly 🌴',
+                                style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: Colors.white),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                'Souvenirs de vacances · v$appVersionLabel • ${_allPhotos.length} médias',
+                                style: const TextStyle(fontSize: 12, color: Colors.white70, fontWeight: FontWeight.w500),
+                              ),
+                            ],
+                          ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                   const SizedBox(height: 20),
 
@@ -1161,8 +1186,8 @@ class _HomeScreenState extends State<HomeScreen> {
 
                   // 3. Mode Photos
                   _buildPreHomeModeCard(
-                    icon: Icons.photo_library_rounded,
-                    color: const Color(0xFF38BDF8),
+                    icon: Icons.photo_camera_rounded,
+                    color: const Color(0xFF22D3EE),
                     title: 'Mode Photos',
                     subtitle: '${_photosOnly.length} photos · Carte du monde, Thématiques & Années',
                     onTap: () => setState(() {
@@ -1176,7 +1201,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   // 4. Mode Vidéos
                   _buildPreHomeModeCard(
                     icon: Icons.videocam_rounded,
-                    color: const Color(0xFFA78BFA),
+                    color: const Color(0xFFFB7185),
                     title: 'Mode Vidéos',
                     subtitle: '${_videosOnly.length} vidéos · Carte du monde, Thématiques & Années',
                     onTap: () => setState(() {
@@ -1190,7 +1215,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   // 5. Album collaboratif (Voyage en cours)
                   _buildPreHomeModeCard(
                     icon: Icons.flight_takeoff_rounded,
-                    color: const Color(0xFF4ADE80),
+                    color: const Color(0xFFFBBF24),
                     title: 'Album collaboratif · Voyage en cours',
                     subtitle: '$collabCount média(s) · Chaque membre peut déposer ses photos',
                     onTap: _openCollaborativeTripAlbum,
@@ -3989,62 +4014,27 @@ class _PhotoGridBodyState extends State<PhotoGridBody> {
   }
 
   void _openFullScreenZoom(BuildContext context, PhotoItem photo, String fileViewUrl) {
-    final previewUrl = photo.largePreviewUrl ?? photo.thumbnailUrl;
-    if (previewUrl == null) {
-      _launchDriveUrl(context, fileViewUrl);
-      return;
+    final gallery = widget.photos.where((p) => !p.isVideo && (p.largePreviewUrl ?? p.thumbnailUrl) != null).toList();
+    var initialIdx = gallery.indexWhere((p) => p.id == photo.id);
+    if (initialIdx < 0) {
+      final fallbackUrl = photo.largePreviewUrl ?? photo.thumbnailUrl;
+      if (fallbackUrl == null) {
+        _launchDriveUrl(context, fileViewUrl);
+        return;
+      }
+      gallery.insert(0, photo);
+      initialIdx = 0;
     }
-    showDialog<void>(
-      context: context,
-      barrierColor: Colors.black.withValues(alpha: 0.94),
-      builder: (zoomCtx) => Scaffold(
-        backgroundColor: Colors.transparent,
-        appBar: AppBar(
-          backgroundColor: Colors.black54,
-          title: Text(photo.filename, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
-          actions: [
-            TextButton.icon(
-              style: TextButton.styleFrom(
-                foregroundColor: const Color(0xFF38BDF8),
-              ),
-              onPressed: () => _launchDriveUrl(zoomCtx, fileViewUrl),
-              icon: const Icon(Icons.open_in_new, size: 17),
-              label: const Text("Ouvrir sur Google Drive", style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
-            ),
-            const SizedBox(width: 8),
-          ],
-        ),
-        body: Stack(
-          fit: StackFit.expand,
-          children: [
-            InteractiveViewer(
-              minScale: 0.8,
-              maxScale: 5.0,
-              child: Center(
-                child: Image.network(
-                  previewUrl,
-                  fit: BoxFit.contain,
-                  loadingBuilder: (ctx, child, progress) {
-                    if (progress == null) return child;
-                    return const Center(
-                      child: CircularProgressIndicator(color: Color(0xFF38BDF8)),
-                    );
-                  },
-                ),
-              ),
-            ),
-            const Positioned(
-              bottom: 16,
-              left: 0,
-              right: 0,
-              child: Center(
-                child: Text(
-                  "Pincez ou utilisez la molette pour zoomer (jusqu'à 5x)",
-                  style: TextStyle(fontSize: 11, color: Colors.white54),
-                ),
-              ),
-            ),
-          ],
+
+    Navigator.of(context).push(
+      PageRouteBuilder<void>(
+        opaque: false,
+        barrierColor: Colors.black.withValues(alpha: 0.96),
+        pageBuilder: (_, __, ___) => _FullScreenPhotoViewer(
+          photos: gallery,
+          initialIndex: initialIdx,
+          defaultGdriveUrl: widget.gdriveUrl,
+          onLaunchDrive: _launchDriveUrl,
         ),
       ),
     );
@@ -4921,6 +4911,239 @@ class _PhotoSearchScreenState extends State<PhotoSearchScreen> {
                     ),
         ),
       ],
+    );
+  }
+}
+
+class _FullScreenPhotoViewer extends StatefulWidget {
+  final List<PhotoItem> photos;
+  final int initialIndex;
+  final String defaultGdriveUrl;
+  final Future<void> Function(BuildContext context, String url) onLaunchDrive;
+
+  const _FullScreenPhotoViewer({
+    required this.photos,
+    required this.initialIndex,
+    required this.defaultGdriveUrl,
+    required this.onLaunchDrive,
+  });
+
+  @override
+  State<_FullScreenPhotoViewer> createState() => _FullScreenPhotoViewerState();
+}
+
+class _FullScreenPhotoViewerState extends State<_FullScreenPhotoViewer> {
+  late final PageController _pageController;
+  late int _currentIndex;
+  bool _isCurrentZoomed = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _currentIndex = widget.initialIndex;
+    _pageController = PageController(initialPage: widget.initialIndex);
+  }
+
+  @override
+  void dispose() {
+    _pageController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final currentPhoto = widget.photos[_currentIndex];
+    final driveUrl = currentPhoto.getDriveViewUrl(widget.defaultGdriveUrl);
+
+    return Scaffold(
+      backgroundColor: Colors.black.withValues(alpha: 0.96),
+      appBar: AppBar(
+        backgroundColor: Colors.black54,
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              currentPhoto.filename,
+              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+              overflow: TextOverflow.ellipsis,
+            ),
+            Text(
+              '${_currentIndex + 1} / ${widget.photos.length}',
+              style: const TextStyle(fontSize: 11, color: Colors.white54),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton.icon(
+            style: TextButton.styleFrom(foregroundColor: const Color(0xFF22D3EE)),
+            onPressed: () => widget.onLaunchDrive(context, driveUrl),
+            icon: const Icon(Icons.open_in_new, size: 17),
+            label: const Text('Drive', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+          ),
+          const SizedBox(width: 6),
+        ],
+      ),
+      body: Stack(
+        fit: StackFit.expand,
+        children: [
+          PageView.builder(
+            controller: _pageController,
+            physics: _isCurrentZoomed
+                ? const NeverScrollableScrollPhysics()
+                : const PageScrollPhysics(),
+            itemCount: widget.photos.length,
+            onPageChanged: (idx) {
+              setState(() {
+                _currentIndex = idx;
+                _isCurrentZoomed = false;
+              });
+            },
+            itemBuilder: (_, idx) {
+              final p = widget.photos[idx];
+              final url = p.largePreviewUrl ?? p.thumbnailUrl ?? '';
+              return _ZoomablePhotoPage(
+                key: ValueKey(p.id),
+                imageUrl: url,
+                onZoomChanged: (zoomed) {
+                  if (idx == _currentIndex && zoomed != _isCurrentZoomed) {
+                    setState(() => _isCurrentZoomed = zoomed);
+                  }
+                },
+              );
+            },
+          ),
+          if (widget.photos.length > 1 && _currentIndex > 0)
+            Positioned(
+              left: 10,
+              top: 0,
+              bottom: 0,
+              child: Center(
+                child: CircleAvatar(
+                  radius: 20,
+                  backgroundColor: Colors.black.withValues(alpha: 0.55),
+                  child: IconButton(
+                    icon: const Icon(Icons.chevron_left, color: Colors.white),
+                    onPressed: () => _pageController.previousPage(
+                      duration: const Duration(milliseconds: 240),
+                      curve: Curves.easeOut,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          if (widget.photos.length > 1 && _currentIndex < widget.photos.length - 1)
+            Positioned(
+              right: 10,
+              top: 0,
+              bottom: 0,
+              child: Center(
+                child: CircleAvatar(
+                  radius: 20,
+                  backgroundColor: Colors.black.withValues(alpha: 0.55),
+                  child: IconButton(
+                    icon: const Icon(Icons.chevron_right, color: Colors.white),
+                    onPressed: () => _pageController.nextPage(
+                      duration: const Duration(milliseconds: 240),
+                      curve: Curves.easeOut,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          const Positioned(
+            bottom: 14,
+            left: 0,
+            right: 0,
+            child: Center(
+              child: Text(
+                'Double-tap pour zoomer · Glissez gauche/droite pour changer de photo',
+                style: TextStyle(fontSize: 11, color: Colors.white54),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ZoomablePhotoPage extends StatefulWidget {
+  final String imageUrl;
+  final ValueChanged<bool> onZoomChanged;
+
+  const _ZoomablePhotoPage({
+    super.key,
+    required this.imageUrl,
+    required this.onZoomChanged,
+  });
+
+  @override
+  State<_ZoomablePhotoPage> createState() => _ZoomablePhotoPageState();
+}
+
+class _ZoomablePhotoPageState extends State<_ZoomablePhotoPage> {
+  final TransformationController _ctrl = TransformationController();
+  Offset? _doubleTapLocalPos;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl.addListener(_handleTransform);
+  }
+
+  void _handleTransform() {
+    final zoomed = _ctrl.value.getMaxScaleOnAxis() > 1.05;
+    widget.onZoomChanged(zoomed);
+  }
+
+  void _handleDoubleTap() {
+    final currentScale = _ctrl.value.getMaxScaleOnAxis();
+    if (currentScale > 1.15) {
+      _ctrl.value = Matrix4.identity();
+      return;
+    }
+    const double targetScale = 2.8;
+    final pos = _doubleTapLocalPos;
+    if (pos != null) {
+      final dx = -pos.dx * (targetScale - 1);
+      final dy = -pos.dy * (targetScale - 1);
+      _ctrl.value = Matrix4.identity()
+        ..translate(dx, dy)
+        ..scale(targetScale);
+    } else {
+      _ctrl.value = Matrix4.identity()..scale(targetScale);
+    }
+  }
+
+  @override
+  void dispose() {
+    _ctrl.removeListener(_handleTransform);
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onDoubleTapDown: (details) => _doubleTapLocalPos = details.localPosition,
+      onDoubleTap: _handleDoubleTap,
+      child: InteractiveViewer(
+        transformationController: _ctrl,
+        minScale: 1.0,
+        maxScale: 5.0,
+        child: Center(
+          child: Image.network(
+            widget.imageUrl,
+            fit: BoxFit.contain,
+            loadingBuilder: (ctx, child, progress) {
+              if (progress == null) return child;
+              return const Center(
+                child: CircularProgressIndicator(color: Color(0xFF22D3EE)),
+              );
+            },
+          ),
+        ),
+      ),
     );
   }
 }

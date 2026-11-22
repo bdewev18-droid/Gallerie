@@ -857,8 +857,8 @@ class _WorldMapTabState extends State<WorldMapTab> {
                     decoration: const BoxDecoration(
                       gradient: RadialGradient(
                         center: Alignment(0, -0.1),
-                        radius: 1.1,
-                        colors: [Color(0xFF0E1B33), Color(0xFF050A14)],
+                        radius: 1.15,
+                        colors: [Color(0xFF0E4B68), Color(0xFF072538)],
                       ),
                     ),
                     child: InteractiveViewer(
@@ -1596,27 +1596,27 @@ class _WorldMapPainter extends CustomPainter {
     }
 
     final unvisitedFill = Paint()
-      ..color = const Color(0xFF172236)
+      ..color = const Color(0xFF1C3B4E)
       ..style = PaintingStyle.fill;
     final unvisitedStroke = Paint()
-      ..color = const Color(0xFF28354D)
+      ..color = const Color(0xFF2D556E)
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 0.6;
+      ..strokeWidth = 0.65;
 
     final visitedGlow = Paint()
-      ..color = const Color(0xFF0EA5E9).withOpacity(0.32)
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 5.0)
+      ..color = const Color(0xFFFBBF24).withOpacity(0.28)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 5.5)
       ..style = PaintingStyle.fill;
     final visitedFill = Paint()
-      ..color = const Color(0xFF0284C7)
+      ..color = const Color(0xFF06B6D4)
       ..style = PaintingStyle.fill;
     final visitedHighlightFill = Paint()
-      ..color = const Color(0xFF38BDF8)
+      ..color = const Color(0xFFFBBF24)
       ..style = PaintingStyle.fill;
     final visitedStroke = Paint()
-      ..color = const Color(0xFF7DD3FC)
+      ..color = const Color(0xFFA5F3FC)
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.0;
+      ..strokeWidth = 1.1;
 
     for (final s in shapes) {
       if (visitedByIso.containsKey(s.iso3)) continue;
@@ -1644,29 +1644,34 @@ class _WorldMapPainter extends CustomPainter {
     );
 
     final invScale = 1.0 / math.sqrt(currentZoom.clamp(1.0, 6.0));
-    final singleBg = Paint()..color = const Color(0xFF0B1120).withOpacity(0.92);
+    final singleBg = Paint()..color = const Color(0xFF072538).withOpacity(0.92);
     final singleBorder = Paint()
-      ..color = const Color(0xFF38BDF8)
+      ..color = const Color(0xFFFBBF24)
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 0.9 * invScale;
+      ..strokeWidth = 1.0 * invScale;
 
-    final clusterBg = Paint()..color = const Color(0xFF0369A1).withOpacity(0.96);
+    final clusterBg = Paint()..color = const Color(0xFF0E7490).withOpacity(0.95);
     final clusterRing = Paint()
-      ..color = const Color(0xFF38BDF8).withOpacity(0.35)
+      ..color = const Color(0xFFFBBF24).withOpacity(0.35)
       ..style = PaintingStyle.fill;
     final clusterBorder = Paint()
-      ..color = const Color(0xFFBAE6FD)
+      ..color = const Color(0xFFFDE68A)
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1.1 * invScale;
 
     for (final cl in clusters) {
       final c = cl.centerCanvas;
       final isCluster = cl.continentName != null || cl.countries.length > 1;
-      final label = cl.continentName != null
-          ? '${cl.continentName} (${cl.countries.length}) · ${cl.totalMedia}'
-          : (cl.countries.length > 1
-              ? '${cl.countries.length} pays · ${cl.totalMedia}'
-              : '${cl.totalMedia}');
+      final String label;
+      if (cl.continentName != null) {
+        label = '🌴 ${cl.continentName} (${cl.countries.length}) · ${cl.totalMedia}';
+      } else if (cl.countries.length > 1) {
+        final flags = cl.countries.take(3).map((e) => e.meta.flag).join();
+        final extra = cl.countries.length > 3 ? '+${cl.countries.length - 3}' : '';
+        label = '$flags$extra · ${cl.totalMedia}';
+      } else {
+        label = '${cl.countries.first.meta.flag} ${cl.totalMedia}';
+      }
 
       final tp = TextPainter(
         text: TextSpan(
