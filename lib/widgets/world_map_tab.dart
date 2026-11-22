@@ -506,7 +506,7 @@ class _WorldMapTabState extends State<WorldMapTab> {
           ScaffoldMessenger.of(context).hideCurrentSnackBar();
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              backgroundColor: const Color(0xFF0F172A),
+              backgroundColor: const Color(0xFFFFFFFF),
               behavior: SnackBarBehavior.floating,
               content: Text(
                 '$label — aucun album ou média pour le moment',
@@ -514,7 +514,7 @@ class _WorldMapTabState extends State<WorldMapTab> {
               ),
               action: SnackBarAction(
                 label: 'Ajouter',
-                textColor: const Color(0xFF38BDF8),
+                textColor: const Color(0xFFF97316),
                 onPressed: widget.onAddCountryFolder,
               ),
               duration: const Duration(seconds: 3),
@@ -533,7 +533,7 @@ class _WorldMapTabState extends State<WorldMapTab> {
       showModalBottomSheet<void>(
         context: context,
         isScrollControlled: true,
-        backgroundColor: const Color(0xFF0F172A),
+        backgroundColor: const Color(0xFFFFFFFF),
         shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
         ),
@@ -561,10 +561,10 @@ class _WorldMapTabState extends State<WorldMapTab> {
       showDialog<void>(
         context: context,
         builder: (ctx) => Dialog(
-          backgroundColor: const Color(0xFF0F172A),
+          backgroundColor: const Color(0xFFFFFFFF),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(20),
-            side: const BorderSide(color: Colors.white12),
+            side: const BorderSide(color: Color(0xFFEBDDC6)),
           ),
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 540, maxHeight: 680),
@@ -602,8 +602,8 @@ class _WorldMapTabState extends State<WorldMapTab> {
         Container(
           padding: EdgeInsets.fromLTRB(isCompact ? 12 : 20, 10, isCompact ? 12 : 20, 8),
           decoration: const BoxDecoration(
-            color: Color(0xFF0B1120),
-            border: Border(bottom: BorderSide(color: Colors.white10)),
+            color: Color(0xFFFFF7E8),
+            border: Border(bottom: BorderSide(color: Color(0xFFF1E6D2))),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -619,12 +619,12 @@ class _WorldMapTabState extends State<WorldMapTab> {
                         _summaryPill(
                           Icons.public_rounded,
                           '${widget.visitedCountries.length} pays',
-                          const Color(0xFF38BDF8),
+                          const Color(0xFFF97316),
                         ),
                         _summaryPill(
                           Icons.photo_outlined,
                           '${widget.totalPhotos}',
-                          const Color(0xFF7DD3FC),
+                          const Color(0xFF0284C7),
                         ),
                         _summaryPill(
                           Icons.videocam_outlined,
@@ -643,9 +643,9 @@ class _WorldMapTabState extends State<WorldMapTab> {
                       child: Container(
                         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
                         decoration: BoxDecoration(
-                          color: Colors.white.withOpacity(0.06),
+                          color: Color(0xFFF6EFE2),
                           borderRadius: BorderRadius.circular(10),
-                          border: Border.all(color: Colors.white12),
+                          border: Border.all(color: Color(0xFFEBDDC6)),
                         ),
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
@@ -653,13 +653,13 @@ class _WorldMapTabState extends State<WorldMapTab> {
                             Icon(
                               _showListMode ? Icons.map_outlined : Icons.format_list_bulleted_rounded,
                               size: 16,
-                              color: Colors.white,
+                              color: const Color(0xFF1E293B),
                             ),
                             if (!isCompact) ...[
                               const SizedBox(width: 6),
                               Text(
                                 _showListMode ? 'Carte' : 'Liste',
-                                style: const TextStyle(fontSize: 12, color: Colors.white),
+                                style: const TextStyle(fontSize: 12, color: const Color(0xFF1E293B)),
                               ),
                             ],
                           ],
@@ -701,12 +701,12 @@ class _WorldMapTabState extends State<WorldMapTab> {
                         labelStyle: TextStyle(
                           fontSize: 11.5,
                           fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
-                          color: selected ? Colors.white : Colors.white70,
+                          color: selected ? Colors.white : Color(0xFF475569),
                         ),
-                        backgroundColor: const Color(0xFF1E293B),
+                        backgroundColor: const Color(0xFFF6EFE2),
                         selectedColor: const Color(0xFF0EA5E9).withOpacity(0.35),
                         side: BorderSide(
-                          color: selected ? const Color(0xFF38BDF8) : Colors.white12,
+                          color: selected ? const Color(0xFFF97316) : Color(0xFFEBDDC6),
                         ),
                         visualDensity: VisualDensity.compact,
                         padding: const EdgeInsets.symmetric(horizontal: 6),
@@ -754,7 +754,7 @@ class _WorldMapTabState extends State<WorldMapTab> {
       return const Center(
         child: Text(
           'Aucun pays visité dans cette région.',
-          style: TextStyle(color: Colors.white54),
+          style: TextStyle(color: Color(0xFF64748B)),
         ),
       );
     }
@@ -765,7 +765,7 @@ class _WorldMapTabState extends State<WorldMapTab> {
       itemBuilder: (_, idx) {
         final c = countries[idx];
         return Material(
-          color: const Color(0xFF0F172A),
+          color: const Color(0xFFFFFFFF),
           borderRadius: BorderRadius.circular(14),
           child: InkWell(
             borderRadius: BorderRadius.circular(14),
@@ -774,7 +774,7 @@ class _WorldMapTabState extends State<WorldMapTab> {
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: const Color(0xFF38BDF8).withOpacity(0.25)),
+                border: Border.all(color: const Color(0xFFF97316).withOpacity(0.25)),
               ),
               child: Row(
                 children: [
@@ -789,13 +789,13 @@ class _WorldMapTabState extends State<WorldMapTab> {
                           style: const TextStyle(
                             fontSize: 15,
                             fontWeight: FontWeight.w600,
-                            color: Colors.white,
+                            color: const Color(0xFF1E293B),
                           ),
                         ),
                         const SizedBox(height: 3),
                         Text(
                           '${c.meta.capital} · ${c.albums.length} album${c.albums.length > 1 ? 's' : ''}',
-                          style: const TextStyle(fontSize: 11.5, color: Colors.white54),
+                          style: const TextStyle(fontSize: 11.5, color: Color(0xFF64748B)),
                         ),
                       ],
                     ),
@@ -808,7 +808,7 @@ class _WorldMapTabState extends State<WorldMapTab> {
                         style: const TextStyle(
                           fontSize: 12.5,
                           fontWeight: FontWeight.w600,
-                          color: Color(0xFF38BDF8),
+                          color: Color(0xFFF97316),
                         ),
                       ),
                       if (c.videoCount > 0)
@@ -819,7 +819,7 @@ class _WorldMapTabState extends State<WorldMapTab> {
                     ],
                   ),
                   const SizedBox(width: 6),
-                  const Icon(Icons.chevron_right_rounded, color: Colors.white38),
+                  const Icon(Icons.chevron_right_rounded, color: Color(0xFF94A3B8)),
                 ],
               ),
             ),
@@ -837,7 +837,7 @@ class _WorldMapTabState extends State<WorldMapTab> {
     final shapes = _shapes;
     if (shapes == null) {
       return const Center(
-        child: CircularProgressIndicator(color: Color(0xFF38BDF8)),
+        child: CircularProgressIndicator(color: Color(0xFFF97316)),
       );
     }
 
@@ -858,7 +858,7 @@ class _WorldMapTabState extends State<WorldMapTab> {
                       gradient: RadialGradient(
                         center: Alignment(0, -0.1),
                         radius: 1.15,
-                        colors: [Color(0xFF0E4B68), Color(0xFF072538)],
+                        colors: [Color(0xFFE0F7FA), Color(0xFFBAE6FD)],
                       ),
                     ),
                     child: InteractiveViewer(
@@ -895,7 +895,7 @@ class _WorldMapTabState extends State<WorldMapTab> {
                   children: [
                     FloatingActionButton.small(
                       heroTag: 'map_zoom_in',
-                      backgroundColor: const Color(0xFF0F172A).withOpacity(0.9),
+                      backgroundColor: const Color(0xFFFFFFFF).withOpacity(0.9),
                       foregroundColor: Colors.white,
                       tooltip: 'Zoomer',
                       onPressed: () => _stepZoom(1.5),
@@ -904,8 +904,8 @@ class _WorldMapTabState extends State<WorldMapTab> {
                     const SizedBox(height: 6),
                     FloatingActionButton.small(
                       heroTag: 'map_zoom_out',
-                      backgroundColor: const Color(0xFF0F172A).withOpacity(0.9),
-                      foregroundColor: Colors.white70,
+                      backgroundColor: const Color(0xFFFFFFFF).withOpacity(0.9),
+                      foregroundColor: Color(0xFF475569),
                       tooltip: 'Dézoomer',
                       onPressed: () => _stepZoom(0.66),
                       child: const Icon(Icons.remove, size: 18),
@@ -913,8 +913,8 @@ class _WorldMapTabState extends State<WorldMapTab> {
                     const SizedBox(height: 6),
                     FloatingActionButton.small(
                       heroTag: 'map_reset_zoom',
-                      backgroundColor: const Color(0xFF0F172A).withOpacity(0.9),
-                      foregroundColor: const Color(0xFF38BDF8),
+                      backgroundColor: const Color(0xFFFFFFFF).withOpacity(0.9),
+                      foregroundColor: const Color(0xFFF97316),
                       tooltip: 'Réinitialiser la vue',
                       onPressed: () {
                         setState(() => _selectedContinent = 'Monde');
@@ -931,9 +931,9 @@ class _WorldMapTabState extends State<WorldMapTab> {
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                   decoration: BoxDecoration(
-                    color: const Color(0xFF0B1120).withOpacity(0.84),
+                    color: const Color(0xFFFFF7E8).withOpacity(0.84),
                     borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: Colors.white10),
+                    border: Border.all(color: Color(0xFFF1E6D2)),
                   ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
@@ -946,7 +946,7 @@ class _WorldMapTabState extends State<WorldMapTab> {
                           borderRadius: BorderRadius.circular(3),
                           boxShadow: [
                             BoxShadow(
-                              color: const Color(0xFF38BDF8).withOpacity(0.6),
+                              color: const Color(0xFFF97316).withOpacity(0.6),
                               blurRadius: 6,
                             ),
                           ],
@@ -959,7 +959,7 @@ class _WorldMapTabState extends State<WorldMapTab> {
                             : (_currentZoom < 2.8
                                 ? 'Vue Régions · Zoomez pour diviser les groupes'
                                 : 'Pays visités · Touchez un pays pour les détails'),
-                        style: const TextStyle(fontSize: 11, color: Colors.white70),
+                        style: const TextStyle(fontSize: 11, color: Color(0xFF475569)),
                       ),
                     ],
                   ),
@@ -972,8 +972,8 @@ class _WorldMapTabState extends State<WorldMapTab> {
           height: isCompact ? 62 : 66,
           padding: const EdgeInsets.symmetric(vertical: 8),
           decoration: const BoxDecoration(
-            color: Color(0xFF0B1120),
-            border: Border(top: BorderSide(color: Colors.white10)),
+            color: Color(0xFFFFF7E8),
+            border: Border(top: BorderSide(color: Color(0xFFF1E6D2))),
           ),
           child: ListView.separated(
             scrollDirection: Axis.horizontal,
@@ -991,12 +991,12 @@ class _WorldMapTabState extends State<WorldMapTab> {
                   decoration: BoxDecoration(
                     color: isSelected
                         ? const Color(0xFF0EA5E9).withOpacity(0.24)
-                        : const Color(0xFF1E293B).withOpacity(0.8),
+                        : const Color(0xFFF6EFE2).withOpacity(0.8),
                     borderRadius: BorderRadius.circular(12),
                     border: Border.all(
                       color: isSelected
-                          ? const Color(0xFF38BDF8)
-                          : const Color(0xFF38BDF8).withOpacity(0.28),
+                          ? const Color(0xFFF97316)
+                          : const Color(0xFFF97316).withOpacity(0.28),
                     ),
                   ),
                   child: Row(
@@ -1013,12 +1013,12 @@ class _WorldMapTabState extends State<WorldMapTab> {
                             style: const TextStyle(
                               fontSize: 12,
                               fontWeight: FontWeight.w600,
-                              color: Colors.white,
+                              color: const Color(0xFF1E293B),
                             ),
                           ),
                           Text(
                             '${c.photoCount}p${c.videoCount > 0 ? ' · ${c.videoCount}v' : ''}',
-                            style: const TextStyle(fontSize: 10, color: Color(0xFF7DD3FC)),
+                            style: const TextStyle(fontSize: 10, color: Color(0xFF0284C7)),
                           ),
                         ],
                       ),
@@ -1070,7 +1070,7 @@ class _CountryDetailSheetState extends State<_CountryDetailSheet> {
           width: 40,
           height: 4,
           decoration: BoxDecoration(
-            color: Colors.white24,
+            color: Color(0xFFCBD5E1),
             borderRadius: BorderRadius.circular(4),
           ),
         ),
@@ -1084,7 +1084,7 @@ class _CountryDetailSheetState extends State<_CountryDetailSheet> {
                 decoration: BoxDecoration(
                   color: const Color(0xFF0EA5E9).withOpacity(0.16),
                   borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: const Color(0xFF38BDF8).withOpacity(0.45)),
+                  border: Border.all(color: const Color(0xFFF97316).withOpacity(0.45)),
                 ),
                 alignment: Alignment.center,
                 child: Text(stats.meta.flag, style: const TextStyle(fontSize: 28)),
@@ -1099,7 +1099,7 @@ class _CountryDetailSheetState extends State<_CountryDetailSheet> {
                       style: const TextStyle(
                         fontSize: 18,
                         fontWeight: FontWeight.bold,
-                        color: Colors.white,
+                        color: const Color(0xFF1E293B),
                       ),
                     ),
                     const SizedBox(height: 4),
@@ -1117,7 +1117,7 @@ class _CountryDetailSheetState extends State<_CountryDetailSheet> {
                       spacing: 10,
                       runSpacing: 4,
                       children: [
-                        _infoChip(Icons.photo_library_outlined, '${stats.photoCount} photos', const Color(0xFF38BDF8)),
+                        _infoChip(Icons.photo_library_outlined, '${stats.photoCount} photos', const Color(0xFFF97316)),
                         if (stats.videoCount > 0)
                           _infoChip(Icons.videocam_outlined, '${stats.videoCount} vidéos', const Color(0xFFA78BFA)),
                       ],
@@ -1127,12 +1127,12 @@ class _CountryDetailSheetState extends State<_CountryDetailSheet> {
               ),
               IconButton(
                 onPressed: widget.onClose,
-                icon: const Icon(Icons.close, color: Colors.white54),
+                icon: const Icon(Icons.close, color: Color(0xFF64748B)),
               ),
             ],
           ),
         ),
-        const Divider(height: 1, color: Colors.white10),
+        const Divider(height: 1, color: Color(0xFFF1E6D2)),
         Expanded(
           child: ListView(
             controller: widget.scrollController,
@@ -1146,14 +1146,14 @@ class _CountryDetailSheetState extends State<_CountryDetailSheet> {
                   decoration: BoxDecoration(
                     color: const Color(0xFF0EA5E9).withOpacity(0.1),
                     borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: const Color(0xFF38BDF8).withOpacity(0.28)),
+                    border: Border.all(color: const Color(0xFFF97316).withOpacity(0.28)),
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       const Row(
                         children: [
-                          Icon(Icons.flight_takeoff_rounded, size: 15, color: Color(0xFF38BDF8)),
+                          Icon(Icons.flight_takeoff_rounded, size: 15, color: Color(0xFFF97316)),
                           SizedBox(width: 6),
                           Text(
                             'DATES DES VOYAGES',
@@ -1161,7 +1161,7 @@ class _CountryDetailSheetState extends State<_CountryDetailSheet> {
                               fontSize: 11,
                               fontWeight: FontWeight.w700,
                               letterSpacing: 0.9,
-                              color: Color(0xFF7DD3FC),
+                              color: Color(0xFF0284C7),
                             ),
                           ),
                         ],
@@ -1175,13 +1175,13 @@ class _CountryDetailSheetState extends State<_CountryDetailSheet> {
                               (r) => Container(
                                 padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
                                 decoration: BoxDecoration(
-                                  color: const Color(0xFF0F172A),
+                                  color: const Color(0xFFFFFFFF),
                                   borderRadius: BorderRadius.circular(8),
-                                  border: Border.all(color: Colors.white12),
+                                  border: Border.all(color: Color(0xFFEBDDC6)),
                                 ),
                                 child: Text(
                                   r,
-                                  style: const TextStyle(fontSize: 11.5, color: Colors.white, fontWeight: FontWeight.w500),
+                                  style: const TextStyle(fontSize: 11.5, color: const Color(0xFF1E293B), fontWeight: FontWeight.w500),
                                 ),
                               ),
                             )
@@ -1202,13 +1202,13 @@ class _CountryDetailSheetState extends State<_CountryDetailSheet> {
                         fontSize: 11,
                         fontWeight: FontWeight.w700,
                         letterSpacing: 1.0,
-                        color: Colors.white54,
+                        color: Color(0xFF64748B),
                       ),
                     ),
                     const Spacer(),
                     Text(
                       '${(_slideIndex % slides.length) + 1} / ${slides.length}',
-                      style: const TextStyle(fontSize: 11, color: Color(0xFF7DD3FC), fontWeight: FontWeight.w600),
+                      style: const TextStyle(fontSize: 11, color: Color(0xFF0284C7), fontWeight: FontWeight.w600),
                     ),
                   ],
                 ),
@@ -1218,7 +1218,7 @@ class _CountryDetailSheetState extends State<_CountryDetailSheet> {
                   decoration: BoxDecoration(
                     color: Colors.black,
                     borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: Colors.white12),
+                    border: Border.all(color: Color(0xFFEBDDC6)),
                   ),
                   clipBehavior: Clip.antiAlias,
                   child: Stack(
@@ -1229,7 +1229,7 @@ class _CountryDetailSheetState extends State<_CountryDetailSheet> {
                         key: ValueKey(currentSlide.id),
                         fit: BoxFit.cover,
                         errorBuilder: (_, __, ___) => const Center(
-                          child: Icon(Icons.image_outlined, color: Colors.white24, size: 36),
+                          child: Icon(Icons.image_outlined, color: Color(0xFFCBD5E1), size: 36),
                         ),
                       ),
                       Positioned(
@@ -1287,7 +1287,7 @@ class _CountryDetailSheetState extends State<_CountryDetailSheet> {
                           ),
                           child: Text(
                             currentSlide.filename,
-                            style: const TextStyle(fontSize: 11, color: Colors.white70),
+                            style: const TextStyle(fontSize: 11, color: Color(0xFF475569)),
                             overflow: TextOverflow.ellipsis,
                           ),
                         ),
@@ -1306,13 +1306,13 @@ class _CountryDetailSheetState extends State<_CountryDetailSheet> {
                       fontSize: 11,
                       fontWeight: FontWeight.w700,
                       letterSpacing: 1.0,
-                      color: Colors.white54,
+                      color: Color(0xFF64748B),
                     ),
                   ),
                   const Spacer(),
                   Text(
                     '${stats.albums.length} ${stats.albums.length > 1 ? 'éléments' : 'élément'}',
-                    style: const TextStyle(fontSize: 11, color: Colors.white38),
+                    style: const TextStyle(fontSize: 11, color: Color(0xFF94A3B8)),
                   ),
                 ],
               ),
@@ -1321,13 +1321,13 @@ class _CountryDetailSheetState extends State<_CountryDetailSheet> {
                 Container(
                   padding: const EdgeInsets.all(14),
                   decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.03),
+                    color: Color(0xFFFFF7E8),
                     borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: Colors.white10),
+                    border: Border.all(color: Color(0xFFF1E6D2)),
                   ),
                   child: const Text(
                     'Pays détecté via les métadonnées des photos (aucun album dédié assigné).',
-                    style: TextStyle(fontSize: 12, color: Colors.white60),
+                    style: TextStyle(fontSize: 12, color: Color(0xFF64748B)),
                   ),
                 )
               else
@@ -1335,7 +1335,7 @@ class _CountryDetailSheetState extends State<_CountryDetailSheet> {
                   return Padding(
                     padding: const EdgeInsets.only(bottom: 8),
                     child: Material(
-                      color: const Color(0xFF1E293B).withOpacity(0.75),
+                      color: const Color(0xFFF6EFE2).withOpacity(0.75),
                       borderRadius: BorderRadius.circular(12),
                       child: InkWell(
                         borderRadius: BorderRadius.circular(12),
@@ -1346,7 +1346,7 @@ class _CountryDetailSheetState extends State<_CountryDetailSheet> {
                             children: [
                               Icon(
                                 alb.isFolder ? Icons.folder_rounded : Icons.photo_album_outlined,
-                                color: alb.isFolder ? const Color(0xFFFBBF24) : const Color(0xFF38BDF8),
+                                color: alb.isFolder ? const Color(0xFFFBBF24) : const Color(0xFFF97316),
                                 size: 22,
                               ),
                               const SizedBox(width: 12),
@@ -1362,7 +1362,7 @@ class _CountryDetailSheetState extends State<_CountryDetailSheet> {
                                             style: const TextStyle(
                                               fontSize: 13.5,
                                               fontWeight: FontWeight.w600,
-                                              color: Colors.white,
+                                              color: const Color(0xFF1E293B),
                                             ),
                                             overflow: TextOverflow.ellipsis,
                                           ),
@@ -1383,7 +1383,7 @@ class _CountryDetailSheetState extends State<_CountryDetailSheet> {
                                               fontWeight: FontWeight.w600,
                                               color: alb.sourceLabel == 'Années'
                                                   ? const Color(0xFFA5B4FC)
-                                                  : const Color(0xFF7DD3FC),
+                                                  : const Color(0xFF0284C7),
                                             ),
                                           ),
                                         ),
@@ -1393,24 +1393,24 @@ class _CountryDetailSheetState extends State<_CountryDetailSheet> {
                                     Row(
                                       children: [
                                         if (alb.dateHint != null) ...[
-                                          const Icon(Icons.calendar_today_outlined, size: 11, color: Color(0xFF38BDF8)),
+                                          const Icon(Icons.calendar_today_outlined, size: 11, color: Color(0xFFF97316)),
                                           const SizedBox(width: 4),
                                           Text(
                                             alb.dateHint!,
-                                            style: const TextStyle(fontSize: 11, color: Color(0xFF7DD3FC)),
+                                            style: const TextStyle(fontSize: 11, color: Color(0xFF0284C7)),
                                           ),
                                           const SizedBox(width: 10),
                                         ],
                                         Text(
                                           '${alb.photoCount} photos${alb.videoCount > 0 ? ' · ${alb.videoCount} vidéos' : ''}',
-                                          style: const TextStyle(fontSize: 11.5, color: Colors.white54),
+                                          style: const TextStyle(fontSize: 11.5, color: Color(0xFF64748B)),
                                         ),
                                       ],
                                     ),
                                   ],
                                 ),
                               ),
-                              const Icon(Icons.chevron_right_rounded, color: Colors.white38, size: 20),
+                              const Icon(Icons.chevron_right_rounded, color: Color(0xFF94A3B8), size: 20),
                             ],
                           ),
                         ),
@@ -1584,7 +1584,7 @@ class _WorldMapPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final gridPaint = Paint()
-      ..color = Colors.white.withOpacity(0.04)
+      ..color = Color(0xFF0284C7).withOpacity(0.08)
       ..strokeWidth = 0.7;
     for (int i = 1; i < 6; i++) {
       final y = size.height * (i / 6);
@@ -1596,10 +1596,10 @@ class _WorldMapPainter extends CustomPainter {
     }
 
     final unvisitedFill = Paint()
-      ..color = const Color(0xFF1C3B4E)
+      ..color = const Color(0xFFF3ECE0)
       ..style = PaintingStyle.fill;
     final unvisitedStroke = Paint()
-      ..color = const Color(0xFF2D556E)
+      ..color = const Color(0xFFD6C7B2)
       ..style = PaintingStyle.stroke
       ..strokeWidth = 0.65;
 
@@ -1608,13 +1608,13 @@ class _WorldMapPainter extends CustomPainter {
       ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 5.5)
       ..style = PaintingStyle.fill;
     final visitedFill = Paint()
-      ..color = const Color(0xFF06B6D4)
+      ..color = const Color(0xFF0EA5E9)
       ..style = PaintingStyle.fill;
     final visitedHighlightFill = Paint()
       ..color = const Color(0xFFFBBF24)
       ..style = PaintingStyle.fill;
     final visitedStroke = Paint()
-      ..color = const Color(0xFFA5F3FC)
+      ..color = const Color(0xFFFFFFFF)
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1.1;
 
@@ -1644,7 +1644,7 @@ class _WorldMapPainter extends CustomPainter {
     );
 
     final invScale = 1.0 / math.sqrt(currentZoom.clamp(1.0, 6.0));
-    final singleBg = Paint()..color = const Color(0xFF072538).withOpacity(0.92);
+    final singleBg = Paint()..color = Colors.white.withOpacity(0.95);
     final singleBorder = Paint()
       ..color = const Color(0xFFFBBF24)
       ..style = PaintingStyle.stroke
@@ -1679,7 +1679,7 @@ class _WorldMapPainter extends CustomPainter {
           style: TextStyle(
             fontSize: (isCluster ? 8.2 : 7.8) * invScale,
             fontWeight: FontWeight.w700,
-            color: Colors.white,
+            color: isCluster ? Colors.white : const Color(0xFF1E293B),
           ),
         ),
         textDirection: TextDirection.ltr,

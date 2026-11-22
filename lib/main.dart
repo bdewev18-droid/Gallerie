@@ -7,8 +7,8 @@ import 'services/app_update_service.dart';
 import 'services/cloud_sync_service.dart';
 import 'widgets/world_map_tab.dart';
 
-const int appBuildNumber = 15;
-const String appVersionLabel = "1.0.14";
+const int appBuildNumber = 16;
+const String appVersionLabel = "1.0.15";
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -26,22 +26,25 @@ class GallerieApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         useMaterial3: true,
-        brightness: Brightness.dark,
+        brightness: Brightness.light,
         colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF06B6D4),
-          secondary: const Color(0xFFFBBF24),
-          tertiary: const Color(0xFFFB7185),
-          brightness: Brightness.dark,
-          surface: const Color(0xFF0C273B),
+          seedColor: const Color(0xFFF97316),
+          primary: const Color(0xFFF97316),
+          secondary: const Color(0xFF0EA5E9),
+          tertiary: const Color(0xFF10B981),
+          brightness: Brightness.light,
+          surface: const Color(0xFFFFFFFF),
         ),
-        scaffoldBackgroundColor: const Color(0xFF071A29),
+        scaffoldBackgroundColor: const Color(0xFFFFFBF2),
         appBarTheme: const AppBarTheme(
-          backgroundColor: Color(0xFF0C273B),
+          backgroundColor: Color(0xFFFFFFFF),
+          foregroundColor: Color(0xFF1E293B),
           surfaceTintColor: Colors.transparent,
+          elevation: 0,
         ),
         navigationBarTheme: NavigationBarThemeData(
-          backgroundColor: const Color(0xFF0C273B),
-          indicatorColor: const Color(0xFF06B6D4).withValues(alpha: 0.28),
+          backgroundColor: const Color(0xFFFFFFFF),
+          indicatorColor: const Color(0xFFF97316).withValues(alpha: 0.16),
         ),
       ),
       home: const HomeScreen(),
@@ -255,7 +258,7 @@ class _HomeScreenState extends State<HomeScreen> {
       if (_auth.isSignedIn) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            backgroundColor: const Color(0xFF0F172A),
+            backgroundColor: const Color(0xFFFFFFFF),
             content: Text(
               '✔ Connecté en tant que ${_auth.shortLabel} (${_auth.email})',
               style: const TextStyle(color: Colors.white, fontSize: 12),
@@ -268,14 +271,14 @@ class _HomeScreenState extends State<HomeScreen> {
       showDialog<void>(
         context: context,
         builder: (dialogCtx) => AlertDialog(
-          backgroundColor: const Color(0xFF0F172A),
+          backgroundColor: const Color(0xFFFFFFFF),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(14),
-            side: const BorderSide(color: Colors.white12),
+            side: const BorderSide(color: Color(0xFFEBDDC6)),
           ),
-          title: const Text('Connexion Google impossible', style: TextStyle(color: Colors.white, fontSize: 16)),
+          title: const Text('Connexion Google impossible', style: TextStyle(color: const Color(0xFF1E293B), fontSize: 16)),
           content: SingleChildScrollView(
-            child: Text('$error', style: const TextStyle(color: Colors.white70, fontSize: 12)),
+            child: Text('$error', style: const TextStyle(color: Color(0xFF475569), fontSize: 12)),
           ),
           actions: [
             TextButton(
@@ -293,7 +296,7 @@ class _HomeScreenState extends State<HomeScreen> {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
-        backgroundColor: Color(0xFF0F172A),
+        backgroundColor: Color(0xFFFFFFFF),
         content: Text('Déconnecté.', style: TextStyle(color: Colors.white, fontSize: 12)),
       ),
     );
@@ -303,23 +306,23 @@ class _HomeScreenState extends State<HomeScreen> {
     showDialog<void>(
       context: context,
       builder: (dialogCtx) => AlertDialog(
-        backgroundColor: const Color(0xFF0F172A),
+        backgroundColor: const Color(0xFFFFFFFF),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(16),
-          side: const BorderSide(color: Colors.white12),
+          side: const BorderSide(color: Color(0xFFEBDDC6)),
         ),
         title: Row(
           children: [
             Icon(
               _auth.isSignedIn ? Icons.verified_user_outlined : Icons.account_circle_outlined,
-              color: _auth.isSignedIn ? const Color(0xFF4ADE80) : const Color(0xFF38BDF8),
+              color: _auth.isSignedIn ? const Color(0xFF4ADE80) : const Color(0xFF0EA5E9),
               size: 24,
             ),
             const SizedBox(width: 10),
             Expanded(
               child: Text(
                 _auth.isSignedIn ? 'Compte connecté' : 'Connexion Google Famille',
-                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white),
+                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: const Color(0xFF1E293B)),
               ),
             ),
           ],
@@ -333,13 +336,13 @@ class _HomeScreenState extends State<HomeScreen> {
                     children: [
                       CircleAvatar(
                         radius: 22,
-                        backgroundColor: const Color(0xFF0284C7),
+                        backgroundColor: const Color(0xFFF97316),
                         backgroundImage:
                             (_auth.avatarUrl != null && _auth.avatarUrl!.isNotEmpty) ? NetworkImage(_auth.avatarUrl!) : null,
                         child: (_auth.avatarUrl == null || _auth.avatarUrl!.isEmpty)
                             ? Text(
                                 _auth.shortLabel.substring(0, 1).toUpperCase(),
-                                style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
+                                style: const TextStyle(fontWeight: FontWeight.bold, color: const Color(0xFF1E293B)),
                               )
                             : null,
                       ),
@@ -350,11 +353,11 @@ class _HomeScreenState extends State<HomeScreen> {
                           children: [
                             Text(
                               _auth.shortLabel,
-                              style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Colors.white),
+                              style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: const Color(0xFF1E293B)),
                             ),
                             Text(
                               _auth.email ?? '',
-                              style: const TextStyle(fontSize: 12, color: Colors.white70),
+                              style: const TextStyle(fontSize: 12, color: Color(0xFF475569)),
                             ),
                           ],
                         ),
@@ -365,24 +368,24 @@ class _HomeScreenState extends State<HomeScreen> {
                   Container(
                     padding: const EdgeInsets.all(10),
                     decoration: BoxDecoration(
-                      color: const Color(0xFF1E293B),
+                      color: const Color(0xFFF6EFE2),
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: const Text(
                       'Vos "J\'aime" (❤️), nouveaux dossiers et ajouts de photos sont automatiquement associés à votre prénom pour toute la famille.',
-                      style: TextStyle(fontSize: 11, color: Colors.white70),
+                      style: TextStyle(fontSize: 11, color: Color(0xFF475569)),
                     ),
                   ),
                 ],
               )
             : const Text(
                 'Connectez-vous avec votre compte Google pour aimer des photos (❤️), créer des dossiers ou ajouter des photos associées à votre nom.',
-                style: TextStyle(fontSize: 12, color: Colors.white70),
+                style: TextStyle(fontSize: 12, color: Color(0xFF475569)),
               ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(dialogCtx).pop(),
-            child: const Text('Fermer', style: TextStyle(color: Colors.white54)),
+            child: const Text('Fermer', style: TextStyle(color: Color(0xFF64748B))),
           ),
           if (_auth.isSignedIn)
             ElevatedButton.icon(
@@ -400,7 +403,7 @@ class _HomeScreenState extends State<HomeScreen> {
           else
             ElevatedButton.icon(
               style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF0284C7),
+                backgroundColor: const Color(0xFFF97316),
                 foregroundColor: Colors.white,
               ),
               icon: const Icon(Icons.login, size: 17),
@@ -421,11 +424,11 @@ class _HomeScreenState extends State<HomeScreen> {
       return Padding(
         padding: const EdgeInsets.symmetric(horizontal: 8),
         child: Chip(
-          backgroundColor: const Color(0xFF1E293B),
+          backgroundColor: const Color(0xFFF6EFE2),
           avatar: const SizedBox(
             width: 14,
             height: 14,
-            child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF38BDF8)),
+            child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF0EA5E9)),
           ),
           label: Text(compact ? '...' : 'Connexion...', style: const TextStyle(fontSize: 11)),
         ),
@@ -438,7 +441,7 @@ class _HomeScreenState extends State<HomeScreen> {
         child: Container(
           padding: EdgeInsets.symmetric(horizontal: compact ? 8 : 10, vertical: 5),
           decoration: BoxDecoration(
-            color: const Color(0xFF1E293B),
+            color: const Color(0xFFF6EFE2),
             borderRadius: BorderRadius.circular(20),
             border: Border.all(color: const Color(0xFF4ADE80).withValues(alpha: 0.45)),
           ),
@@ -468,9 +471,9 @@ class _HomeScreenState extends State<HomeScreen> {
       padding: const EdgeInsets.only(right: 6),
       child: OutlinedButton.icon(
         style: OutlinedButton.styleFrom(
-          foregroundColor: const Color(0xFF38BDF8),
-          backgroundColor: const Color(0xFF1E293B),
-          side: const BorderSide(color: Color(0xFF0284C7)),
+          foregroundColor: const Color(0xFF0EA5E9),
+          backgroundColor: const Color(0xFFF6EFE2),
+          side: const BorderSide(color: Color(0xFFF97316)),
           visualDensity: VisualDensity.compact,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
           padding: EdgeInsets.symmetric(horizontal: compact ? 8 : 12, vertical: 6),
@@ -798,7 +801,7 @@ class _HomeScreenState extends State<HomeScreen> {
       if (!silent && mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            backgroundColor: const Color(0xFF0F172A),
+            backgroundColor: const Color(0xFFFFFFFF),
             content: Text(
               _cloudTableReady
                   ? 'Synchronisé avec le cloud familial Supabase (${delta.customAlbums.length} dossiers créés, ${delta.customPhotos.length} médias ajoutés).'
@@ -828,9 +831,9 @@ class _HomeScreenState extends State<HomeScreen> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              CircularProgressIndicator(color: Color(0xFF38BDF8)),
+              CircularProgressIndicator(color: Color(0xFF0EA5E9)),
               SizedBox(height: 16),
-              Text("Chargement de Medias Familly...", style: TextStyle(color: Colors.white70)),
+              Text("Chargement de Medias Familly...", style: TextStyle(color: Color(0xFF475569))),
             ],
           ),
         ),
@@ -880,12 +883,12 @@ class _HomeScreenState extends State<HomeScreen> {
       MaterialPageRoute(
         builder: (_) => Scaffold(
           appBar: AppBar(
-            backgroundColor: const Color(0xFF0F172A),
+            backgroundColor: const Color(0xFFFFFFFF),
             title: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const Text('✈️ Voyage en cours (Collaboratif)', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
-                Text('${collabMedia.length} média(s) partagé(s) par la famille', style: const TextStyle(fontSize: 11, color: Colors.white54)),
+                Text('${collabMedia.length} média(s) partagé(s) par la famille', style: const TextStyle(fontSize: 11, color: Color(0xFF64748B))),
               ],
             ),
             actions: [
@@ -911,18 +914,18 @@ class _HomeScreenState extends State<HomeScreen> {
                             color: const Color(0xFF0EA5E9).withValues(alpha: 0.14),
                             shape: BoxShape.circle,
                           ),
-                          child: const Icon(Icons.flight_takeoff_rounded, size: 42, color: Color(0xFF38BDF8)),
+                          child: const Icon(Icons.flight_takeoff_rounded, size: 42, color: Color(0xFF0EA5E9)),
                         ),
                         const SizedBox(height: 16),
                         const Text(
                           'Album collaboratif du voyage en cours',
-                          style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: Colors.white),
+                          style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: const Color(0xFF1E293B)),
                           textAlign: TextAlign.center,
                         ),
                         const SizedBox(height: 8),
                         const Text(
                           'Chaque membre de la famille peut déposer ici ses photos et vidéos pour les partager en direct.',
-                          style: TextStyle(fontSize: 13, color: Colors.white60),
+                          style: TextStyle(fontSize: 13, color: Color(0xFF64748B)),
                           textAlign: TextAlign.center,
                         ),
                         const SizedBox(height: 20),
@@ -961,76 +964,106 @@ class _HomeScreenState extends State<HomeScreen> {
     final hasPendingUpdate = _pendingUpdate != null && !_updateSkipped;
 
     return Scaffold(
-      body: SafeArea(
-        child: Center(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 540),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  // Logo & Version header — Thème Vacances Soleil & Lagon
-                  Container(
-                    padding: const EdgeInsets.all(18),
-                    decoration: BoxDecoration(
-                      gradient: const LinearGradient(
-                        colors: [Color(0xFF0E7490), Color(0xFF0284C7), Color(0xFFF59E0B)],
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                      ),
-                      borderRadius: BorderRadius.circular(20),
-                      boxShadow: [
-                        BoxShadow(
-                          color: const Color(0xFF06B6D4).withValues(alpha: 0.25),
-                          blurRadius: 18,
-                          offset: const Offset(0, 6),
+      body: Container(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            colors: [Color(0xFFFFF8E7), Color(0xFFFFF0DB), Color(0xFFE6F8FC)],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+        ),
+        child: SafeArea(
+          child: Center(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 540),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    // Logo & Version header — Thème Carnet de Vacances
+                    Container(
+                      padding: const EdgeInsets.all(20),
+                      decoration: BoxDecoration(
+                        gradient: const LinearGradient(
+                          colors: [Color(0xFFF97316), Color(0xFFFB923C), Color(0xFFFBBF24)],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
                         ),
-                      ],
-                    ),
-                    child: Row(
-                      children: [
-                        Container(
-                          width: 52,
-                          height: 52,
-                          decoration: BoxDecoration(
-                            color: Colors.white.withValues(alpha: 0.2),
-                            borderRadius: BorderRadius.circular(15),
+                        borderRadius: BorderRadius.circular(24),
+                        boxShadow: [
+                          BoxShadow(
+                            color: const Color(0xFFF97316).withValues(alpha: 0.28),
+                            blurRadius: 20,
+                            offset: const Offset(0, 8),
                           ),
-                          child: const Icon(Icons.beach_access_rounded, color: Colors.white, size: 28),
-                        ),
-                        const SizedBox(width: 14),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
+                        ],
+                      ),
+                      child: Row(
+                        children: [
+                          Stack(
+                            clipBehavior: Clip.none,
                             children: [
-                              const Text(
-                                'Medias Familly 🌴',
-                                style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: Colors.white),
+                              Container(
+                                width: 58,
+                                height: 58,
+                                decoration: BoxDecoration(
+                                  color: Colors.white.withValues(alpha: 0.25),
+                                  borderRadius: BorderRadius.circular(18),
+                                  border: Border.all(color: Colors.white.withValues(alpha: 0.45), width: 1.5),
+                                ),
+                                child: const Icon(Icons.beach_access_rounded, color: Colors.white, size: 32),
                               ),
-                              const SizedBox(height: 2),
-                              Text(
-                                'Souvenirs de vacances · v$appVersionLabel • ${_allPhotos.length} médias',
-                                style: const TextStyle(fontSize: 12, color: Colors.white70, fontWeight: FontWeight.w500),
+                              Positioned(
+                                right: -4,
+                                top: -4,
+                                child: Container(
+                                  padding: const EdgeInsets.all(4),
+                                  decoration: const BoxDecoration(
+                                    color: Color(0xFFFEF08A),
+                                    shape: BoxShape.circle,
+                                  ),
+                                  child: const Icon(Icons.wb_sunny_rounded, size: 13, color: Color(0xFFEA580C)),
+                                ),
                               ),
                             ],
                           ),
-                        ),
-                      ],
+                          const SizedBox(width: 16),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text(
+                                  'Carnet de Vacances 🌴',
+                                  style: TextStyle(fontSize: 21, fontWeight: FontWeight.w800, color: Colors.white),
+                                ),
+                                const SizedBox(height: 3),
+                                Text(
+                                  'Medias Familly · v$appVersionLabel • ${_allPhotos.length} souvenirs',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.white.withValues(alpha: 0.92),
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
                   const SizedBox(height: 20),
 
                   // 1. Module Connexion Google
                   Container(
                     padding: const EdgeInsets.all(16),
                     decoration: BoxDecoration(
-                      color: const Color(0xFF0F172A),
+                      color: const Color(0xFFFFFFFF),
                       borderRadius: BorderRadius.circular(16),
                       border: Border.all(
                         color: _auth.isSignedIn
                             ? const Color(0xFF4ADE80).withValues(alpha: 0.4)
-                            : Colors.white12,
+                            : Color(0xFFEBDDC6),
                       ),
                     ),
                     child: Row(
@@ -1039,10 +1072,10 @@ class _HomeScreenState extends State<HomeScreen> {
                           radius: 22,
                           backgroundColor: _auth.isSignedIn
                               ? const Color(0xFF4ADE80).withValues(alpha: 0.2)
-                              : const Color(0xFF1E293B),
+                              : const Color(0xFFF6EFE2),
                           child: Icon(
                             _auth.isSignedIn ? Icons.verified_user_rounded : Icons.person_outline_rounded,
-                            color: _auth.isSignedIn ? const Color(0xFF4ADE80) : Colors.white54,
+                            color: _auth.isSignedIn ? const Color(0xFF4ADE80) : Color(0xFF64748B),
                           ),
                         ),
                         const SizedBox(width: 12),
@@ -1052,13 +1085,13 @@ class _HomeScreenState extends State<HomeScreen> {
                             children: [
                               Text(
                                 _auth.isSignedIn ? _auth.shortLabel : 'Non connecté',
-                                style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Colors.white),
+                                style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: const Color(0xFF1E293B)),
                               ),
                               Text(
                                 _auth.isSignedIn
                                     ? (_auth.email ?? 'Connecté avec Google')
                                     : 'Connectez-vous pour liker et déposer des médias',
-                                style: const TextStyle(fontSize: 11.5, color: Colors.white54),
+                                style: const TextStyle(fontSize: 11.5, color: Color(0xFF64748B)),
                                 overflow: TextOverflow.ellipsis,
                               ),
                             ],
@@ -1069,7 +1102,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           const SizedBox(
                             width: 22,
                             height: 22,
-                            child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF38BDF8)),
+                            child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF0EA5E9)),
                           )
                         else if (_auth.isSignedIn)
                           TextButton(
@@ -1079,7 +1112,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         else
                           FilledButton.icon(
                             style: FilledButton.styleFrom(
-                              backgroundColor: const Color(0xFF0284C7),
+                              backgroundColor: const Color(0xFFF97316),
                               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                             ),
                             onPressed: _handleGoogleSignIn,
@@ -1097,10 +1130,10 @@ class _HomeScreenState extends State<HomeScreen> {
                     decoration: BoxDecoration(
                       color: hasPendingUpdate
                           ? const Color(0xFF0C4A6E).withValues(alpha: 0.4)
-                          : const Color(0xFF0F172A),
+                          : const Color(0xFFFFFFFF),
                       borderRadius: BorderRadius.circular(14),
                       border: Border.all(
-                        color: hasPendingUpdate ? const Color(0xFF38BDF8) : Colors.white10,
+                        color: hasPendingUpdate ? const Color(0xFF0EA5E9) : Color(0xFFF1E6D2),
                       ),
                     ),
                     child: Column(
@@ -1111,7 +1144,7 @@ class _HomeScreenState extends State<HomeScreen> {
                             Icon(
                               hasPendingUpdate ? Icons.system_update_alt_rounded : Icons.check_circle_outline_rounded,
                               size: 18,
-                              color: hasPendingUpdate ? const Color(0xFF38BDF8) : const Color(0xFF4ADE80),
+                              color: hasPendingUpdate ? const Color(0xFF0EA5E9) : const Color(0xFF4ADE80),
                             ),
                             const SizedBox(width: 8),
                             Expanded(
@@ -1123,13 +1156,13 @@ class _HomeScreenState extends State<HomeScreen> {
                                         : (_updateSkipped && _pendingUpdate != null
                                             ? 'Mise à jour v${_pendingUpdate!.version} passée'
                                             : 'Application à jour (v$appVersionLabel)'),
-                                style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Colors.white),
+                                style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: const Color(0xFF1E293B)),
                               ),
                             ),
                             if (!_isCheckingUpdate && !hasPendingUpdate)
                               IconButton(
                                 tooltip: 'Vérifier les mises à jour',
-                                icon: const Icon(Icons.refresh, size: 18, color: Colors.white54),
+                                icon: const Icon(Icons.refresh, size: 18, color: Color(0xFF64748B)),
                                 onPressed: () {
                                   setState(() => _updateSkipped = false);
                                   _checkLaunchUpdate();
@@ -1142,7 +1175,7 @@ class _HomeScreenState extends State<HomeScreen> {
                             const SizedBox(height: 6),
                             Text(
                               _pendingUpdate!.releaseNotes!,
-                              style: const TextStyle(fontSize: 12, color: Colors.white70),
+                              style: const TextStyle(fontSize: 12, color: Color(0xFF475569)),
                             ),
                           ],
                           const SizedBox(height: 10),
@@ -1159,8 +1192,8 @@ class _HomeScreenState extends State<HomeScreen> {
                               const SizedBox(width: 10),
                               OutlinedButton(
                                 style: OutlinedButton.styleFrom(
-                                  foregroundColor: Colors.white70,
-                                  side: const BorderSide(color: Colors.white24),
+                                  foregroundColor: Color(0xFF475569),
+                                  side: const BorderSide(color: Color(0xFFCBD5E1)),
                                 ),
                                 onPressed: () => setState(() => _updateSkipped = true),
                                 child: const Text('Passer'),
@@ -1179,7 +1212,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       fontSize: 11,
                       fontWeight: FontWeight.w700,
                       letterSpacing: 1.1,
-                      color: Colors.white54,
+                      color: Color(0xFF64748B),
                     ),
                   ),
                   const SizedBox(height: 10),
@@ -1187,8 +1220,10 @@ class _HomeScreenState extends State<HomeScreen> {
                   // 3. Mode Photos
                   _buildPreHomeModeCard(
                     icon: Icons.photo_camera_rounded,
-                    color: const Color(0xFF22D3EE),
-                    title: 'Mode Photos',
+                    badgeIcon: Icons.wb_sunny_rounded,
+                    color: const Color(0xFFF97316),
+                    gradientColors: const [Color(0xFFF97316), Color(0xFFFBBF24)],
+                    title: 'Photos de Vacances',
                     subtitle: '${_photosOnly.length} photos · Carte du monde, Thématiques & Années',
                     onTap: () => setState(() {
                       _mediaMode = 0;
@@ -1201,8 +1236,10 @@ class _HomeScreenState extends State<HomeScreen> {
                   // 4. Mode Vidéos
                   _buildPreHomeModeCard(
                     icon: Icons.videocam_rounded,
-                    color: const Color(0xFFFB7185),
-                    title: 'Mode Vidéos',
+                    badgeIcon: Icons.waves_rounded,
+                    color: const Color(0xFF0EA5E9),
+                    gradientColors: const [Color(0xFF0284C7), Color(0xFF22D3EE)],
+                    title: 'Films & Vidéos',
                     subtitle: '${_videosOnly.length} vidéos · Carte du monde, Thématiques & Années',
                     onTap: () => setState(() {
                       _mediaMode = 1;
@@ -1215,9 +1252,11 @@ class _HomeScreenState extends State<HomeScreen> {
                   // 5. Album collaboratif (Voyage en cours)
                   _buildPreHomeModeCard(
                     icon: Icons.flight_takeoff_rounded,
-                    color: const Color(0xFFFBBF24),
-                    title: 'Album collaboratif · Voyage en cours',
-                    subtitle: '$collabCount média(s) · Chaque membre peut déposer ses photos',
+                    badgeIcon: Icons.luggage_rounded,
+                    color: const Color(0xFF10B981),
+                    gradientColors: const [Color(0xFF059669), Color(0xFF34D399)],
+                    title: 'Voyage en cours · Album Partagé',
+                    subtitle: '$collabCount souvenir(s) · Déposez vos photos de vacances ici !',
                     onTap: _openCollaborativeTripAlbum,
                   ),
                 ],
@@ -1226,57 +1265,98 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ),
       ),
+      ),
     );
   }
 
   Widget _buildPreHomeModeCard({
     required IconData icon,
+    required IconData badgeIcon,
     required Color color,
+    required List<Color> gradientColors,
     required String title,
     required String subtitle,
     required VoidCallback onTap,
   }) {
     return Material(
-      color: const Color(0xFF0F172A),
-      borderRadius: BorderRadius.circular(16),
+      color: Colors.white,
+      elevation: 2,
+      shadowColor: color.withValues(alpha: 0.18),
+      borderRadius: BorderRadius.circular(20),
       child: InkWell(
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(20),
         onTap: onTap,
         child: Container(
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: color.withValues(alpha: 0.35)),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: color.withValues(alpha: 0.28), width: 1.3),
           ),
           child: Row(
             children: [
-              Container(
-                width: 48,
-                height: 48,
-                decoration: BoxDecoration(
-                  color: color.withValues(alpha: 0.16),
-                  borderRadius: BorderRadius.circular(14),
-                ),
-                child: Icon(icon, color: color, size: 26),
+              Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  Container(
+                    width: 54,
+                    height: 54,
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: gradientColors,
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ),
+                      borderRadius: BorderRadius.circular(16),
+                      boxShadow: [
+                        BoxShadow(
+                          color: color.withValues(alpha: 0.3),
+                          blurRadius: 8,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
+                    ),
+                    child: Icon(icon, color: Colors.white, size: 28),
+                  ),
+                  Positioned(
+                    right: -5,
+                    bottom: -5,
+                    child: Container(
+                      padding: const EdgeInsets.all(4),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        shape: BoxShape.circle,
+                        border: Border.all(color: color.withValues(alpha: 0.4)),
+                      ),
+                      child: Icon(badgeIcon, size: 12, color: color),
+                    ),
+                  ),
+                ],
               ),
-              const SizedBox(width: 14),
+              const SizedBox(width: 16),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
                       title,
-                      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white),
+                      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: Color(0xFF1E293B)),
                     ),
                     const SizedBox(height: 3),
                     Text(
                       subtitle,
-                      style: const TextStyle(fontSize: 12, color: Colors.white60),
+                      style: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
                     ),
                   ],
                 ),
               ),
-              Icon(Icons.arrow_forward_ios_rounded, size: 16, color: color),
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: color.withValues(alpha: 0.1),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(Icons.arrow_forward_rounded, size: 18, color: color),
+              ),
             ],
           ),
         ),
@@ -1290,16 +1370,16 @@ class _HomeScreenState extends State<HomeScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        backgroundColor: const Color(0xFF0F172A),
+        backgroundColor: const Color(0xFFFFFFFF),
         surfaceTintColor: Colors.transparent,
         toolbarHeight: 64,
         titleSpacing: 16,
-        shape: const Border(bottom: BorderSide(color: Colors.white10)),
+        shape: const Border(bottom: BorderSide(color: Color(0xFFF1E6D2))),
         title: Row(
           children: [
             IconButton(
               tooltip: 'Accueil (Pré-homepage)',
-              icon: const Icon(Icons.home_outlined, color: Color(0xFF38BDF8)),
+              icon: const Icon(Icons.home_outlined, color: Color(0xFF0EA5E9)),
               onPressed: () => setState(() => _showPreHome = true),
             ),
             const SizedBox(width: 4),
@@ -1308,13 +1388,13 @@ class _HomeScreenState extends State<HomeScreen> {
               height: 34,
               decoration: BoxDecoration(
                 gradient: const LinearGradient(
-                  colors: [Color(0xFF0284C7), Color(0xFF38BDF8)],
+                  colors: [Color(0xFFF97316), Color(0xFF0EA5E9)],
                   begin: Alignment.bottomLeft,
                   end: Alignment.topRight,
                 ),
                 borderRadius: BorderRadius.circular(10),
               ),
-              child: const Icon(Icons.photo_library_outlined, color: Colors.white, size: 19),
+              child: const Icon(Icons.photo_library_outlined, color: const Color(0xFF1E293B), size: 19),
             ),
             const SizedBox(width: 10),
             Column(
@@ -1327,7 +1407,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
                 Text(
                   "${_allPhotos.length} médias indexés",
-                  style: const TextStyle(fontSize: 11, color: Colors.white54),
+                  style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)),
                 ),
               ],
             ),
@@ -1338,11 +1418,11 @@ class _HomeScreenState extends State<HomeScreen> {
                 showSelectedIcon: false,
                 style: SegmentedButton.styleFrom(
                   visualDensity: VisualDensity.compact,
-                  selectedBackgroundColor: const Color(0xFF0284C7),
+                  selectedBackgroundColor: const Color(0xFFF97316),
                   selectedForegroundColor: Colors.white,
-                  backgroundColor: const Color(0xFF1E293B),
-                  foregroundColor: Colors.white70,
-                  side: const BorderSide(color: Colors.white12),
+                  backgroundColor: const Color(0xFFF6EFE2),
+                  foregroundColor: Color(0xFF475569),
+                  side: const BorderSide(color: Color(0xFFEBDDC6)),
                 ),
                 segments: [
                   ButtonSegment(
@@ -1377,9 +1457,9 @@ class _HomeScreenState extends State<HomeScreen> {
                 ? const SizedBox(
                     width: 18,
                     height: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF38BDF8)),
+                    child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF0EA5E9)),
                   )
-                : const Icon(Icons.sync, color: Color(0xFF38BDF8), size: 20),
+                : const Icon(Icons.sync, color: Color(0xFF0EA5E9), size: 20),
             onPressed: () => _syncWithCloud(silent: false),
           ),
           const SizedBox(width: 10),
@@ -1390,8 +1470,8 @@ class _HomeScreenState extends State<HomeScreen> {
           Container(
             width: 220,
             decoration: const BoxDecoration(
-              color: Color(0xFF0F172A),
-              border: Border(right: BorderSide(color: Colors.white10)),
+              color: Color(0xFFFFFFFF),
+              border: Border(right: BorderSide(color: Color(0xFFF1E6D2))),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1404,46 +1484,46 @@ class _HomeScreenState extends State<HomeScreen> {
                       fontSize: 10,
                       fontWeight: FontWeight.bold,
                       letterSpacing: 1.1,
-                      color: Colors.white38,
+                      color: Color(0xFF94A3B8),
                     ),
                   ),
                 ),
                 _buildDesktopNavItem(
                   index: 0,
                   activeIndex: activeNavIndex,
-                  icon: Icons.public_outlined,
-                  selectedIcon: Icons.public,
+                  icon: Icons.explore_outlined,
+                  selectedIcon: Icons.explore_rounded,
                   label: "La carte",
                 ),
                 _buildDesktopNavItem(
                   index: 1,
                   activeIndex: activeNavIndex,
-                  icon: isVideos ? Icons.video_library_outlined : Icons.photo_library_outlined,
-                  selectedIcon: isVideos ? Icons.video_library : Icons.photo_library,
+                  icon: isVideos ? Icons.video_library_outlined : Icons.collections_outlined,
+                  selectedIcon: isVideos ? Icons.video_library_rounded : Icons.collections_rounded,
                   label: "Galerie",
                   badge: "${isVideos ? _videosOnly.length : _photosOnly.length}",
                 ),
                 _buildDesktopNavItem(
                   index: 2,
                   activeIndex: activeNavIndex,
-                  icon: Icons.folder_outlined,
-                  selectedIcon: Icons.folder,
+                  icon: Icons.backpack_outlined,
+                  selectedIcon: Icons.backpack_rounded,
                   label: "Thématiques",
                   badge: "${_countPhotosInTree(yearsTree: false, videosOnly: isVideos)}",
                 ),
                 _buildDesktopNavItem(
                   index: 3,
                   activeIndex: activeNavIndex,
-                  icon: Icons.calendar_today_outlined,
-                  selectedIcon: Icons.calendar_today,
+                  icon: Icons.event_note_outlined,
+                  selectedIcon: Icons.event_note_rounded,
                   label: "Années",
                   badge: "${_countPhotosInTree(yearsTree: true, videosOnly: isVideos)}",
                 ),
                 _buildDesktopNavItem(
                   index: 4,
                   activeIndex: activeNavIndex,
-                  icon: Icons.search,
-                  selectedIcon: Icons.search,
+                  icon: Icons.travel_explore_outlined,
+                  selectedIcon: Icons.travel_explore_rounded,
                   label: "Recherche",
                 ),
                 const Spacer(),
@@ -1451,13 +1531,13 @@ class _HomeScreenState extends State<HomeScreen> {
                   margin: const EdgeInsets.all(12),
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color: const Color(0xFF1E293B).withValues(alpha: 0.6),
+                    color: const Color(0xFFF6EFE2).withValues(alpha: 0.6),
                     borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: Colors.white10),
+                    border: Border.all(color: Color(0xFFF1E6D2)),
                   ),
                   child: Text(
                     "v$appVersionLabel • Build $appBuildNumber",
-                    style: const TextStyle(fontSize: 10, color: Colors.white38),
+                    style: const TextStyle(fontSize: 10, color: Color(0xFF94A3B8)),
                   ),
                 ),
               ],
@@ -1497,18 +1577,18 @@ class _HomeScreenState extends State<HomeScreen> {
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
           decoration: BoxDecoration(
-            color: isSelected ? const Color(0xFF0284C7).withValues(alpha: 0.22) : Colors.transparent,
-            borderRadius: BorderRadius.circular(10),
+            color: isSelected ? const Color(0xFFF97316).withValues(alpha: 0.14) : Colors.transparent,
+            borderRadius: BorderRadius.circular(12),
             border: Border.all(
-              color: isSelected ? const Color(0xFF38BDF8).withValues(alpha: 0.35) : Colors.transparent,
+              color: isSelected ? const Color(0xFFF97316).withValues(alpha: 0.35) : Colors.transparent,
             ),
           ),
           child: Row(
             children: [
               Icon(
                 isSelected ? selectedIcon : icon,
-                size: 18,
-                color: isSelected ? const Color(0xFF38BDF8) : Colors.white60,
+                size: 19,
+                color: isSelected ? const Color(0xFFF97316) : const Color(0xFF64748B),
               ),
               const SizedBox(width: 10),
               Expanded(
@@ -1517,7 +1597,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   style: TextStyle(
                     fontSize: 13,
                     fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
-                    color: isSelected ? Colors.white : Colors.white70,
+                    color: isSelected ? const Color(0xFFEA580C) : const Color(0xFF475569),
                   ),
                 ),
               ),
@@ -1525,7 +1605,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                   decoration: BoxDecoration(
-                    color: isSelected ? const Color(0xFF0284C7).withValues(alpha: 0.4) : const Color(0xFF1E293B),
+                    color: isSelected ? const Color(0xFFF97316).withValues(alpha: 0.18) : const Color(0xFFF6EFE2),
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Text(
@@ -1533,7 +1613,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     style: TextStyle(
                       fontSize: 10,
                       fontWeight: FontWeight.w600,
-                      color: isSelected ? const Color(0xFF38BDF8) : Colors.white54,
+                      color: isSelected ? const Color(0xFFEA580C) : const Color(0xFF64748B),
                     ),
                   ),
                 ),
@@ -1548,10 +1628,10 @@ class _HomeScreenState extends State<HomeScreen> {
     final isVideos = _mediaMode == 1;
     return Scaffold(
       appBar: AppBar(
-        backgroundColor: const Color(0xFF0F172A),
+        backgroundColor: const Color(0xFFFFFFFF),
         leading: IconButton(
           tooltip: 'Accueil (Pré-homepage)',
-          icon: const Icon(Icons.home_outlined, color: Color(0xFF38BDF8)),
+          icon: const Icon(Icons.home_outlined, color: Color(0xFF0EA5E9)),
           onPressed: () => setState(() => _showPreHome = true),
         ),
         title: const Text("Medias Familly", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 17)),
@@ -1568,9 +1648,9 @@ class _HomeScreenState extends State<HomeScreen> {
                 ? const SizedBox(
                     width: 18,
                     height: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF38BDF8)),
+                    child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF0EA5E9)),
                   )
-                : const Icon(Icons.sync, color: Color(0xFF38BDF8)),
+                : const Icon(Icons.sync, color: Color(0xFF0EA5E9)),
             onPressed: () => _syncWithCloud(silent: false),
           ),
         ],
@@ -1582,9 +1662,9 @@ class _HomeScreenState extends State<HomeScreen> {
               width: double.infinity,
               child: SegmentedButton<int>(
                 style: SegmentedButton.styleFrom(
-                  selectedBackgroundColor: const Color(0xFF0284C7).withValues(alpha: 0.3),
-                  selectedForegroundColor: const Color(0xFF38BDF8),
-                  backgroundColor: const Color(0xFF1E293B),
+                  selectedBackgroundColor: const Color(0xFFF97316).withValues(alpha: 0.3),
+                  selectedForegroundColor: const Color(0xFF0EA5E9),
+                  backgroundColor: const Color(0xFFF6EFE2),
                 ),
                 segments: [
                   ButtonSegment(
@@ -1620,32 +1700,32 @@ class _HomeScreenState extends State<HomeScreen> {
       bottomNavigationBar: NavigationBar(
         selectedIndex: _currentIndex,
         onDestinationSelected: (idx) => setState(() => _currentIndex = idx),
-        backgroundColor: const Color(0xFF0F172A),
-        indicatorColor: const Color(0xFF0284C7).withValues(alpha: 0.3),
+        backgroundColor: const Color(0xFFFFFFFF),
+        indicatorColor: const Color(0xFFF97316).withValues(alpha: 0.3),
         destinations: [
           const NavigationDestination(
-            icon: Icon(Icons.public_outlined),
-            selectedIcon: Icon(Icons.public, color: Color(0xFF38BDF8)),
+            icon: Icon(Icons.explore_outlined),
+            selectedIcon: Icon(Icons.explore_rounded, color: Color(0xFFF97316)),
             label: "La carte",
           ),
           NavigationDestination(
-            icon: Icon(isVideos ? Icons.video_library_outlined : Icons.photo_library_outlined),
-            selectedIcon: Icon(isVideos ? Icons.video_library : Icons.photo_library, color: const Color(0xFF38BDF8)),
+            icon: Icon(isVideos ? Icons.video_library_outlined : Icons.collections_outlined),
+            selectedIcon: Icon(isVideos ? Icons.video_library_rounded : Icons.collections_rounded, color: const Color(0xFFF97316)),
             label: "Galerie",
           ),
           const NavigationDestination(
-            icon: Icon(Icons.folder_outlined),
-            selectedIcon: Icon(Icons.folder, color: Color(0xFF38BDF8)),
+            icon: Icon(Icons.backpack_outlined),
+            selectedIcon: Icon(Icons.backpack_rounded, color: Color(0xFFF97316)),
             label: "Thématiques",
           ),
           const NavigationDestination(
-            icon: Icon(Icons.calendar_today_outlined),
-            selectedIcon: Icon(Icons.calendar_today, color: Color(0xFF38BDF8)),
+            icon: Icon(Icons.event_note_outlined),
+            selectedIcon: Icon(Icons.event_note_rounded, color: Color(0xFFF97316)),
             label: "Années",
           ),
           const NavigationDestination(
-            icon: Icon(Icons.search),
-            selectedIcon: Icon(Icons.search, color: Color(0xFF38BDF8)),
+            icon: Icon(Icons.travel_explore_outlined),
+            selectedIcon: Icon(Icons.travel_explore_rounded, color: Color(0xFFF97316)),
             label: "Recherche",
           ),
         ],
@@ -1705,19 +1785,19 @@ class _HomeScreenState extends State<HomeScreen> {
                   .where((c) => normalizeCountryKey(c.nameFr).contains(normQ))
                   .toList();
           return AlertDialog(
-            backgroundColor: const Color(0xFF0F172A),
+            backgroundColor: const Color(0xFFFFFFFF),
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(16),
-              side: const BorderSide(color: Colors.white12),
+              side: const BorderSide(color: Color(0xFFEBDDC6)),
             ),
             title: Row(
               children: [
-                const Icon(Icons.public_rounded, color: Color(0xFF38BDF8), size: 22),
+                const Icon(Icons.public_rounded, color: Color(0xFF0EA5E9), size: 22),
                 const SizedBox(width: 10),
                 Expanded(
                   child: Text(
                     'Pays pour "${node.name}"',
-                    style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Colors.white),
+                    style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: const Color(0xFF1E293B)),
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
@@ -1735,7 +1815,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       hintText: 'Rechercher un pays...',
                       prefixIcon: const Icon(Icons.search, size: 18),
                       filled: true,
-                      fillColor: const Color(0xFF1E293B),
+                      fillColor: const Color(0xFFF6EFE2),
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(10),
                         borderSide: BorderSide.none,
@@ -1768,7 +1848,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           ),
                           subtitle: Text(
                             '${c.continent} · ${c.capital}',
-                            style: const TextStyle(fontSize: 11, color: Colors.white54),
+                            style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)),
                           ),
                           trailing: Row(
                             mainAxisSize: MainAxisSize.min,
@@ -1787,7 +1867,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                 ),
                               if (isSelected) ...[
                                 const SizedBox(width: 6),
-                                const Icon(Icons.check_circle, color: Color(0xFF38BDF8), size: 18),
+                                const Icon(Icons.check_circle, color: Color(0xFF0EA5E9), size: 18),
                               ],
                             ],
                           ),
@@ -1805,7 +1885,7 @@ class _HomeScreenState extends State<HomeScreen> {
                             if (!mounted) return;
                             ScaffoldMessenger.of(context).showSnackBar(
                               SnackBar(
-                                backgroundColor: const Color(0xFF0F172A),
+                                backgroundColor: const Color(0xFFFFFFFF),
                                 content: Text(
                                   ok
                                       ? '✔ "${node.name}" associé à ${c.flag} ${c.nameFr} sur la carte !'
@@ -1825,7 +1905,7 @@ class _HomeScreenState extends State<HomeScreen> {
             actions: [
               TextButton(
                 onPressed: () => Navigator.of(dialogCtx).pop(),
-                child: const Text("Fermer", style: TextStyle(color: Colors.white54)),
+                child: const Text("Fermer", style: TextStyle(color: Color(0xFF64748B))),
               ),
             ],
           );
@@ -2133,21 +2213,21 @@ class _HomeScreenState extends State<HomeScreen> {
     final header = Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       decoration: const BoxDecoration(
-        color: Color(0xFF0F172A),
-        border: Border(bottom: BorderSide(color: Colors.white10)),
+        color: Color(0xFFFFFFFF),
+        border: Border(bottom: BorderSide(color: Color(0xFFF1E6D2))),
       ),
       child: Row(
         children: [
           Container(
             padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(
-              color: const Color(0xFF0284C7).withValues(alpha: 0.2),
+              color: const Color(0xFFF97316).withValues(alpha: 0.2),
               borderRadius: BorderRadius.circular(8),
             ),
             child: Icon(
               isVideo ? Icons.movie_outlined : Icons.photo_library_outlined,
               size: 20,
-              color: const Color(0xFF38BDF8),
+              color: const Color(0xFF0EA5E9),
             ),
           ),
           const SizedBox(width: 12),
@@ -2158,12 +2238,12 @@ class _HomeScreenState extends State<HomeScreen> {
               children: [
                 Text(
                   isVideo ? "Toutes les vidéos" : "Derniers ajouts (Maroc 10/2026)",
-                  style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.white),
+                  style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: const Color(0xFF1E293B)),
                   overflow: TextOverflow.ellipsis,
                 ),
                 Text(
                   "${photos.length} ${isVideo ? 'vidéos' : 'photos'} • Google Drive HD & Cloud Familial",
-                  style: const TextStyle(fontSize: 11, color: Colors.white54),
+                  style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)),
                 ),
               ],
             ),
@@ -2171,7 +2251,7 @@ class _HomeScreenState extends State<HomeScreen> {
           TextButton.icon(
             style: TextButton.styleFrom(
               foregroundColor: const Color(0xFF4ADE80),
-              backgroundColor: const Color(0xFF1E293B),
+              backgroundColor: const Color(0xFFF6EFE2),
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
             ),
@@ -2250,12 +2330,12 @@ class _HomeScreenState extends State<HomeScreen> {
         // Breadcrumb bar + Nouveau dossier/album
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          color: const Color(0xFF0F172A),
+          color: const Color(0xFFFFFFFF),
           child: Row(
             children: [
               if (history.isNotEmpty)
                 IconButton(
-                  icon: const Icon(Icons.arrow_back, size: 20, color: Color(0xFF38BDF8)),
+                  icon: const Icon(Icons.arrow_back, size: 20, color: Color(0xFF0EA5E9)),
                   onPressed: () => setState(() => history.removeLast()),
                   tooltip: "Retour au dossier parent",
                 ),
@@ -2271,14 +2351,14 @@ class _HomeScreenState extends State<HomeScreen> {
                           style: TextStyle(
                             fontSize: 13,
                             fontWeight: history.isEmpty ? FontWeight.bold : FontWeight.normal,
-                            color: history.isEmpty ? const Color(0xFF38BDF8) : Colors.white60,
+                            color: history.isEmpty ? const Color(0xFF0EA5E9) : Color(0xFF64748B),
                           ),
                         ),
                       ),
                       for (int i = 0; i < history.length; i++) ...[
                         const Padding(
                           padding: EdgeInsets.symmetric(horizontal: 4),
-                          child: Icon(Icons.chevron_right, size: 16, color: Colors.white30),
+                          child: Icon(Icons.chevron_right, size: 16, color: Color(0xFF94A3B8)),
                         ),
                         InkWell(
                           onTap: () => setState(() {
@@ -2291,7 +2371,7 @@ class _HomeScreenState extends State<HomeScreen> {
                             style: TextStyle(
                               fontSize: 13,
                               fontWeight: i == history.length - 1 ? FontWeight.bold : FontWeight.normal,
-                              color: i == history.length - 1 ? const Color(0xFF38BDF8) : Colors.white60,
+                              color: i == history.length - 1 ? const Color(0xFF0EA5E9) : Color(0xFF64748B),
                             ),
                           ),
                         ),
@@ -2303,7 +2383,7 @@ class _HomeScreenState extends State<HomeScreen> {
               const SizedBox(width: 8),
               ElevatedButton.icon(
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF0284C7),
+                  backgroundColor: const Color(0xFFF97316),
                   foregroundColor: Colors.white,
                   visualDensity: VisualDensity.compact,
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
@@ -2337,7 +2417,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     )
                   : null,
               filled: true,
-              fillColor: const Color(0xFF1E293B),
+              fillColor: const Color(0xFFF6EFE2),
               border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
               contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 0),
             ),
@@ -2350,7 +2430,7 @@ class _HomeScreenState extends State<HomeScreen> {
             alignment: Alignment.centerLeft,
             child: Text(
               "💡 Astuce : maintenez appuyé sur un dossier/album (ou cliquez sur ⋮) pour le déplacer, le renommer ou le supprimer.",
-              style: TextStyle(fontSize: 10, color: Colors.white38),
+              style: TextStyle(fontSize: 10, color: Color(0xFF94A3B8)),
             ),
           ),
         ),
@@ -2359,7 +2439,7 @@ class _HomeScreenState extends State<HomeScreen> {
         Expanded(
           child: filtered.isEmpty
               ? const Center(
-                  child: Text("Aucun dossier ou album trouvé", style: TextStyle(color: Colors.white38)),
+                  child: Text("Aucun dossier ou album trouvé", style: TextStyle(color: Color(0xFF94A3B8))),
                 )
               : ListView.builder(
                   itemCount: filtered.length,
@@ -2373,14 +2453,14 @@ class _HomeScreenState extends State<HomeScreen> {
                         width: 42,
                         height: 42,
                         decoration: BoxDecoration(
-                          color: const Color(0xFF1E293B),
+                          color: const Color(0xFFF6EFE2),
                           borderRadius: BorderRadius.circular(8),
                         ),
                         child: Icon(
                           node.isFolder
                               ? (isYearsTab && history.isEmpty ? Icons.calendar_month_outlined : Icons.folder_outlined)
                               : Icons.photo_library_outlined,
-                          color: node.isFolder ? const Color(0xFFFBBF24) : const Color(0xFF38BDF8),
+                          color: node.isFolder ? const Color(0xFFFBBF24) : const Color(0xFF0EA5E9),
                           size: 22,
                         ),
                       ),
@@ -2394,24 +2474,24 @@ class _HomeScreenState extends State<HomeScreen> {
                       subtitle: Text(
                         "${node.isFolder ? '${children.length} sous-dossiers/albums • ${node.totalCount} photos' : '${node.directCount} photos'}"
                         "${node.createdByName != null && node.createdByName!.isNotEmpty ? ' • par ${node.createdByName}' : ''}",
-                        style: const TextStyle(fontSize: 11, color: Colors.white54),
+                        style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)),
                       ),
                       trailing: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           if (node.isFolder && node.totalCount > 0)
                             IconButton(
-                              icon: const Icon(Icons.grid_view, size: 18, color: Colors.white54),
+                              icon: const Icon(Icons.grid_view, size: 18, color: Color(0xFF64748B)),
                               tooltip: "Voir toutes les photos du dossier",
                               onPressed: () => _openPhotosForNode(node),
                             ),
                           IconButton(
-                            icon: const Icon(Icons.more_vert, size: 18, color: Colors.white54),
+                            icon: const Icon(Icons.more_vert, size: 18, color: Color(0xFF64748B)),
                             tooltip: "Actions (Déplacer, Renommer, Supprimer)",
                             onPressed: () => _showNodeActionsSheet(node),
                           ),
                           if (hasChildren)
-                            const Icon(Icons.chevron_right, size: 20, color: Colors.white38),
+                            const Icon(Icons.chevron_right, size: 20, color: Color(0xFF94A3B8)),
                         ],
                       ),
                       onLongPress: () => _showNodeActionsSheet(node),
@@ -2471,23 +2551,23 @@ class _HomeScreenState extends State<HomeScreen> {
     showDialog<void>(
       context: context,
       builder: (dialogCtx) => AlertDialog(
-        backgroundColor: const Color(0xFF0F172A),
+        backgroundColor: const Color(0xFFFFFFFF),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(16),
-          side: const BorderSide(color: Colors.white12),
+          side: const BorderSide(color: Color(0xFFEBDDC6)),
         ),
         title: Row(
           children: [
             Icon(
               node.isFolder ? Icons.folder_outlined : Icons.photo_library_outlined,
-              color: node.isFolder ? const Color(0xFFFBBF24) : const Color(0xFF38BDF8),
+              color: node.isFolder ? const Color(0xFFFBBF24) : const Color(0xFF0EA5E9),
               size: 22,
             ),
             const SizedBox(width: 10),
             Expanded(
               child: Text(
                 node.name,
-                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white),
+                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: const Color(0xFF1E293B)),
                 overflow: TextOverflow.ellipsis,
               ),
             ),
@@ -2497,16 +2577,16 @@ class _HomeScreenState extends State<HomeScreen> {
           mainAxisSize: MainAxisSize.min,
           children: [
             ListTile(
-              leading: const Icon(Icons.grid_view, color: Color(0xFF38BDF8)),
+              leading: const Icon(Icons.grid_view, color: Color(0xFF0EA5E9)),
               title: const Text("Voir toutes les photos", style: TextStyle(fontSize: 14)),
-              subtitle: Text("${node.totalCount} photos", style: const TextStyle(fontSize: 11, color: Colors.white54)),
+              subtitle: Text("${node.totalCount} photos", style: const TextStyle(fontSize: 11, color: Color(0xFF64748B))),
               onTap: () {
                 Navigator.of(dialogCtx).pop();
                 _openPhotosForNode(node);
               },
             ),
             ListTile(
-              leading: const Icon(Icons.public_rounded, color: Color(0xFF38BDF8)),
+              leading: const Icon(Icons.public_rounded, color: Color(0xFF0EA5E9)),
               title: const Text("Pays sur la carte", style: TextStyle(fontSize: 14)),
               subtitle: Builder(
                 builder: (_) {
@@ -2515,7 +2595,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   final label = meta != null
                       ? '${meta.flag} ${meta.nameFr}${_albumCountryIsoById.containsKey(node.id) ? '' : ' (par défaut)'}'
                       : 'Aucun pays assigné';
-                  return Text(label, style: const TextStyle(fontSize: 11, color: Colors.white54));
+                  return Text(label, style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)));
                 },
               ),
               onTap: () {
@@ -2532,7 +2612,7 @@ class _HomeScreenState extends State<HomeScreen> {
               },
             ),
             ListTile(
-              leading: const Icon(Icons.edit_outlined, color: Colors.white70),
+              leading: const Icon(Icons.edit_outlined, color: Color(0xFF475569)),
               title: const Text("Renommer", style: TextStyle(fontSize: 14)),
               onTap: () {
                 Navigator.of(dialogCtx).pop();
@@ -2552,7 +2632,7 @@ class _HomeScreenState extends State<HomeScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.of(dialogCtx).pop(),
-            child: const Text("Fermer", style: TextStyle(color: Colors.white54)),
+            child: const Text("Fermer", style: TextStyle(color: Color(0xFF64748B))),
           ),
         ],
       ),
@@ -2572,14 +2652,14 @@ class _HomeScreenState extends State<HomeScreen> {
       context: context,
       builder: (dialogCtx) => StatefulBuilder(
         builder: (ctx, setDialogState) => AlertDialog(
-          backgroundColor: const Color(0xFF0F172A),
+          backgroundColor: const Color(0xFFFFFFFF),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(16),
-            side: const BorderSide(color: Colors.white12),
+            side: const BorderSide(color: Color(0xFFEBDDC6)),
           ),
           title: Text(
             'Déplacer "${node.name}"',
-            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white),
+            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: const Color(0xFF1E293B)),
           ),
           content: SizedBox(
             width: 400,
@@ -2590,11 +2670,11 @@ class _HomeScreenState extends State<HomeScreen> {
                   ? selectedParentId
                   : null,
               isExpanded: true,
-              dropdownColor: const Color(0xFF1E293B),
+              dropdownColor: const Color(0xFFF6EFE2),
               decoration: InputDecoration(
                 labelText: "Nouveau dossier parent",
                 filled: true,
-                fillColor: const Color(0xFF1E293B),
+                fillColor: const Color(0xFFF6EFE2),
                 border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
               ),
               items: [
@@ -2622,11 +2702,11 @@ class _HomeScreenState extends State<HomeScreen> {
           actions: [
             TextButton(
               onPressed: () => Navigator.of(dialogCtx).pop(),
-              child: const Text("Annuler", style: TextStyle(color: Colors.white54)),
+              child: const Text("Annuler", style: TextStyle(color: Color(0xFF64748B))),
             ),
             ElevatedButton.icon(
               style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF0284C7),
+                backgroundColor: const Color(0xFFF97316),
                 foregroundColor: Colors.white,
               ),
               icon: const Icon(Icons.check, size: 18),
@@ -2655,7 +2735,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 if (!mounted) return;
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
-                    backgroundColor: const Color(0xFF0F172A),
+                    backgroundColor: const Color(0xFF1E293B),
                     content: Text(
                       ok
                           ? '✔ "${node.name}" déplacé et synchronisé pour tout le monde !'
@@ -2677,14 +2757,14 @@ class _HomeScreenState extends State<HomeScreen> {
     await showDialog<void>(
       context: context,
       builder: (dialogCtx) => AlertDialog(
-        backgroundColor: const Color(0xFF0F172A),
+        backgroundColor: const Color(0xFFFFFFFF),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(16),
-          side: const BorderSide(color: Colors.white12),
+          side: const BorderSide(color: Color(0xFFEBDDC6)),
         ),
         title: const Text(
           "Renommer le dossier / album",
-          style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white),
+          style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: const Color(0xFF1E293B)),
         ),
         content: TextField(
           controller: nameController,
@@ -2692,18 +2772,18 @@ class _HomeScreenState extends State<HomeScreen> {
           decoration: InputDecoration(
             labelText: "Nouveau nom",
             filled: true,
-            fillColor: const Color(0xFF1E293B),
+            fillColor: const Color(0xFFF6EFE2),
             border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
           ),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(dialogCtx).pop(),
-            child: const Text("Annuler", style: TextStyle(color: Colors.white54)),
+            child: const Text("Annuler", style: TextStyle(color: Color(0xFF64748B))),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF0284C7),
+              backgroundColor: const Color(0xFFF97316),
               foregroundColor: Colors.white,
             ),
             onPressed: () async {
@@ -2742,25 +2822,25 @@ class _HomeScreenState extends State<HomeScreen> {
     await showDialog<void>(
       context: context,
       builder: (dialogCtx) => AlertDialog(
-        backgroundColor: const Color(0xFF0F172A),
+        backgroundColor: const Color(0xFFFFFFFF),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(16),
-          side: const BorderSide(color: Colors.white12),
+          side: const BorderSide(color: Color(0xFFEBDDC6)),
         ),
         title: Text(
           'Supprimer "${node.name}" ?',
-          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white),
+          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: const Color(0xFF1E293B)),
         ),
         content: Text(
           subCount > 0
               ? 'Attention : ce dossier contient $subCount sous-dossier(s) ou sous-album(s). Tout ce qui se trouve en dessous sera également supprimé de l\'arborescence pour tous les utilisateurs (les photos elles-mêmes restent dans la Galerie).'
               : 'Ce dossier ou album sera supprimé de l\'arborescence pour tous les utilisateurs (les photos elles-mêmes restent dans la Galerie).',
-          style: const TextStyle(fontSize: 12, color: Colors.white70),
+          style: const TextStyle(fontSize: 12, color: Color(0xFF475569)),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(dialogCtx).pop(),
-            child: const Text("Annuler", style: TextStyle(color: Colors.white54)),
+            child: const Text("Annuler", style: TextStyle(color: Color(0xFF64748B))),
           ),
           ElevatedButton.icon(
             style: ElevatedButton.styleFrom(
@@ -2798,7 +2878,7 @@ class _HomeScreenState extends State<HomeScreen> {
               if (!mounted) return;
               ScaffoldMessenger.of(context).showSnackBar(
                 SnackBar(
-                  backgroundColor: const Color(0xFF0F172A),
+                  backgroundColor: const Color(0xFF1E293B),
                   content: Text(
                     allOk
                         ? '✔ "${node.name}"${subCount > 0 ? ' et $subCount sous-élément(s)' : ''} supprimé(s).'
@@ -2820,24 +2900,24 @@ class _HomeScreenState extends State<HomeScreen> {
       children: [
         // "Toutes les vidéos" Tile
         ListTile(
-          tileColor: const Color(0xFF1E293B).withValues(alpha: 0.5),
+          tileColor: const Color(0xFFF6EFE2).withValues(alpha: 0.5),
           leading: Container(
             width: 42,
             height: 42,
             decoration: BoxDecoration(
-              color: const Color(0xFF0284C7).withValues(alpha: 0.2),
+              color: const Color(0xFFF97316).withValues(alpha: 0.2),
               borderRadius: BorderRadius.circular(8),
             ),
-            child: const Icon(Icons.movie_filter_outlined, color: Color(0xFF38BDF8), size: 24),
+            child: const Icon(Icons.movie_filter_outlined, color: Color(0xFF0EA5E9), size: 24),
           ),
           title: const Text("Toutes les vidéos", style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
           trailing: Container(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
             decoration: BoxDecoration(
-              color: const Color(0xFF0284C7).withValues(alpha: 0.3),
+              color: const Color(0xFFF97316).withValues(alpha: 0.3),
               borderRadius: BorderRadius.circular(12),
             ),
-            child: Text("${_videosOnly.length}", style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF38BDF8))),
+            child: Text("${_videosOnly.length}", style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF0EA5E9))),
           ),
           onTap: () {
             Navigator.push(
@@ -2858,7 +2938,7 @@ class _HomeScreenState extends State<HomeScreen> {
             );
           },
         ),
-        const Divider(height: 1, color: Colors.white10),
+        const Divider(height: 1, color: Color(0xFFF1E6D2)),
         // List of Video Years
         Expanded(
           child: ListView.builder(
@@ -2871,7 +2951,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   width: 42,
                   height: 42,
                   decoration: BoxDecoration(
-                    color: const Color(0xFF1E293B),
+                    color: const Color(0xFFF6EFE2),
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: const Icon(Icons.movie_outlined, color: Color(0xFFFBBF24), size: 22),
@@ -2880,10 +2960,10 @@ class _HomeScreenState extends State<HomeScreen> {
                 trailing: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                   decoration: BoxDecoration(
-                    color: const Color(0xFF1E293B),
+                    color: const Color(0xFFF6EFE2),
                     borderRadius: BorderRadius.circular(12),
                   ),
-                  child: Text("${vy.count}", style: const TextStyle(fontSize: 11, color: Colors.white70)),
+                  child: Text("${vy.count}", style: const TextStyle(fontSize: 11, color: Color(0xFF475569))),
                 ),
                 onTap: () {
                   final yearVideos = _videosOnly.where((p) => p.year == vy.year).toList();
@@ -2939,23 +3019,23 @@ class _HomeScreenState extends State<HomeScreen> {
         builder: (ctx, setDialogState) {
           final isPaysParent = selectedParentId == _kPaysFolderId;
           return AlertDialog(
-            backgroundColor: const Color(0xFF0F172A),
+            backgroundColor: const Color(0xFFFFFFFF),
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(16),
-              side: const BorderSide(color: Colors.white12),
+              side: const BorderSide(color: Color(0xFFEBDDC6)),
             ),
             title: Row(
               children: [
                 Icon(
                   isPaysParent ? Icons.public_rounded : Icons.create_new_folder_outlined,
-                  color: isPaysParent ? const Color(0xFF38BDF8) : const Color(0xFFFBBF24),
+                  color: isPaysParent ? const Color(0xFF0EA5E9) : const Color(0xFFFBBF24),
                   size: 24,
                 ),
                 const SizedBox(width: 10),
                 Expanded(
                   child: Text(
                     isPaysParent ? "Ajouter un pays (lié à La carte)" : "Nouveau dossier ou album",
-                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white),
+                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: const Color(0xFF1E293B)),
                   ),
                 ),
               ],
@@ -2971,11 +3051,11 @@ class _HomeScreenState extends State<HomeScreen> {
                       DropdownButtonFormField<WorldCountryMeta>(
                         value: selectedCountry,
                         isExpanded: true,
-                        dropdownColor: const Color(0xFF1E293B),
+                        dropdownColor: const Color(0xFFF6EFE2),
                         decoration: InputDecoration(
                           labelText: "Choisir un pays (connecté à La carte)",
                           filled: true,
-                          fillColor: const Color(0xFF1E293B),
+                          fillColor: const Color(0xFFF6EFE2),
                           border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
                         ),
                         items: kWorldCountries
@@ -3004,7 +3084,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         labelText: isPaysParent ? "Nom du dossier pays (modifiable)" : "Nom du dossier ou de l'album",
                         hintText: isPaysParent ? "Ex: Japon" : "Ex: Vacances Été 2027",
                         filled: true,
-                        fillColor: const Color(0xFF1E293B),
+                        fillColor: const Color(0xFFF6EFE2),
                         border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
                       ),
                     ),
@@ -3016,11 +3096,11 @@ class _HomeScreenState extends State<HomeScreen> {
                           ? selectedParentId
                           : null,
                       isExpanded: true,
-                      dropdownColor: const Color(0xFF1E293B),
+                      dropdownColor: const Color(0xFFF6EFE2),
                       decoration: InputDecoration(
                         labelText: "Emplacement (Dossier parent)",
                         filled: true,
-                        fillColor: const Color(0xFF1E293B),
+                        fillColor: const Color(0xFFF6EFE2),
                         border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
                       ),
                       items: [
@@ -3055,7 +3135,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       title: const Text("Créer comme Dossier (peut contenir des sous-albums)", style: TextStyle(fontSize: 13)),
                       subtitle: Text(
                         isFolder ? "Type : Dossier parent 📁" : "Type : Album photo 🖼️",
-                        style: const TextStyle(fontSize: 11, color: Colors.white54),
+                        style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)),
                       ),
                       value: isFolder,
                       activeThumbColor: const Color(0xFFFBBF24),
@@ -3068,11 +3148,11 @@ class _HomeScreenState extends State<HomeScreen> {
             actions: [
             TextButton(
               onPressed: () => Navigator.of(dialogCtx).pop(),
-              child: const Text("Annuler", style: TextStyle(color: Colors.white54)),
+              child: const Text("Annuler", style: TextStyle(color: Color(0xFF64748B))),
             ),
             ElevatedButton.icon(
               style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF0284C7),
+                backgroundColor: const Color(0xFFF97316),
                 foregroundColor: Colors.white,
               ),
               icon: const Icon(Icons.check, size: 18),
@@ -3106,7 +3186,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 if (!mounted) return;
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
-                    backgroundColor: const Color(0xFF0F172A),
+                    backgroundColor: const Color(0xFF1E293B),
                     content: Text(
                       ok
                           ? '✔ "${name}" créé et synchronisé en direct avec toute la famille !'
@@ -3140,10 +3220,10 @@ class _HomeScreenState extends State<HomeScreen> {
       context: context,
       builder: (dialogCtx) => StatefulBuilder(
         builder: (ctx, setDialogState) => AlertDialog(
-          backgroundColor: const Color(0xFF0F172A),
+          backgroundColor: const Color(0xFFFFFFFF),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(16),
-            side: const BorderSide(color: Colors.white12),
+            side: const BorderSide(color: Color(0xFFEBDDC6)),
           ),
           title: const Row(
             children: [
@@ -3152,7 +3232,7 @@ class _HomeScreenState extends State<HomeScreen> {
               Expanded(
                 child: Text(
                   "Ajouter une photo / vidéo Google Drive",
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white),
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: const Color(0xFF1E293B)),
                 ),
               ),
             ],
@@ -3166,7 +3246,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 children: [
                   const Text(
                     "1. Uploadez votre fichier dans le dossier Google Drive partagé.\n2. Collez ci-dessous son lien de partage Google Drive (ou son ID) :",
-                    style: TextStyle(fontSize: 11, color: Colors.white70),
+                    style: TextStyle(fontSize: 11, color: Color(0xFF475569)),
                   ),
                   const SizedBox(height: 12),
                   TextField(
@@ -3176,7 +3256,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       labelText: "Lien Google Drive ou File ID *",
                       hintText: "https://drive.google.com/file/d/.../view",
                       filled: true,
-                      fillColor: const Color(0xFF1E293B),
+                      fillColor: const Color(0xFFF6EFE2),
                       border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
                     ),
                   ),
@@ -3187,7 +3267,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       labelText: "Titre / Nom du fichier *",
                       hintText: "Ex: vacances-maroc-200.jpg",
                       filled: true,
-                      fillColor: const Color(0xFF1E293B),
+                      fillColor: const Color(0xFFF6EFE2),
                       border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
                     ),
                   ),
@@ -3200,7 +3280,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           decoration: InputDecoration(
                             labelText: "Année",
                             filled: true,
-                            fillColor: const Color(0xFF1E293B),
+                            fillColor: const Color(0xFFF6EFE2),
                             border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
                           ),
                         ),
@@ -3212,7 +3292,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           decoration: InputDecoration(
                             labelText: "Pays (optionnel)",
                             filled: true,
-                            fillColor: const Color(0xFF1E293B),
+                            fillColor: const Color(0xFFF6EFE2),
                             border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
                           ),
                         ),
@@ -3223,11 +3303,11 @@ class _HomeScreenState extends State<HomeScreen> {
                   DropdownButtonFormField<String?>(
                     value: allAlbumsSorted.any((a) => a.id == selectedAlbumId) ? selectedAlbumId : null,
                     isExpanded: true,
-                    dropdownColor: const Color(0xFF1E293B),
+                    dropdownColor: const Color(0xFFF6EFE2),
                     decoration: InputDecoration(
                       labelText: "Ranger dans l'album / dossier",
                       filled: true,
-                      fillColor: const Color(0xFF1E293B),
+                      fillColor: const Color(0xFFF6EFE2),
                       border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
                     ),
                     items: [
@@ -3262,11 +3342,11 @@ class _HomeScreenState extends State<HomeScreen> {
           actions: [
             TextButton(
               onPressed: () => Navigator.of(dialogCtx).pop(),
-              child: const Text("Annuler", style: TextStyle(color: Colors.white54)),
+              child: const Text("Annuler", style: TextStyle(color: Color(0xFF64748B))),
             ),
             ElevatedButton.icon(
               style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF0284C7),
+                backgroundColor: const Color(0xFFF97316),
                 foregroundColor: Colors.white,
               ),
               icon: const Icon(Icons.cloud_upload_outlined, size: 18),
@@ -3328,7 +3408,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 if (!mounted) return;
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
-                    backgroundColor: const Color(0xFF0F172A),
+                    backgroundColor: const Color(0xFF1E293B),
                     content: Text(
                       ok
                           ? '✔ Média "$fn" ajouté et partagé en temps réel avec toute la famille !'
@@ -3367,7 +3447,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final albumName = _nodesById[albumId]?.name ?? albumId;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        backgroundColor: const Color(0xFF0F172A),
+        backgroundColor: const Color(0xFF1E293B),
         content: Text(
           ok
               ? '✔ Photo classée dans "$albumName" pour toute la famille.'
@@ -3407,7 +3487,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final albumName = _nodesById[albumId]?.name ?? albumId;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        backgroundColor: const Color(0xFF0F172A),
+        backgroundColor: const Color(0xFF1E293B),
         content: Text(
           allOk
               ? '✔ ${photos.length} média(s) classé(s) dans "$albumName" pour toute la famille.'
@@ -3443,7 +3523,7 @@ class _HomeScreenState extends State<HomeScreen> {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        backgroundColor: const Color(0xFF0F172A),
+        backgroundColor: const Color(0xFF1E293B),
         content: Text(
           allOk
               ? '✔ ${photos.length} média(s) mis à la corbeille pour tout le monde.'
@@ -3473,7 +3553,7 @@ class _HomeScreenState extends State<HomeScreen> {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        backgroundColor: const Color(0xFF0F172A),
+        backgroundColor: const Color(0xFF1E293B),
         content: Text(
           ok
               ? '✔ "${photo.filename}" masquée / mise à la corbeille pour tout le monde.'
@@ -3488,14 +3568,14 @@ class _HomeScreenState extends State<HomeScreen> {
     if (!_auth.isSignedIn || _auth.email == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          backgroundColor: const Color(0xFF0F172A),
+          backgroundColor: const Color(0xFFFFFFFF),
           content: const Text(
             'Connectez-vous avec Google (en haut à droite) pour aimer des photos ❤️',
             style: TextStyle(color: Colors.white, fontSize: 12),
           ),
           action: SnackBarAction(
             label: 'Connexion',
-            textColor: const Color(0xFF38BDF8),
+            textColor: const Color(0xFF0EA5E9),
             onPressed: _handleGoogleSignIn,
           ),
         ),
@@ -3556,12 +3636,12 @@ class PhotoGridScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        backgroundColor: const Color(0xFF0F172A),
+        backgroundColor: const Color(0xFFFFFFFF),
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-            Text("${photos.length} éléments", style: const TextStyle(fontSize: 11, color: Colors.white54)),
+            Text("${photos.length} éléments", style: const TextStyle(fontSize: 11, color: Color(0xFF64748B))),
           ],
         ),
       ),
@@ -3683,22 +3763,22 @@ class _PhotoGridBodyState extends State<PhotoGridBody> {
       context: context,
       builder: (dialogCtx) => StatefulBuilder(
         builder: (ctx, setDialogState) => AlertDialog(
-          backgroundColor: const Color(0xFF0F172A),
+          backgroundColor: const Color(0xFFFFFFFF),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(16),
-            side: const BorderSide(color: Colors.white12),
+            side: const BorderSide(color: Color(0xFFEBDDC6)),
           ),
           title: Text(
             'Ranger ${selectedPhotos.length} média(s) dans un album',
-            style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Colors.white),
+            style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: const Color(0xFF1E293B)),
           ),
           content: DropdownButtonFormField<String>(
             value: selectedAlbumId,
             isExpanded: true,
-            dropdownColor: const Color(0xFF1E293B),
+            dropdownColor: const Color(0xFFF6EFE2),
             decoration: InputDecoration(
               filled: true,
-              fillColor: const Color(0xFF1E293B),
+              fillColor: const Color(0xFFF6EFE2),
               border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
             ),
             items: albumsSorted
@@ -3714,11 +3794,11 @@ class _PhotoGridBodyState extends State<PhotoGridBody> {
           actions: [
             TextButton(
               onPressed: () => Navigator.of(dialogCtx).pop(),
-              child: const Text("Annuler", style: TextStyle(color: Colors.white54)),
+              child: const Text("Annuler", style: TextStyle(color: Color(0xFF64748B))),
             ),
             ElevatedButton(
               style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF0284C7),
+                backgroundColor: const Color(0xFFF97316),
                 foregroundColor: Colors.white,
               ),
               onPressed: () async {
@@ -3751,23 +3831,23 @@ class _PhotoGridBodyState extends State<PhotoGridBody> {
     await showDialog<void>(
       context: context,
       builder: (dialogCtx) => AlertDialog(
-        backgroundColor: const Color(0xFF0F172A),
+        backgroundColor: const Color(0xFFFFFFFF),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(16),
-          side: const BorderSide(color: Colors.white12),
+          side: const BorderSide(color: Color(0xFFEBDDC6)),
         ),
         title: Text(
           'Mettre ${selectedPhotos.length} média(s) à la corbeille ?',
-          style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Colors.white),
+          style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: const Color(0xFF1E293B)),
         ),
         content: const Text(
           'Ces photos/vidéos seront masquées de la galerie et des albums pour toute la famille.',
-          style: TextStyle(fontSize: 12, color: Colors.white70),
+          style: TextStyle(fontSize: 12, color: Color(0xFF475569)),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(dialogCtx).pop(),
-            child: const Text("Annuler", style: TextStyle(color: Colors.white54)),
+            child: const Text("Annuler", style: TextStyle(color: Color(0xFF64748B))),
           ),
           ElevatedButton.icon(
             style: ElevatedButton.styleFrom(
@@ -3808,9 +3888,9 @@ class _PhotoGridBodyState extends State<PhotoGridBody> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.image_not_supported_outlined, size: 48, color: Colors.white24),
+            const Icon(Icons.image_not_supported_outlined, size: 48, color: Color(0xFFCBD5E1)),
             const SizedBox(height: 12),
-            const Text("Aucun média disponible", style: TextStyle(color: Colors.white38)),
+            const Text("Aucun média disponible", style: TextStyle(color: Color(0xFF94A3B8))),
           ],
         ),
       );
@@ -3838,8 +3918,8 @@ class _PhotoGridBodyState extends State<PhotoGridBody> {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                 decoration: BoxDecoration(
-                  color: _isSelectionMode ? const Color(0xFF0C4A6E).withValues(alpha: 0.45) : const Color(0xFF0B1120),
-                  border: const Border(bottom: BorderSide(color: Colors.white10)),
+                  color: _isSelectionMode ? const Color(0xFF0C4A6E).withValues(alpha: 0.45) : const Color(0xFFFFF7E8),
+                  border: const Border(bottom: BorderSide(color: Color(0xFFF1E6D2))),
                 ),
                 child: Row(
                   children: [
@@ -3861,7 +3941,7 @@ class _PhotoGridBodyState extends State<PhotoGridBody> {
                         },
                         child: Text(
                           selectedPhotos.length == photos.length ? 'Aucun' : 'Tout sélect. (${photos.length})',
-                          style: const TextStyle(fontSize: 12, color: Color(0xFF38BDF8)),
+                          style: const TextStyle(fontSize: 12, color: Color(0xFF0EA5E9)),
                         ),
                       ),
                       TextButton.icon(
@@ -3869,18 +3949,18 @@ class _PhotoGridBodyState extends State<PhotoGridBody> {
                           _isSelectionMode = false;
                           _selectedPhotoIds.clear();
                         }),
-                        icon: const Icon(Icons.close, size: 15, color: Colors.white70),
-                        label: const Text('Annuler', style: TextStyle(fontSize: 12, color: Colors.white70)),
+                        icon: const Icon(Icons.close, size: 15, color: Color(0xFF475569)),
+                        label: const Text('Annuler', style: TextStyle(fontSize: 12, color: Color(0xFF475569))),
                       ),
                     ] else ...[
                       Text(
                         'Appui long ou bouton pour sélectionner',
-                        style: const TextStyle(fontSize: 11, color: Colors.white38),
+                        style: const TextStyle(fontSize: 11, color: Color(0xFF94A3B8)),
                       ),
                       const Spacer(),
                       TextButton.icon(
                         style: TextButton.styleFrom(
-                          foregroundColor: const Color(0xFF38BDF8),
+                          foregroundColor: const Color(0xFF0EA5E9),
                           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                           minimumSize: Size.zero,
                           tapTargetSize: MaterialTapTargetSize.shrinkWrap,
@@ -3947,8 +4027,8 @@ class _PhotoGridBodyState extends State<PhotoGridBody> {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                 decoration: const BoxDecoration(
-                  color: Color(0xFF0F172A),
-                  border: Border(top: BorderSide(color: Colors.white12)),
+                  color: Color(0xFFFFFFFF),
+                  border: Border(top: BorderSide(color: Color(0xFFEBDDC6))),
                 ),
                 child: SafeArea(
                   top: false,
@@ -3958,8 +4038,8 @@ class _PhotoGridBodyState extends State<PhotoGridBody> {
                         Expanded(
                           child: OutlinedButton.icon(
                             style: OutlinedButton.styleFrom(
-                              foregroundColor: const Color(0xFF38BDF8),
-                              side: const BorderSide(color: Color(0xFF0284C7)),
+                              foregroundColor: const Color(0xFF0EA5E9),
+                              side: const BorderSide(color: Color(0xFFF97316)),
                               padding: const EdgeInsets.symmetric(vertical: 11),
                               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                             ),
@@ -4006,7 +4086,7 @@ class _PhotoGridBodyState extends State<PhotoGridBody> {
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          backgroundColor: const Color(0xFF0F172A),
+          backgroundColor: const Color(0xFFFFFFFF),
           content: Text("Impossible d'ouvrir le lien Drive : $e", style: const TextStyle(color: Colors.white)),
         ),
       );
@@ -4054,10 +4134,10 @@ class _PhotoGridBodyState extends State<PhotoGridBody> {
       showDialog(
         context: context,
         builder: (dialogCtx) => Dialog(
-          backgroundColor: const Color(0xFF0F172A),
+          backgroundColor: const Color(0xFFFFFFFF),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(16),
-            side: const BorderSide(color: Colors.white12),
+            side: const BorderSide(color: Color(0xFFEBDDC6)),
           ),
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 920, maxHeight: 860),
@@ -4078,11 +4158,11 @@ class _PhotoGridBodyState extends State<PhotoGridBody> {
                       ),
                       IconButton(
                         tooltip: "Agrandir en plein écran",
-                        icon: const Icon(Icons.fullscreen, color: Color(0xFF38BDF8)),
+                        icon: const Icon(Icons.fullscreen, color: Color(0xFF0EA5E9)),
                         onPressed: () => _openFullScreenZoom(context, photo, fileViewUrl),
                       ),
                       IconButton(
-                        icon: const Icon(Icons.close, color: Colors.white70),
+                        icon: const Icon(Icons.close, color: Color(0xFF475569)),
                         onPressed: () => Navigator.of(dialogCtx).pop(),
                       ),
                     ],
@@ -4116,7 +4196,7 @@ class _PhotoGridBodyState extends State<PhotoGridBody> {
                                       return const Center(
                                         child: Padding(
                                           padding: EdgeInsets.all(32),
-                                          child: CircularProgressIndicator(color: Color(0xFF38BDF8)),
+                                          child: CircularProgressIndicator(color: Color(0xFF0EA5E9)),
                                         ),
                                       );
                                     },
@@ -4129,7 +4209,7 @@ class _PhotoGridBodyState extends State<PhotoGridBody> {
                                       decoration: BoxDecoration(
                                         color: Colors.black.withValues(alpha: 0.6),
                                         shape: BoxShape.circle,
-                                        border: Border.all(color: Colors.white38),
+                                        border: Border.all(color: Color(0xFF94A3B8)),
                                       ),
                                       child: const Icon(Icons.play_arrow, color: Colors.white, size: 34),
                                     )
@@ -4146,9 +4226,9 @@ class _PhotoGridBodyState extends State<PhotoGridBody> {
                                         child: const Row(
                                           mainAxisSize: MainAxisSize.min,
                                           children: [
-                                            Icon(Icons.zoom_out_map, size: 13, color: Colors.white70),
+                                            Icon(Icons.zoom_out_map, size: 13, color: Color(0xFF475569)),
                                             SizedBox(width: 4),
-                                            Text("Cliquer pour agrandir", style: TextStyle(fontSize: 10, color: Colors.white70)),
+                                            Text("Cliquer pour agrandir", style: TextStyle(fontSize: 10, color: Color(0xFF475569))),
                                           ],
                                         ),
                                       ),
@@ -4166,19 +4246,19 @@ class _PhotoGridBodyState extends State<PhotoGridBody> {
                     runSpacing: 6,
                     children: [
                       Text("Type : ${photo.isVideo ? 'Vidéo' : 'Photo'}",
-                          style: TextStyle(fontSize: 12, color: photo.isVideo ? const Color(0xFFFBBF24) : const Color(0xFF38BDF8), fontWeight: FontWeight.w600)),
+                          style: TextStyle(fontSize: 12, color: photo.isVideo ? const Color(0xFFFBBF24) : const Color(0xFF0EA5E9), fontWeight: FontWeight.w600)),
                       Text("Date : ${photo.captureDate.isNotEmpty ? photo.captureDate : 'Non renseignée'}",
-                          style: const TextStyle(fontSize: 12, color: Colors.white70)),
+                          style: const TextStyle(fontSize: 12, color: Color(0xFF475569))),
                       Text("Taille : $sizeMo Mo (${photo.width} × ${photo.height} px)",
-                          style: const TextStyle(fontSize: 12, color: Colors.white70)),
+                          style: const TextStyle(fontSize: 12, color: Color(0xFF475569))),
                       if (photo.cameraModel != null && photo.cameraModel!.isNotEmpty)
-                        Text("Appareil : ${photo.cameraModel}", style: const TextStyle(fontSize: 12, color: Colors.white70)),
+                        Text("Appareil : ${photo.cameraModel}", style: const TextStyle(fontSize: 12, color: Color(0xFF475569))),
                       if (photo.country != null && photo.country!.isNotEmpty)
                         Text("Lieu : ${photo.city != null && photo.city!.isNotEmpty ? '${photo.city}, ' : ''}${photo.country}",
-                            style: const TextStyle(fontSize: 12, color: Colors.white70)),
+                            style: const TextStyle(fontSize: 12, color: Color(0xFF475569))),
                       if (photo.addedByName != null && photo.addedByName!.isNotEmpty)
                         Text("Ajouté par : ${photo.addedByName}",
-                            style: const TextStyle(fontSize: 12, color: Color(0xFF38BDF8), fontWeight: FontWeight.w600)),
+                            style: const TextStyle(fontSize: 12, color: Color(0xFF0EA5E9), fontWeight: FontWeight.w600)),
                       Text("Statut Drive : ${photo.driveId != null ? '✔ Synchronisé en HD' : '⏳ Non chargé sur Drive'}",
                           style: TextStyle(fontSize: 12, color: photo.driveId != null ? const Color(0xFF4ADE80) : const Color(0xFFFBBF24))),
                     ],
@@ -4206,7 +4286,7 @@ class _PhotoGridBodyState extends State<PhotoGridBody> {
                       children: photoAlbumNames
                           .map((name) => Chip(
                                 label: Text(name, style: const TextStyle(fontSize: 11)),
-                                backgroundColor: const Color(0xFF1E293B),
+                                backgroundColor: const Color(0xFFF6EFE2),
                                 visualDensity: VisualDensity.compact,
                               ))
                           .toList(),
@@ -4244,8 +4324,8 @@ class _PhotoGridBodyState extends State<PhotoGridBody> {
                         Expanded(
                           child: OutlinedButton.icon(
                             style: OutlinedButton.styleFrom(
-                              foregroundColor: const Color(0xFF38BDF8),
-                              side: const BorderSide(color: Color(0xFF0284C7)),
+                              foregroundColor: const Color(0xFF0EA5E9),
+                              side: const BorderSide(color: Color(0xFFF97316)),
                               padding: const EdgeInsets.symmetric(vertical: 12),
                               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                             ),
@@ -4279,7 +4359,7 @@ class _PhotoGridBodyState extends State<PhotoGridBody> {
                   const SizedBox(height: 10),
                   ElevatedButton.icon(
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF0284C7),
+                      backgroundColor: const Color(0xFFF97316),
                       foregroundColor: Colors.white,
                       padding: const EdgeInsets.symmetric(vertical: 14),
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
@@ -4302,7 +4382,7 @@ class _PhotoGridBodyState extends State<PhotoGridBody> {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      backgroundColor: const Color(0xFF0F172A),
+      backgroundColor: const Color(0xFFFFFFFF),
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
@@ -4322,7 +4402,7 @@ class _PhotoGridBodyState extends State<PhotoGridBody> {
                     width: 36,
                     height: 4,
                     decoration: BoxDecoration(
-                      color: Colors.white24,
+                      color: Color(0xFFCBD5E1),
                       borderRadius: BorderRadius.circular(2),
                     ),
                   ),
@@ -4353,7 +4433,7 @@ class _PhotoGridBodyState extends State<PhotoGridBody> {
                                 return const Center(
                                   child: Padding(
                                     padding: EdgeInsets.all(32),
-                                    child: CircularProgressIndicator(color: Color(0xFF38BDF8)),
+                                    child: CircularProgressIndicator(color: Color(0xFF0EA5E9)),
                                   ),
                                 );
                               },
@@ -4366,7 +4446,7 @@ class _PhotoGridBodyState extends State<PhotoGridBody> {
                                 decoration: BoxDecoration(
                                   color: Colors.black.withValues(alpha: 0.6),
                                   shape: BoxShape.circle,
-                                  border: Border.all(color: Colors.white38),
+                                  border: Border.all(color: Color(0xFF94A3B8)),
                                 ),
                                 child: const Icon(Icons.play_arrow, color: Colors.white, size: 32),
                               )
@@ -4383,9 +4463,9 @@ class _PhotoGridBodyState extends State<PhotoGridBody> {
                                   child: const Row(
                                     mainAxisSize: MainAxisSize.min,
                                     children: [
-                                      Icon(Icons.zoom_out_map, size: 13, color: Colors.white70),
+                                      Icon(Icons.zoom_out_map, size: 13, color: Color(0xFF475569)),
                                       SizedBox(width: 4),
-                                      Text("Toucher pour agrandir", style: TextStyle(fontSize: 10, color: Colors.white70)),
+                                      Text("Toucher pour agrandir", style: TextStyle(fontSize: 10, color: Color(0xFF475569))),
                                     ],
                                   ),
                                 ),
@@ -4399,19 +4479,19 @@ class _PhotoGridBodyState extends State<PhotoGridBody> {
                 Text(photo.filename, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
                 const SizedBox(height: 8),
                 Text("Type : ${photo.isVideo ? 'Vidéo' : 'Photo'}",
-                    style: TextStyle(fontSize: 12, color: photo.isVideo ? const Color(0xFFFBBF24) : const Color(0xFF38BDF8), fontWeight: FontWeight.w600)),
+                    style: TextStyle(fontSize: 12, color: photo.isVideo ? const Color(0xFFFBBF24) : const Color(0xFF0EA5E9), fontWeight: FontWeight.w600)),
                 Text("Date : ${photo.captureDate.isNotEmpty ? photo.captureDate : 'Non renseignée'}",
-                    style: const TextStyle(fontSize: 12, color: Colors.white70)),
+                    style: const TextStyle(fontSize: 12, color: Color(0xFF475569))),
                 Text("Taille : $sizeMo Mo (${photo.width} × ${photo.height} px)",
-                    style: const TextStyle(fontSize: 12, color: Colors.white70)),
+                    style: const TextStyle(fontSize: 12, color: Color(0xFF475569))),
                 if (photo.cameraModel != null && photo.cameraModel!.isNotEmpty)
-                  Text("Appareil : ${photo.cameraModel}", style: const TextStyle(fontSize: 12, color: Colors.white70)),
+                  Text("Appareil : ${photo.cameraModel}", style: const TextStyle(fontSize: 12, color: Color(0xFF475569))),
                 if (photo.country != null && photo.country!.isNotEmpty)
                   Text("Lieu : ${photo.city != null && photo.city!.isNotEmpty ? '${photo.city}, ' : ''}${photo.country}",
-                      style: const TextStyle(fontSize: 12, color: Colors.white70)),
+                      style: const TextStyle(fontSize: 12, color: Color(0xFF475569))),
                 if (photo.addedByName != null && photo.addedByName!.isNotEmpty)
                   Text("Ajouté par : ${photo.addedByName}",
-                      style: const TextStyle(fontSize: 12, color: Color(0xFF38BDF8), fontWeight: FontWeight.w600)),
+                      style: const TextStyle(fontSize: 12, color: Color(0xFF0EA5E9), fontWeight: FontWeight.w600)),
                 Text("Statut Drive : ${photo.driveId != null ? '✔ Synchronisé en HD' : '⏳ Non chargé sur Drive'}",
                     style: TextStyle(fontSize: 12, color: photo.driveId != null ? const Color(0xFF4ADE80) : const Color(0xFFFBBF24))),
                 if ((widget.likesByPhotoId?[photo.id] ?? const []).isNotEmpty) ...[
@@ -4431,17 +4511,17 @@ class _PhotoGridBodyState extends State<PhotoGridBody> {
                 ],
                 const SizedBox(height: 16),
                 if (!photo.isVideo) ...[
-                  const Text("Dossiers & Albums Lightroom :", style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white70)),
+                  const Text("Dossiers & Albums Lightroom :", style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF475569))),
                   const SizedBox(height: 8),
                   Wrap(
                     spacing: 6,
                     runSpacing: 6,
                     children: photoAlbumNames.isEmpty
-                        ? [const Text("Aucune thématique spécifique", style: TextStyle(fontSize: 11, fontStyle: FontStyle.italic, color: Colors.white38))]
+                        ? [const Text("Aucune thématique spécifique", style: TextStyle(fontSize: 11, fontStyle: FontStyle.italic, color: Color(0xFF94A3B8)))]
                         : photoAlbumNames
                             .map((name) => Chip(
                                   label: Text(name, style: const TextStyle(fontSize: 10)),
-                                  backgroundColor: const Color(0xFF1E293B),
+                                  backgroundColor: const Color(0xFFF6EFE2),
                                   padding: EdgeInsets.zero,
                                 ))
                             .toList(),
@@ -4479,8 +4559,8 @@ class _PhotoGridBodyState extends State<PhotoGridBody> {
                       Expanded(
                         child: OutlinedButton.icon(
                           style: OutlinedButton.styleFrom(
-                            foregroundColor: const Color(0xFF38BDF8),
-                            side: const BorderSide(color: Color(0xFF0284C7)),
+                            foregroundColor: const Color(0xFF0EA5E9),
+                            side: const BorderSide(color: Color(0xFFF97316)),
                             padding: const EdgeInsets.symmetric(vertical: 11),
                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                           ),
@@ -4514,7 +4594,7 @@ class _PhotoGridBodyState extends State<PhotoGridBody> {
                 const SizedBox(height: 10),
                 ElevatedButton.icon(
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF0284C7),
+                    backgroundColor: const Color(0xFFF97316),
                     foregroundColor: Colors.white,
                     padding: const EdgeInsets.symmetric(vertical: 12),
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
@@ -4543,25 +4623,25 @@ class _PhotoGridBodyState extends State<PhotoGridBody> {
       context: context,
       builder: (dialogCtx) => StatefulBuilder(
         builder: (ctx, setDialogState) => AlertDialog(
-          backgroundColor: const Color(0xFF0F172A),
+          backgroundColor: const Color(0xFFFFFFFF),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(16),
-            side: const BorderSide(color: Colors.white12),
+            side: const BorderSide(color: Color(0xFFEBDDC6)),
           ),
           title: const Text(
             "Ranger dans un album / dossier",
-            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white),
+            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: const Color(0xFF1E293B)),
           ),
           content: SizedBox(
             width: 380,
             child: DropdownButtonFormField<String>(
               value: selectedAlbumId,
               isExpanded: true,
-              dropdownColor: const Color(0xFF1E293B),
+              dropdownColor: const Color(0xFFF6EFE2),
               decoration: InputDecoration(
                 labelText: "Choisir l'album ou dossier",
                 filled: true,
-                fillColor: const Color(0xFF1E293B),
+                fillColor: const Color(0xFFF6EFE2),
                 border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
               ),
               items: albumsSorted
@@ -4581,11 +4661,11 @@ class _PhotoGridBodyState extends State<PhotoGridBody> {
           actions: [
             TextButton(
               onPressed: () => Navigator.of(dialogCtx).pop(),
-              child: const Text("Annuler", style: TextStyle(color: Colors.white54)),
+              child: const Text("Annuler", style: TextStyle(color: Color(0xFF64748B))),
             ),
             ElevatedButton.icon(
               style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF0284C7),
+                backgroundColor: const Color(0xFFF97316),
                 foregroundColor: Colors.white,
               ),
               icon: const Icon(Icons.check, size: 18),
@@ -4670,12 +4750,12 @@ class _PhotoGridTileState extends State<_PhotoGridTile> {
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 160),
           decoration: BoxDecoration(
-            color: const Color(0xFF1E293B),
+            color: const Color(0xFFF6EFE2),
             borderRadius: BorderRadius.circular(10),
             border: Border.all(
               color: widget.isSelected
-                  ? const Color(0xFF38BDF8)
-                  : (_isHovered ? const Color(0xFF38BDF8).withValues(alpha: 0.6) : Colors.white10),
+                  ? const Color(0xFF0EA5E9)
+                  : (_isHovered ? const Color(0xFF0EA5E9).withValues(alpha: 0.6) : Color(0xFFF1E6D2)),
               width: widget.isSelected ? 2.5 : (_isHovered ? 1.5 : 1.0),
             ),
             boxShadow: _isHovered
@@ -4710,12 +4790,12 @@ class _PhotoGridTileState extends State<_PhotoGridTile> {
                   loadingBuilder: (context, child, loadingProgress) {
                     if (loadingProgress == null) return child;
                     return Container(
-                      color: const Color(0xFF1E293B),
+                      color: const Color(0xFFF6EFE2),
                       child: const Center(
                         child: SizedBox(
                           width: 20,
                           height: 20,
-                          child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF38BDF8)),
+                          child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF0EA5E9)),
                         ),
                       ),
                     );
@@ -4724,12 +4804,12 @@ class _PhotoGridTileState extends State<_PhotoGridTile> {
                     if (_retryAttempt < _maxRetries) {
                       _scheduleRetry();
                       return Container(
-                        color: const Color(0xFF1E293B),
+                        color: const Color(0xFFF6EFE2),
                         child: const Center(
                           child: SizedBox(
                             width: 18,
                             height: 18,
-                            child: CircularProgressIndicator(strokeWidth: 1.5, color: Colors.white24),
+                            child: CircularProgressIndicator(strokeWidth: 1.5, color: Color(0xFFCBD5E1)),
                           ),
                         ),
                       );
@@ -4737,7 +4817,7 @@ class _PhotoGridTileState extends State<_PhotoGridTile> {
                     return Center(
                       child: Icon(
                         photo.isVideo ? Icons.movie_outlined : Icons.image_outlined,
-                        color: Colors.white24,
+                        color: Color(0xFFCBD5E1),
                         size: 28,
                       ),
                     );
@@ -4747,7 +4827,7 @@ class _PhotoGridTileState extends State<_PhotoGridTile> {
                 Center(
                   child: Icon(
                     photo.isVideo ? Icons.movie_outlined : Icons.cloud_upload_outlined,
-                    color: Colors.white24,
+                    color: Color(0xFFCBD5E1),
                     size: 28,
                   ),
                 ),
@@ -4760,14 +4840,14 @@ class _PhotoGridTileState extends State<_PhotoGridTile> {
                     decoration: BoxDecoration(
                       color: Colors.black.withValues(alpha: 0.78),
                       borderRadius: BorderRadius.circular(4),
-                      border: Border.all(color: Colors.white24),
+                      border: Border.all(color: Color(0xFFCBD5E1)),
                     ),
                     child: const Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Icon(Icons.play_arrow, size: 11, color: Colors.white),
+                        Icon(Icons.play_arrow, size: 11, color: const Color(0xFF1E293B)),
                         SizedBox(width: 2),
-                        Text("Vidéo", style: TextStyle(fontSize: 9, color: Colors.white, fontWeight: FontWeight.bold)),
+                        Text("Vidéo", style: TextStyle(fontSize: 9, color: const Color(0xFF1E293B), fontWeight: FontWeight.bold)),
                       ],
                     ),
                   ),
@@ -4794,7 +4874,7 @@ class _PhotoGridTileState extends State<_PhotoGridTile> {
                     child: Icon(
                       widget.isSelected ? Icons.check_circle : Icons.radio_button_unchecked,
                       size: 22,
-                      color: widget.isSelected ? const Color(0xFF38BDF8) : Colors.white70,
+                      color: widget.isSelected ? const Color(0xFF0EA5E9) : Color(0xFF475569),
                     ),
                   ),
                 ),
@@ -4877,7 +4957,7 @@ class _PhotoSearchScreenState extends State<PhotoSearchScreen> {
                     )
                   : null,
               filled: true,
-              fillColor: const Color(0xFF1E293B),
+              fillColor: const Color(0xFFF6EFE2),
               border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
             ),
             onChanged: _onSearch,
@@ -4889,15 +4969,15 @@ class _PhotoSearchScreenState extends State<PhotoSearchScreen> {
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(Icons.search, size: 48, color: Colors.white24),
+                      Icon(Icons.search, size: 48, color: Color(0xFFCBD5E1)),
                       SizedBox(height: 12),
-                      Text("Tapez pour rechercher dans les photos", style: TextStyle(color: Colors.white38)),
+                      Text("Tapez pour rechercher dans les photos", style: TextStyle(color: Color(0xFF94A3B8))),
                     ],
                   ),
                 )
               : _results.isEmpty
                   ? const Center(
-                      child: Text("Aucun résultat", style: TextStyle(color: Colors.white38)),
+                      child: Text("Aucun résultat", style: TextStyle(color: Color(0xFF94A3B8))),
                     )
                   : PhotoGridBody(
                       photos: _results,
@@ -4914,7 +4994,6 @@ class _PhotoSearchScreenState extends State<PhotoSearchScreen> {
     );
   }
 }
-
 class _FullScreenPhotoViewer extends StatefulWidget {
   final List<PhotoItem> photos;
   final int initialIndex;
