@@ -9,8 +9,8 @@ import 'services/app_update_service.dart';
 import 'services/cloud_sync_service.dart';
 import 'widgets/world_map_tab.dart';
 
-const int appBuildNumber = 18;
-const String appVersionLabel = "1.0.17";
+const int appBuildNumber = 19;
+const String appVersionLabel = "1.0.18";
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -270,9 +270,11 @@ class _HomeScreenState extends State<HomeScreen> {
   static const String _kYear2026Id = '8a27a7356de54a4fa7aae6fdea783597';
   static const String _kPaysFolderId = '2956c2bdbaf04c7984849dbacdb605ab';
   static const String _kCountryMetaParentId = '__country_meta__';
+  static const String _kCoverMetaParentId = '__cover_meta__';
   static const String _kTripMetaParentId = '__trip_meta__';
   static const String _kActiveTripNodeId = '__active_trip__';
   static const String _kCollabTripAlbumId = 'collab_voyage_en_cours';
+  final Map<String, int> _albumCoverPhotoIdById = {};
   ActiveTripConfig? _activeTrip;
   AuthUserSession _auth = CloudSyncService.currentAuth;
   StreamSubscription<AuthUserSession>? _authSub;
@@ -497,9 +499,9 @@ class _HomeScreenState extends State<HomeScreen> {
         child: Container(
           padding: EdgeInsets.symmetric(horizontal: compact ? 8 : 10, vertical: 5),
           decoration: BoxDecoration(
-            color: const Color(0xFFF6EFE2),
+            color: const Color(0xFFECFDF5),
             borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: const Color(0xFF4ADE80).withValues(alpha: 0.45)),
+            border: Border.all(color: const Color(0xFF10B981)),
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
@@ -508,14 +510,14 @@ class _HomeScreenState extends State<HomeScreen> {
                 width: 8,
                 height: 8,
                 decoration: const BoxDecoration(
-                  color: Color(0xFF4ADE80),
+                  color: Color(0xFF059669),
                   shape: BoxShape.circle,
                 ),
               ),
               const SizedBox(width: 6),
               Text(
                 _auth.shortLabel,
-                style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.white),
+                style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF065F46)),
               ),
             ],
           ),
@@ -755,8 +757,18 @@ class _HomeScreenState extends State<HomeScreen> {
       if (!mounted) return;
       _cloudTableReady = delta.tableReady;
 
-      // 1. Appliquer les nouveaux dossiers & albums (ainsi que déplacements, suppressions, pays et voyage actif)
+      // 1. Appliquer les nouveaux dossiers & albums (ainsi que déplacements, suppressions, pays, couvertures et voyage actif)
       for (final ca in delta.customAlbums) {
+        if (ca.parentId == _kCoverMetaParentId || ca.id.startsWith('__cover__')) {
+          final targetAlbumId = ca.id.startsWith('__cover__') ? ca.id.substring('__cover__'.length) : ca.id;
+          final parsedId = int.tryParse(ca.name.trim());
+          if (ca.isDeleted || parsedId == null) {
+            _albumCoverPhotoIdById.remove(targetAlbumId);
+          } else {
+            _albumCoverPhotoIdById[targetAlbumId] = parsedId;
+          }
+          continue;
+        }
         if (ca.parentId == _kTripMetaParentId || ca.id == _kActiveTripNodeId) {
           if (ca.isDeleted) {
             _activeTrip = null;
@@ -1119,6 +1131,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 filename: f.name,
                 bytes: bytes,
                 mimeType: mime,
+                folderName: 'Medias Familly - ${trip.title}',
               );
               final now = DateTime.now();
               final dFolder =
@@ -1675,7 +1688,7 @@ class _HomeScreenState extends State<HomeScreen> {
           _buildAuthHeaderChip(compact: false),
           IconButton(
             tooltip: "Ajouter un média Google Drive",
-            icon: const Icon(Icons.add_photo_alternate_outlined, color: Color(0xFF4ADE80), size: 22),
+            icon: const Icon(Icons.add_photo_alternate_outlined, color: Color(0xFF059669), size: 22),
             onPressed: () => _showAddPhotoDialog(defaultIsVideo: isVideos),
           ),
           IconButton(
@@ -1725,21 +1738,13 @@ class _HomeScreenState extends State<HomeScreen> {
                 _buildDesktopNavItem(
                   index: 1,
                   activeIndex: activeNavIndex,
-                  icon: isVideos ? Icons.video_library_outlined : Icons.collections_outlined,
-                  selectedIcon: isVideos ? Icons.video_library_rounded : Icons.collections_rounded,
-                  label: "Galerie",
-                  badge: "${isVideos ? _videosOnly.length : _photosOnly.length}",
-                ),
-                _buildDesktopNavItem(
-                  index: 2,
-                  activeIndex: activeNavIndex,
                   icon: Icons.backpack_outlined,
                   selectedIcon: Icons.backpack_rounded,
                   label: "Thématiques",
                   badge: isVideos ? "0" : "${_countPhotosInTree(yearsTree: false, videosOnly: false)}",
                 ),
                 _buildDesktopNavItem(
-                  index: 3,
+                  index: 2,
                   activeIndex: activeNavIndex,
                   icon: Icons.event_note_outlined,
                   selectedIcon: Icons.event_note_rounded,
@@ -1747,7 +1752,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   badge: "${_countPhotosInTree(yearsTree: true, videosOnly: isVideos)}",
                 ),
                 _buildDesktopNavItem(
-                  index: 4,
+                  index: 3,
                   activeIndex: activeNavIndex,
                   icon: Icons.travel_explore_outlined,
                   selectedIcon: Icons.travel_explore_rounded,
@@ -1772,10 +1777,9 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
           Expanded(
             child: IndexedStack(
-              index: _currentIndex,
+              index: _currentIndex.clamp(0, 3),
               children: [
                 _buildWorldMapTab(videosOnly: isVideos),
-                _buildGalleryTab(isVideos ? _videosOnly : _photosOnly, isVideo: isVideos),
                 _buildAlbumsTab(),
                 _buildPhotoYearsTab(),
                 _buildSearchTab(),
@@ -1869,7 +1873,7 @@ class _HomeScreenState extends State<HomeScreen> {
           _buildAuthHeaderChip(compact: true),
           IconButton(
             tooltip: "Ajouter un média Google Drive",
-            icon: const Icon(Icons.add_photo_alternate_outlined, color: Color(0xFF4ADE80)),
+            icon: const Icon(Icons.add_photo_alternate_outlined, color: Color(0xFF059669)),
             onPressed: () => _showAddPhotoDialog(defaultIsVideo: isVideos),
           ),
           IconButton(
@@ -1886,42 +1890,36 @@ class _HomeScreenState extends State<HomeScreen> {
         ],
       ),
       body: IndexedStack(
-        index: _currentIndex,
+        index: _currentIndex.clamp(0, 3),
         children: [
           _buildWorldMapTab(videosOnly: isVideos),
-          _buildGalleryTab(isVideos ? _videosOnly : _photosOnly, isVideo: isVideos),
           _buildAlbumsTab(),
           _buildPhotoYearsTab(),
           _buildSearchTab(),
         ],
       ),
       bottomNavigationBar: NavigationBar(
-        selectedIndex: _currentIndex,
+        selectedIndex: _currentIndex.clamp(0, 3),
         onDestinationSelected: (idx) => setState(() => _currentIndex = idx),
         backgroundColor: const Color(0xFFFFFFFF),
-        indicatorColor: const Color(0xFFF97316).withValues(alpha: 0.3),
-        destinations: [
-          const NavigationDestination(
+        indicatorColor: const Color(0xFFF97316).withValues(alpha: 0.2),
+        destinations: const [
+          NavigationDestination(
             icon: Icon(Icons.explore_outlined),
             selectedIcon: Icon(Icons.explore_rounded, color: Color(0xFFF97316)),
             label: "La carte",
           ),
           NavigationDestination(
-            icon: Icon(isVideos ? Icons.video_library_outlined : Icons.collections_outlined),
-            selectedIcon: Icon(isVideos ? Icons.video_library_rounded : Icons.collections_rounded, color: const Color(0xFFF97316)),
-            label: "Galerie",
-          ),
-          const NavigationDestination(
             icon: Icon(Icons.backpack_outlined),
             selectedIcon: Icon(Icons.backpack_rounded, color: Color(0xFFF97316)),
             label: "Thématiques",
           ),
-          const NavigationDestination(
+          NavigationDestination(
             icon: Icon(Icons.event_note_outlined),
             selectedIcon: Icon(Icons.event_note_rounded, color: Color(0xFFF97316)),
             label: "Années",
           ),
-          const NavigationDestination(
+          NavigationDestination(
             icon: Icon(Icons.travel_explore_outlined),
             selectedIcon: Icon(Icons.travel_explore_rounded, color: Color(0xFFF97316)),
             label: "Recherche",
@@ -2040,8 +2038,8 @@ class _HomeScreenState extends State<HomeScreen> {
                             c.nameFr,
                             style: TextStyle(
                               fontSize: 13.5,
-                              fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                              color: Colors.white,
+                              fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                              color: const Color(0xFF1E293B),
                             ),
                           ),
                           subtitle: Text(
@@ -2055,12 +2053,12 @@ class _HomeScreenState extends State<HomeScreen> {
                                 Container(
                                   padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                                   decoration: BoxDecoration(
-                                    color: const Color(0xFF0EA5E9).withOpacity(0.2),
+                                    color: const Color(0xFF0EA5E9).withOpacity(0.16),
                                     borderRadius: BorderRadius.circular(6),
                                   ),
                                   child: const Text(
                                     'Visité',
-                                    style: TextStyle(fontSize: 10, color: Color(0xFF7DD3FC)),
+                                    style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: Color(0xFF0369A1)),
                                   ),
                                 ),
                               if (isSelected) ...[
@@ -2684,22 +2682,47 @@ class _HomeScreenState extends State<HomeScreen> {
                     final displayTotal = isVideoMode ? node.totalVideoCount : node.totalCount;
                     final displayDirect = isVideoMode ? node.directVideoCount : node.directCount;
                     final unitLabel = isVideoMode ? 'vidéos' : 'photos';
+                    final coverPhoto = _getCoverPhotoForNode(node, isVideoMode: isVideoMode);
+                    final coverThumb = coverPhoto?.thumbnailUrl;
 
                     return ListTile(
-                      leading: Container(
-                        width: 42,
-                        height: 42,
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFF6EFE2),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Icon(
-                          node.isFolder
-                              ? (isYearsTab && history.isEmpty ? Icons.calendar_month_outlined : Icons.folder_outlined)
-                              : (isVideoMode ? Icons.movie_outlined : Icons.photo_library_outlined),
-                          color: node.isFolder ? const Color(0xFFFBBF24) : const Color(0xFF0EA5E9),
-                          size: 22,
-                        ),
+                      leading: Stack(
+                        clipBehavior: Clip.none,
+                        children: [
+                          Container(
+                            width: 52,
+                            height: 52,
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFF6EFE2),
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(color: const Color(0xFFEBDDC6)),
+                            ),
+                            clipBehavior: Clip.antiAlias,
+                            child: coverThumb != null
+                                ? Image.network(coverThumb, fit: BoxFit.cover, cacheWidth: 120)
+                                : Icon(
+                                    node.isFolder
+                                        ? (isYearsTab && history.isEmpty ? Icons.calendar_month_outlined : Icons.folder_outlined)
+                                        : (isVideoMode ? Icons.movie_outlined : Icons.photo_library_outlined),
+                                    color: node.isFolder ? const Color(0xFFFBBF24) : const Color(0xFF0EA5E9),
+                                    size: 24,
+                                  ),
+                          ),
+                          if (node.isFolder && coverThumb != null)
+                            Positioned(
+                              right: -3,
+                              bottom: -3,
+                              child: Container(
+                                padding: const EdgeInsets.all(3),
+                                decoration: BoxDecoration(
+                                  color: Colors.white,
+                                  shape: BoxShape.circle,
+                                  border: Border.all(color: const Color(0xFFEBDDC6)),
+                                ),
+                                child: const Icon(Icons.folder_rounded, size: 11, color: Color(0xFFF59E0B)),
+                              ),
+                            ),
+                        ],
                       ),
                       title: Text(
                         node.name,
@@ -2760,6 +2783,180 @@ class _HomeScreenState extends State<HomeScreen> {
     return ids;
   }
 
+  PhotoItem? _getCoverPhotoForNode(AlbumNode node, {bool isVideoMode = false}) {
+    final customId = _albumCoverPhotoIdById[node.id];
+    if (customId != null) {
+      for (final p in _allPhotos) {
+        if (p.id == customId && p.thumbnailUrl != null) return p;
+      }
+    }
+    final targetIds = node.isFolder ? _getAllDescendantAlbumIds(node.id) : {node.id};
+    final pool = isVideoMode ? _videosOnly : _photosOnly;
+    for (final p in pool) {
+      if (p.thumbnailUrl != null && p.albums.any((a) => targetIds.contains(a))) {
+        return p;
+      }
+    }
+    return null;
+  }
+
+  Future<void> _handleSetAlbumCover(PhotoItem photo, {String? preferredAlbumId}) async {
+    String? targetAlbumId = preferredAlbumId;
+    if (targetAlbumId == null && photo.albums.isNotEmpty) {
+      targetAlbumId = photo.albums.first;
+    }
+    if (targetAlbumId == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            backgroundColor: Color(0xFF1E293B),
+            content: Text('Cette photo n\'appartient à aucun album.', style: TextStyle(color: Colors.white)),
+          ),
+        );
+      }
+      return;
+    }
+    setState(() {
+      _albumCoverPhotoIdById[targetAlbumId!] = photo.id;
+    });
+    final ok = await CloudSyncService.createCustomAlbum(
+      id: '__cover__$targetAlbumId',
+      name: '${photo.id}',
+      parentId: _kCoverMetaParentId,
+      isFolder: false,
+    );
+    if (!mounted) return;
+    final albumName = _nodesById[targetAlbumId]?.name ?? 'album';
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        backgroundColor: const Color(0xFF1E293B),
+        content: Text(
+          ok
+              ? '✔ Photo définie comme couverture de "$albumName" !'
+              : '⚠ Couverture définie localement.',
+          style: const TextStyle(color: Colors.white, fontSize: 12),
+        ),
+      ),
+    );
+  }
+
+  Future<List<PhotoItem>> _pickAndUploadFilesToAlbum(AlbumNode node) async {
+    try {
+      final results = await Connectivity().checkConnectivity();
+      final hasWifi = results.contains(ConnectivityResult.wifi) ||
+          results.contains(ConnectivityResult.ethernet);
+      if (!hasWifi && mounted) {
+        final proceed = await showDialog<bool>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            backgroundColor: Colors.white,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+            title: const Row(
+              children: [
+                Icon(Icons.wifi_off_rounded, color: Color(0xFFF97316)),
+                SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    'Protection Wi-Fi',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF1E293B)),
+                  ),
+                ),
+              ],
+            ),
+            content: const Text(
+              'Vous n\'êtes pas connecté en Wi-Fi.\nL\'envoi vers Google Drive peut consommer vos données mobiles. Continuer quand même ?',
+              style: TextStyle(fontSize: 13, color: Color(0xFF475569)),
+            ),
+            actions: [
+              TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Attendre le Wi-Fi')),
+              FilledButton(
+                style: FilledButton.styleFrom(backgroundColor: const Color(0xFFF97316)),
+                onPressed: () => Navigator.of(ctx).pop(true),
+                child: const Text('Envoyer quand même'),
+              ),
+            ],
+          ),
+        );
+        if (proceed != true) return const [];
+      }
+    } catch (_) {}
+
+    final picked = await FilePicker.platform.pickFiles(
+      type: FileType.media,
+      allowMultiple: true,
+      withData: true,
+    );
+    if (picked == null || picked.files.isEmpty) return const [];
+
+    final uploaded = <PhotoItem>[];
+    final effectiveIso = _getEffectiveCountryIsoForNode(node.id);
+    final countryName = effectiveIso != null ? kCountriesByIso[effectiveIso]?.nameFr : null;
+
+    for (int i = 0; i < picked.files.length; i++) {
+      final f = picked.files[i];
+      final bytes = f.bytes;
+      if (bytes == null) continue;
+      final lower = f.name.toLowerCase();
+      final isVid = lower.endsWith('.mp4') || lower.endsWith('.mov') || lower.endsWith('.avi');
+      final mime = isVid ? 'video/mp4' : 'image/jpeg';
+      final driveId = await CloudSyncService.uploadFileToGoogleDrive(
+        filename: f.name,
+        bytes: bytes,
+        mimeType: mime,
+        folderName: 'Medias Familly - ${node.name}',
+      );
+      final now = DateTime.now();
+      final dFolder = '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
+      final photoId = DateTime.now().millisecondsSinceEpoch + i;
+      final rec = CustomPhotoRecord(
+        id: photoId,
+        filename: f.name,
+        year: now.year.toString(),
+        dateFolder: dFolder,
+        captureDate: now.toIso8601String(),
+        width: 0,
+        height: 0,
+        fileSize: bytes.length,
+        isVideo: isVid,
+        driveId: driveId,
+        country: countryName,
+        albums: [node.id],
+        addedByName: _auth.isSignedIn ? _auth.shortLabel : 'Invité',
+        addedByEmail: _auth.email,
+      );
+      await CloudSyncService.addCustomPhoto(rec);
+      final item = PhotoItem(
+        id: photoId,
+        filename: f.name,
+        year: now.year.toString(),
+        dateFolder: dFolder,
+        captureDate: now.toIso8601String(),
+        width: 0,
+        height: 0,
+        fileSize: bytes.length,
+        isVideo: isVid,
+        driveId: driveId,
+        country: countryName,
+        albums: [node.id],
+        addedByName: rec.addedByName,
+        addedByEmail: rec.addedByEmail,
+      );
+      uploaded.add(item);
+      if (mounted) {
+        setState(() {
+          _allPhotos.insert(0, item);
+          if (isVid) {
+            _videosOnly.insert(0, item);
+          } else {
+            _photosOnly.insert(0, item);
+          }
+          _recalculateAlbumCounts();
+        });
+      }
+    }
+    return uploaded;
+  }
+
   void _openPhotosForNode(AlbumNode node) {
     final targetIds = node.isFolder ? _getAllDescendantAlbumIds(node.id) : {node.id};
     final pool = _mediaMode == 1 ? _videosOnly : _photosOnly;
@@ -2769,6 +2966,7 @@ class _HomeScreenState extends State<HomeScreen> {
       MaterialPageRoute(
         builder: (_) => PhotoGridScreen(
           title: node.name,
+          albumId: node.id,
           photos: albumPhotos,
           nodesById: _nodesById,
           gdriveUrl: _gdriveUrl,
@@ -2779,6 +2977,8 @@ class _HomeScreenState extends State<HomeScreen> {
           onDeletePhoto: _handleDeletePhoto,
           onBulkAssignAlbum: _handleBulkAssignAlbumToPhotos,
           onBulkDeletePhotos: _handleBulkDeletePhotos,
+          onSetAlbumCover: (photo) => _handleSetAlbumCover(photo, preferredAlbumId: node.id),
+          onUploadToAlbum: () => _pickAndUploadFilesToAlbum(node),
         ),
       ),
     );
@@ -3841,8 +4041,9 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 }
 
-class PhotoGridScreen extends StatelessWidget {
+class PhotoGridScreen extends StatefulWidget {
   final String title;
+  final String? albumId;
   final List<PhotoItem> photos;
   final Map<String, AlbumNode> nodesById;
   final String gdriveUrl;
@@ -3853,10 +4054,13 @@ class PhotoGridScreen extends StatelessWidget {
   final Future<void> Function(PhotoItem photo)? onDeletePhoto;
   final Future<void> Function(List<PhotoItem> photos, String albumId)? onBulkAssignAlbum;
   final Future<void> Function(List<PhotoItem> photos)? onBulkDeletePhotos;
+  final Future<void> Function(PhotoItem photo)? onSetAlbumCover;
+  final Future<List<PhotoItem>> Function()? onUploadToAlbum;
 
   const PhotoGridScreen({
     super.key,
     required this.title,
+    this.albumId,
     required this.photos,
     required this.nodesById,
     required this.gdriveUrl,
@@ -3867,7 +4071,60 @@ class PhotoGridScreen extends StatelessWidget {
     this.onDeletePhoto,
     this.onBulkAssignAlbum,
     this.onBulkDeletePhotos,
+    this.onSetAlbumCover,
+    this.onUploadToAlbum,
   });
+
+  @override
+  State<PhotoGridScreen> createState() => _PhotoGridScreenState();
+}
+
+class _PhotoGridScreenState extends State<PhotoGridScreen> {
+  bool _isUploading = false;
+
+  Future<void> _handleUpload() async {
+    if (widget.onUploadToAlbum == null || _isUploading) return;
+    setState(() => _isUploading = true);
+    try {
+      final added = await widget.onUploadToAlbum!();
+      if (added.isNotEmpty && mounted) {
+        setState(() {
+          widget.photos.insertAll(0, added);
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            backgroundColor: const Color(0xFF1E293B),
+            content: Text(
+              '✔ ${added.length} média(s) envoyé(s) sur Drive et ajouté(s) à l\'album !',
+              style: const TextStyle(color: Colors.white),
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            backgroundColor: const Color(0xFF1E293B),
+            content: Text('Erreur envoi Drive : $e', style: const TextStyle(color: Colors.white, fontSize: 12)),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isUploading = false);
+    }
+  }
+
+  Future<void> _downloadAlbum({required bool hd}) async {
+    final items = widget.photos.where((p) => p.driveId != null).toList();
+    if (items.isEmpty) return;
+    for (final p in items) {
+      final urlStr = hd
+          ? 'https://drive.google.com/uc?export=download&id=${p.driveId}'
+          : (p.largePreviewUrl ?? 'https://lh3.googleusercontent.com/d/${p.driveId}=w1920');
+      await launchUrl(Uri.parse(urlStr), mode: LaunchMode.externalApplication);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -3877,22 +4134,67 @@ class PhotoGridScreen extends StatelessWidget {
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-            Text("${photos.length} éléments", style: const TextStyle(fontSize: 11, color: Color(0xFF64748B))),
+            Text(widget.title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF1E293B))),
+            Text("${widget.photos.length} éléments", style: const TextStyle(fontSize: 11, color: Color(0xFF64748B))),
           ],
         ),
+        actions: [
+          if (widget.onUploadToAlbum != null)
+            _isUploading
+                ? const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 12),
+                    child: SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF059669)),
+                    ),
+                  )
+                : IconButton(
+                    tooltip: 'Envoyer des photos dans cet album (Wi-Fi)',
+                    icon: const Icon(Icons.add_photo_alternate_outlined, color: Color(0xFF059669)),
+                    onPressed: _handleUpload,
+                  ),
+          PopupMenuButton<String>(
+            tooltip: 'Télécharger l\'album',
+            icon: const Icon(Icons.download_rounded, color: Color(0xFF0EA5E9)),
+            onSelected: (val) => _downloadAlbum(hd: val == 'hd'),
+            itemBuilder: (_) => const [
+              PopupMenuItem(
+                value: 'light',
+                child: Row(
+                  children: [
+                    Icon(Icons.photo_size_select_large_rounded, size: 18, color: Color(0xFF0EA5E9)),
+                    SizedBox(width: 8),
+                    Text('Télécharger version Light (aperçu)'),
+                  ],
+                ),
+              ),
+              PopupMenuItem(
+                value: 'hd',
+                child: Row(
+                  children: [
+                    Icon(Icons.hd_rounded, size: 18, color: Color(0xFFF97316)),
+                    SizedBox(width: 8),
+                    Text('Télécharger version HD originale'),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ],
       ),
       body: PhotoGridBody(
-        photos: photos,
-        nodesById: nodesById,
-        gdriveUrl: gdriveUrl,
-        likesByPhotoId: likesByPhotoId,
-        currentUserEmail: currentUserEmail,
-        onToggleLike: onToggleLike,
-        onAssignAlbum: onAssignAlbum,
-        onDeletePhoto: onDeletePhoto,
-        onBulkAssignAlbum: onBulkAssignAlbum,
-        onBulkDeletePhotos: onBulkDeletePhotos,
+        photos: widget.photos,
+        nodesById: widget.nodesById,
+        gdriveUrl: widget.gdriveUrl,
+        likesByPhotoId: widget.likesByPhotoId,
+        currentUserEmail: widget.currentUserEmail,
+        onToggleLike: widget.onToggleLike,
+        onAssignAlbum: widget.onAssignAlbum,
+        onDeletePhoto: widget.onDeletePhoto,
+        onBulkAssignAlbum: widget.onBulkAssignAlbum,
+        onBulkDeletePhotos: widget.onBulkDeletePhotos,
+        onSetAlbumCover: widget.onSetAlbumCover,
       ),
     );
   }
@@ -3910,6 +4212,7 @@ class PhotoGridBody extends StatefulWidget {
   final Future<void> Function(PhotoItem photo)? onDeletePhoto;
   final Future<void> Function(List<PhotoItem> photos, String albumId)? onBulkAssignAlbum;
   final Future<void> Function(List<PhotoItem> photos)? onBulkDeletePhotos;
+  final Future<void> Function(PhotoItem photo)? onSetAlbumCover;
 
   const PhotoGridBody({
     super.key,
@@ -3924,6 +4227,7 @@ class PhotoGridBody extends StatefulWidget {
     this.onDeletePhoto,
     this.onBulkAssignAlbum,
     this.onBulkDeletePhotos,
+    this.onSetAlbumCover,
   });
 
   @override
@@ -4594,18 +4898,65 @@ class _PhotoGridBodyState extends State<PhotoGridBody> {
                     ],
                   ),
                   const SizedBox(height: 10),
-                  ElevatedButton.icon(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFFF97316),
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  if (widget.onSetAlbumCover != null && !photo.isVideo) ...[
+                    OutlinedButton.icon(
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: const Color(0xFF0EA5E9),
+                        side: const BorderSide(color: Color(0xFF0EA5E9)),
+                        padding: const EdgeInsets.symmetric(vertical: 11),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      ),
+                      icon: const Icon(Icons.photo_album_outlined, size: 17),
+                      label: const Text("Mettre en couverture d'album", style: TextStyle(fontSize: 12.5)),
+                      onPressed: () async {
+                        Navigator.of(dialogCtx).pop();
+                        await widget.onSetAlbumCover!(photo);
+                      },
                     ),
-                    icon: Icon(photo.isVideo ? Icons.play_circle_outline : Icons.cloud_download_outlined, size: 18),
-                    label: Text(photo.isVideo
-                        ? (photo.driveId != null ? "Lire la vidéo HD sur Google Drive" : "Ouvrir Google Drive")
-                        : (photo.driveId != null ? "Ouvrir l'original HD sur Google Drive" : "Ouvrir le dossier Google Drive")),
-                    onPressed: () => _launchDriveUrl(dialogCtx, fileViewUrl),
+                    const SizedBox(height: 10),
+                  ],
+                  Row(
+                    children: [
+                      if (!photo.isVideo && photo.largePreviewUrl != null) ...[
+                        Expanded(
+                          child: OutlinedButton.icon(
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: const Color(0xFF0EA5E9),
+                              side: const BorderSide(color: Color(0xFF0EA5E9)),
+                              padding: const EdgeInsets.symmetric(vertical: 13),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                            ),
+                            icon: const Icon(Icons.photo_size_select_large_rounded, size: 17),
+                            label: const Text("Télécharger Light", style: TextStyle(fontSize: 12.5)),
+                            onPressed: () => _launchDriveUrl(dialogCtx, photo.largePreviewUrl!),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                      ],
+                      Expanded(
+                        child: ElevatedButton.icon(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFFF97316),
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(vertical: 14),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                          ),
+                          icon: Icon(photo.isVideo ? Icons.play_circle_outline : Icons.download_rounded, size: 18),
+                          label: Text(
+                            photo.isVideo
+                                ? (photo.driveId != null ? "Lire la vidéo HD" : "Ouvrir Drive")
+                                : "Télécharger la version HD originale",
+                            style: const TextStyle(fontSize: 12.5),
+                          ),
+                          onPressed: () => _launchDriveUrl(
+                            dialogCtx,
+                            photo.driveId != null && !photo.isVideo
+                                ? 'https://drive.google.com/uc?export=download&id=${photo.driveId}'
+                                : fileViewUrl,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ],
               ),
@@ -4829,18 +5180,65 @@ class _PhotoGridBodyState extends State<PhotoGridBody> {
                   ],
                 ),
                 const SizedBox(height: 10),
-                ElevatedButton.icon(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFFF97316),
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                if (widget.onSetAlbumCover != null && !photo.isVideo) ...[
+                  OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: const Color(0xFF0EA5E9),
+                      side: const BorderSide(color: Color(0xFF0EA5E9)),
+                      padding: const EdgeInsets.symmetric(vertical: 11),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    ),
+                    icon: const Icon(Icons.photo_album_outlined, size: 17),
+                    label: const Text("Mettre en couverture d'album", style: TextStyle(fontSize: 12)),
+                    onPressed: () async {
+                      Navigator.of(context).pop();
+                      await widget.onSetAlbumCover!(photo);
+                    },
                   ),
-                  icon: Icon(photo.isVideo ? Icons.play_circle_outline : Icons.cloud_download_outlined, size: 18),
-                  label: Text(photo.isVideo
-                      ? (photo.driveId != null ? "Lire la vidéo HD sur Google Drive" : "Ouvrir Google Drive")
-                      : (photo.driveId != null ? "Ouvrir l'original HD sur Google Drive" : "Ouvrir le dossier Google Drive")),
-                  onPressed: () => _launchDriveUrl(sheetCtx, fileViewUrl),
+                  const SizedBox(height: 8),
+                ],
+                Row(
+                  children: [
+                    if (!photo.isVideo && photo.largePreviewUrl != null) ...[
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: const Color(0xFF0EA5E9),
+                            side: const BorderSide(color: Color(0xFF0EA5E9)),
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                          ),
+                          icon: const Icon(Icons.photo_size_select_large_rounded, size: 16),
+                          label: const Text("Télécharger Light", style: TextStyle(fontSize: 12)),
+                          onPressed: () => _launchDriveUrl(sheetCtx, photo.largePreviewUrl!),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                    ],
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFFF97316),
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                        ),
+                        icon: Icon(photo.isVideo ? Icons.play_circle_outline : Icons.download_rounded, size: 18),
+                        label: Text(
+                          photo.isVideo
+                              ? (photo.driveId != null ? "Lire la vidéo HD" : "Ouvrir Drive")
+                              : "Télécharger HD originale",
+                          style: const TextStyle(fontSize: 12),
+                        ),
+                        onPressed: () => _launchDriveUrl(
+                          sheetCtx,
+                          photo.driveId != null && !photo.isVideo
+                              ? 'https://drive.google.com/uc?export=download&id=${photo.driveId}'
+                              : fileViewUrl,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ],
             );

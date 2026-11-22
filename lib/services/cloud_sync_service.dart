@@ -664,11 +664,53 @@ class CloudSyncService {
     return auth.accessToken;
   }
 
-  /// Envoie un fichier (photo/vidéo) vers Google Drive et le rend lisible par la famille
+  /// Trouve ou crée un dossier dédié sur Google Drive
+  static Future<String?> _ensureDriveFolder(String token, String folderName) async {
+    try {
+      final safeName = folderName.replaceAll("'", "\\'");
+      final q = Uri.encodeQueryComponent(
+        "name='$safeName' and mimeType='application/vnd.google-apps.folder' and trashed=false",
+      );
+      final searchResp = await http
+          .get(
+            Uri.parse('https://www.googleapis.com/drive/v3/files?q=$q&fields=files(id,name)'),
+            headers: {'Authorization': 'Bearer $token'},
+          )
+          .timeout(const Duration(seconds: 10));
+      if (searchResp.statusCode == 200) {
+        final data = jsonDecode(searchResp.body) as Map<String, dynamic>;
+        final files = (data['files'] as List<dynamic>?) ?? const [];
+        if (files.isNotEmpty) {
+          return (files.first as Map<String, dynamic>)['id']?.toString();
+        }
+      }
+      final createResp = await http
+          .post(
+            Uri.parse('https://www.googleapis.com/drive/v3/files?fields=id'),
+            headers: {
+              'Authorization': 'Bearer $token',
+              'Content-Type': 'application/json',
+            },
+            body: jsonEncode({
+              'name': folderName,
+              'mimeType': 'application/vnd.google-apps.folder',
+            }),
+          )
+          .timeout(const Duration(seconds: 10));
+      if (createResp.statusCode >= 200 && createResp.statusCode < 300) {
+        final created = jsonDecode(createResp.body) as Map<String, dynamic>;
+        return created['id']?.toString();
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  /// Envoie un fichier (photo/vidéo) vers Google Drive (dans un dossier dédié) et le rend lisible par la famille
   static Future<String> uploadFileToGoogleDrive({
     required String filename,
     required List<int> bytes,
     String mimeType = 'image/jpeg',
+    String? folderName,
   }) async {
     final token = await _getGoogleDriveAccessToken();
     if (token == null || token.isEmpty) {
@@ -677,8 +719,17 @@ class CloudSyncService {
       );
     }
 
+    String? parentFolderId;
+    if (folderName != null && folderName.trim().isNotEmpty) {
+      parentFolderId = await _ensureDriveFolder(token, folderName.trim());
+    }
+
     final boundary = 'gallerie_upload_${DateTime.now().millisecondsSinceEpoch}';
-    final metaJson = jsonEncode({'name': filename, 'mimeType': mimeType});
+    final metaJson = jsonEncode({
+      'name': filename,
+      'mimeType': mimeType,
+      if (parentFolderId != null) 'parents': [parentFolderId],
+    });
     final bodyBytes = <int>[
       ...utf8.encode('--$boundary\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n$metaJson\r\n'),
       ...utf8.encode('--$boundary\r\nContent-Type: $mimeType\r\n\r\n'),

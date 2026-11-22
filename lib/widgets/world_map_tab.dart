@@ -700,13 +700,13 @@ class _WorldMapTabState extends State<WorldMapTab> {
                         onSelected: (_) => _focusContinent(cont, _lastViewportSize),
                         labelStyle: TextStyle(
                           fontSize: 11.5,
-                          fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
-                          color: selected ? Colors.white : Color(0xFF475569),
+                          fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                          color: selected ? Colors.white : const Color(0xFF475569),
                         ),
                         backgroundColor: const Color(0xFFF6EFE2),
-                        selectedColor: const Color(0xFF0EA5E9).withOpacity(0.35),
+                        selectedColor: const Color(0xFFF97316),
                         side: BorderSide(
-                          color: selected ? const Color(0xFFF97316) : Color(0xFFEBDDC6),
+                          color: selected ? const Color(0xFFF97316) : const Color(0xFFEBDDC6),
                         ),
                         visualDensity: VisualDensity.compact,
                         padding: const EdgeInsets.symmetric(horizontal: 6),
@@ -895,8 +895,8 @@ class _WorldMapTabState extends State<WorldMapTab> {
                   children: [
                     FloatingActionButton.small(
                       heroTag: 'map_zoom_in',
-                      backgroundColor: const Color(0xFFFFFFFF).withOpacity(0.9),
-                      foregroundColor: Colors.white,
+                      backgroundColor: Colors.white.withOpacity(0.95),
+                      foregroundColor: const Color(0xFF1E293B),
                       tooltip: 'Zoomer',
                       onPressed: () => _stepZoom(1.5),
                       child: const Icon(Icons.add, size: 18),
@@ -904,8 +904,8 @@ class _WorldMapTabState extends State<WorldMapTab> {
                     const SizedBox(height: 6),
                     FloatingActionButton.small(
                       heroTag: 'map_zoom_out',
-                      backgroundColor: const Color(0xFFFFFFFF).withOpacity(0.9),
-                      foregroundColor: Color(0xFF475569),
+                      backgroundColor: Colors.white.withOpacity(0.95),
+                      foregroundColor: const Color(0xFF1E293B),
                       tooltip: 'Dézoomer',
                       onPressed: () => _stepZoom(0.66),
                       child: const Icon(Icons.remove, size: 18),
@@ -913,7 +913,7 @@ class _WorldMapTabState extends State<WorldMapTab> {
                     const SizedBox(height: 6),
                     FloatingActionButton.small(
                       heroTag: 'map_reset_zoom',
-                      backgroundColor: const Color(0xFFFFFFFF).withOpacity(0.9),
+                      backgroundColor: Colors.white.withOpacity(0.95),
                       foregroundColor: const Color(0xFFF97316),
                       tooltip: 'Réinitialiser la vue',
                       onPressed: () {
