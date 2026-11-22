@@ -5,9 +5,10 @@ import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'services/app_update_service.dart';
 import 'services/cloud_sync_service.dart';
+import 'widgets/world_map_tab.dart';
 
-const int appBuildNumber = 8;
-const String appVersionLabel = "1.0.7";
+const int appBuildNumber = 9;
+const String appVersionLabel = "1.0.8";
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -179,7 +180,7 @@ class _HomeScreenState extends State<HomeScreen> {
   List<YearItem> _videoYears = [];
 
   int _mediaMode = 0; // 0 = Photos, 1 = Vidéos
-  int _currentIndex = 0; // For Photos: 0 = Galerie, 1 = Thématiques, 2 = Années, 3 = Recherche
+  int _currentIndex = 0; // For Photos: 0 = La carte, 1 = Galerie, 2 = Thématiques, 3 = Années, 4 = Recherche
   final List<AlbumNode> _navHistory = [];
   String _albumSearch = '';
   final TextEditingController _albumSearchController = TextEditingController();
@@ -196,6 +197,7 @@ class _HomeScreenState extends State<HomeScreen> {
   static const String _kPhotosWrapperId = '6cda9b888a514233bc7edbe3753a3c4a';
   static const String _kYearsRootId = '11335cb33a134da79410f393dc77c9b2';
   static const String _kYear2026Id = '8a27a7356de54a4fa7aae6fdea783597';
+  static const String _kPaysFolderId = '2956c2bdbaf04c7984849dbacdb605ab';
   AuthUserSession _auth = CloudSyncService.currentAuth;
   StreamSubscription<AuthUserSession>? _authSub;
 
@@ -921,7 +923,7 @@ class _HomeScreenState extends State<HomeScreen> {
             tooltip: "Créer un dossier ou album",
             icon: const Icon(Icons.create_new_folder_outlined, color: Color(0xFFFBBF24), size: 21),
             onPressed: () => _showCreateAlbumDialog(
-              defaultParentId: _currentIndex == 2
+              defaultParentId: _currentIndex == 3
                   ? (_yearsNavHistory.isEmpty ? _kYearsRootId : _yearsNavHistory.last.id)
                   : (_navHistory.isEmpty ? null : _navHistory.last.id),
             ),
@@ -1003,13 +1005,20 @@ class _HomeScreenState extends State<HomeScreen> {
                   _buildDesktopNavItem(
                     index: 0,
                     activeIndex: activeNavIndex,
+                    icon: Icons.public_outlined,
+                    selectedIcon: Icons.public,
+                    label: "La carte",
+                  ),
+                  _buildDesktopNavItem(
+                    index: 1,
+                    activeIndex: activeNavIndex,
                     icon: Icons.photo_library_outlined,
                     selectedIcon: Icons.photo_library,
                     label: "Galerie",
                     badge: "${_photosOnly.length}",
                   ),
                   _buildDesktopNavItem(
-                    index: 1,
+                    index: 2,
                     activeIndex: activeNavIndex,
                     icon: Icons.folder_outlined,
                     selectedIcon: Icons.folder,
@@ -1017,7 +1026,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     badge: "${(_childrenByParent[null] ?? const []).length}",
                   ),
                   _buildDesktopNavItem(
-                    index: 2,
+                    index: 3,
                     activeIndex: activeNavIndex,
                     icon: Icons.calendar_today_outlined,
                     selectedIcon: Icons.calendar_today,
@@ -1025,7 +1034,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     badge: "${(_childrenByParent[_kYearsRootId] ?? const []).length}",
                   ),
                   _buildDesktopNavItem(
-                    index: 3,
+                    index: 4,
                     activeIndex: activeNavIndex,
                     icon: Icons.search,
                     selectedIcon: Icons.search,
@@ -1094,6 +1103,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 ? IndexedStack(
                     index: _currentIndex,
                     children: [
+                      _buildWorldMapTab(),
                       _buildGalleryTab(_photosOnly, isVideo: false),
                       _buildAlbumsTab(),
                       _buildPhotoYearsTab(),
@@ -1200,7 +1210,7 @@ class _HomeScreenState extends State<HomeScreen> {
             tooltip: "Créer un dossier ou album",
             icon: const Icon(Icons.create_new_folder_outlined, color: Color(0xFFFBBF24)),
             onPressed: () => _showCreateAlbumDialog(
-              defaultParentId: _currentIndex == 2
+              defaultParentId: _currentIndex == 3
                   ? (_yearsNavHistory.isEmpty ? _kYearsRootId : _yearsNavHistory.last.id)
                   : (_navHistory.isEmpty ? null : _navHistory.last.id),
             ),
@@ -1283,6 +1293,7 @@ class _HomeScreenState extends State<HomeScreen> {
           ? IndexedStack(
               index: _currentIndex,
               children: [
+                _buildWorldMapTab(),
                 _buildGalleryTab(_photosOnly, isVideo: false),
                 _buildAlbumsTab(),
                 _buildPhotoYearsTab(),
@@ -1304,6 +1315,11 @@ class _HomeScreenState extends State<HomeScreen> {
         indicatorColor: const Color(0xFF0284C7).withValues(alpha: 0.3),
         destinations: _mediaMode == 0
             ? const [
+                NavigationDestination(
+                  icon: Icon(Icons.public_outlined),
+                  selectedIcon: Icon(Icons.public, color: Color(0xFF38BDF8)),
+                  label: "La carte",
+                ),
                 NavigationDestination(
                   icon: Icon(Icons.photo_library_outlined),
                   selectedIcon: Icon(Icons.photo_library, color: Color(0xFF38BDF8)),
@@ -1343,6 +1359,165 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               ],
       ),
+    );
+  }
+
+  // --- LA CARTE: World Map Tab ---
+  String? _extractDateHint(String name) {
+    final mY = RegExp(r'\b(19\d{2}|20\d{2})\b').firstMatch(name);
+    final mMY = RegExp(r'\b(\d{1,2}/20\d{2})\b').firstMatch(name);
+    return mMY?.group(1) ?? mY?.group(1);
+  }
+
+  List<CountryVisitStats> _computeVisitedCountryStats() {
+    final Map<String, Set<int>> photoIdsByIso = {};
+    final Map<String, Set<int>> videoIdsByIso = {};
+    final Map<String, List<CountryAlbumSummary>> albumsByIso = {};
+
+    void ensureIso(String iso) {
+      photoIdsByIso.putIfAbsent(iso, () => <int>{});
+      videoIdsByIso.putIfAbsent(iso, () => <int>{});
+      albumsByIso.putIfAbsent(iso, () => <CountryAlbumSummary>[]);
+    }
+
+    // 1. Scan all direct children of "02 - Pays" (_kPaysFolderId)
+    final paysChildren = _childrenByParent[_kPaysFolderId] ?? const <AlbumNode>[];
+    for (final child in paysChildren) {
+      final meta = matchCountryMeta(child.name);
+      if (meta == null) continue;
+      ensureIso(meta.iso3);
+
+      // Gather descendant albums (or self if album)
+      final descendantIds = _getAllDescendantAlbumIds(child.id);
+      for (final m in _allPhotos) {
+        if (m.albums.any((a) => descendantIds.contains(a))) {
+          if (m.isVideo) {
+            videoIdsByIso[meta.iso3]!.add(m.id);
+          } else {
+            photoIdsByIso[meta.iso3]!.add(m.id);
+          }
+        }
+      }
+
+      // List sub-albums (if folder has sub-items) or the country node itself
+      final subNodes = child.isFolder ? (_childrenByParent[child.id] ?? const <AlbumNode>[]) : const <AlbumNode>[];
+      final nodesToList = subNodes.isNotEmpty ? subNodes : [child];
+      for (final node in nodesToList) {
+        final targetIds = node.isFolder ? _getAllDescendantAlbumIds(node.id) : {node.id};
+        int pCount = 0;
+        int vCount = 0;
+        for (final m in _allPhotos) {
+          if (m.albums.any((a) => targetIds.contains(a))) {
+            if (m.isVideo) {
+              vCount++;
+            } else {
+              pCount++;
+            }
+          }
+        }
+        albumsByIso[meta.iso3]!.add(
+          CountryAlbumSummary(
+            albumId: node.id,
+            name: node.name,
+            dateHint: _extractDateHint(node.name),
+            photoCount: pCount,
+            videoCount: vCount,
+            isFolder: node.isFolder,
+          ),
+        );
+      }
+    }
+
+    // 2. Also include photo/video `country` metadata without double counting
+    for (final m in _allPhotos) {
+      final rawCountry = m.country?.trim();
+      if (rawCountry == null || rawCountry.isEmpty) continue;
+      final meta = matchCountryMeta(rawCountry);
+      if (meta == null) continue;
+      ensureIso(meta.iso3);
+      if (m.isVideo) {
+        videoIdsByIso[meta.iso3]!.add(m.id);
+      } else {
+        photoIdsByIso[meta.iso3]!.add(m.id);
+      }
+    }
+
+    final result = <CountryVisitStats>[];
+    for (final iso in photoIdsByIso.keys) {
+      final meta = kCountriesByIso[iso];
+      if (meta == null) continue;
+      final pSet = photoIdsByIso[iso]!;
+      final vSet = videoIdsByIso[iso]!;
+      final albums = albumsByIso[iso]!
+        ..sort((a, b) => (b.photoCount + b.videoCount).compareTo(a.photoCount + a.videoCount));
+      result.add(
+        CountryVisitStats(
+          meta: meta,
+          photoCount: pSet.length,
+          videoCount: vSet.length,
+          albums: albums,
+        ),
+      );
+    }
+
+    result.sort((a, b) => b.totalMedia.compareTo(a.totalMedia));
+    return result;
+  }
+
+  Widget _buildWorldMapTab() {
+    final visited = _computeVisitedCountryStats();
+    final totalP = visited.fold<int>(0, (acc, c) => acc + c.photoCount);
+    final totalV = visited.fold<int>(0, (acc, c) => acc + c.videoCount);
+
+    return WorldMapTab(
+      visitedCountries: visited,
+      totalPhotos: totalP,
+      totalVideos: totalV,
+      onAddCountryFolder: () => _showCreateAlbumDialog(defaultParentId: _kPaysFolderId),
+      onOpenAlbum: (albumId) {
+        final node = _nodesById[albumId];
+        if (node != null) {
+          _openPhotosForNode(node);
+        }
+      },
+      onOpenCountryMedia: (stats) {
+        // Collect all media matching either 02-Pays albums for this country OR metadata country
+        final paysChildren = _childrenByParent[_kPaysFolderId] ?? const <AlbumNode>[];
+        final matchingAlbumIds = <String>{};
+        for (final child in paysChildren) {
+          final meta = matchCountryMeta(child.name);
+          if (meta?.iso3 == stats.meta.iso3) {
+            matchingAlbumIds.addAll(_getAllDescendantAlbumIds(child.id));
+          }
+        }
+        final countryMedia = _allPhotos.where((m) {
+          if (m.albums.any((a) => matchingAlbumIds.contains(a))) return true;
+          final rawCountry = m.country?.trim();
+          if (rawCountry != null && rawCountry.isNotEmpty) {
+            return matchCountryMeta(rawCountry)?.iso3 == stats.meta.iso3;
+          }
+          return false;
+        }).toList();
+
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => PhotoGridScreen(
+              title: '${stats.meta.flag} ${stats.meta.nameFr}',
+              photos: countryMedia,
+              nodesById: _nodesById,
+              gdriveUrl: _gdriveUrl,
+              likesByPhotoId: _likesByPhotoId,
+              currentUserEmail: _auth.email,
+              onToggleLike: _handleTogglePhotoLike,
+              onAssignAlbum: _handleAssignAlbumToPhoto,
+              onDeletePhoto: _handleDeletePhoto,
+              onBulkAssignAlbum: _handleBulkAssignAlbumToPhotos,
+              onBulkDeletePhotos: _handleBulkDeletePhotos,
+            ),
+          ),
+        );
+      },
     );
   }
 
@@ -1411,6 +1586,8 @@ class _HomeScreenState extends State<HomeScreen> {
       onToggleLike: _handleTogglePhotoLike,
       onAssignAlbum: _handleAssignAlbumToPhoto,
       onDeletePhoto: _handleDeletePhoto,
+      onBulkAssignAlbum: _handleBulkAssignAlbumToPhotos,
+      onBulkDeletePhotos: _handleBulkDeletePhotos,
     );
   }
 
@@ -1675,6 +1852,8 @@ class _HomeScreenState extends State<HomeScreen> {
           onToggleLike: _handleTogglePhotoLike,
           onAssignAlbum: _handleAssignAlbumToPhoto,
           onDeletePhoto: _handleDeletePhoto,
+          onBulkAssignAlbum: _handleBulkAssignAlbumToPhotos,
+          onBulkDeletePhotos: _handleBulkDeletePhotos,
         ),
       ),
     );
@@ -1932,6 +2111,8 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _confirmDeleteNodeDialog(AlbumNode node) async {
+    final descendantIds = _getAllDescendantAlbumIds(node.id);
+    final subCount = descendantIds.length - 1;
     await showDialog<void>(
       context: context,
       builder: (dialogCtx) => AlertDialog(
@@ -1944,9 +2125,11 @@ class _HomeScreenState extends State<HomeScreen> {
           'Supprimer "${node.name}" ?',
           style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white),
         ),
-        content: const Text(
-          'Ce dossier ou album sera supprimé de l\'arborescence pour tous les utilisateurs (les photos elles-mêmes restent dans la Galerie).',
-          style: TextStyle(fontSize: 12, color: Colors.white70),
+        content: Text(
+          subCount > 0
+              ? 'Attention : ce dossier contient $subCount sous-dossier(s) ou sous-album(s). Tout ce qui se trouve en dessous sera également supprimé de l\'arborescence pour tous les utilisateurs (les photos elles-mêmes restent dans la Galerie).'
+              : 'Ce dossier ou album sera supprimé de l\'arborescence pour tous les utilisateurs (les photos elles-mêmes restent dans la Galerie).',
+          style: const TextStyle(fontSize: 12, color: Colors.white70),
         ),
         actions: [
           TextButton(
@@ -1959,29 +2142,41 @@ class _HomeScreenState extends State<HomeScreen> {
               foregroundColor: Colors.white,
             ),
             icon: const Icon(Icons.delete_outline, size: 18),
-            label: const Text("Supprimer"),
+            label: Text(subCount > 0 ? "Tout supprimer ($subCount + 1)" : "Supprimer"),
             onPressed: () async {
               Navigator.of(dialogCtx).pop();
+              final nodesToDelete = descendantIds
+                  .map((id) => _nodesById[id])
+                  .whereType<AlbumNode>()
+                  .toList();
               setState(() {
-                _deletedAlbumIds.add(node.id);
-                _nodesById.remove(node.id);
-                _navHistory.removeWhere((n) => n.id == node.id);
-                _yearsNavHistory.removeWhere((n) => n.id == node.id);
+                for (final id in descendantIds) {
+                  _deletedAlbumIds.add(id);
+                  _nodesById.remove(id);
+                }
+                _navHistory.removeWhere((n) => descendantIds.contains(n.id));
+                _yearsNavHistory.removeWhere((n) => descendantIds.contains(n.id));
                 _recalculateAlbumCounts();
               });
-              final ok = await CloudSyncService.createCustomAlbum(
-                id: node.id,
-                name: node.name,
-                parentId: node.parentId,
-                isFolder: node.isFolder,
-                isDeleted: true,
-              );
+              bool allOk = true;
+              for (final target in nodesToDelete) {
+                final ok = await CloudSyncService.createCustomAlbum(
+                  id: target.id,
+                  name: target.name,
+                  parentId: target.parentId,
+                  isFolder: target.isFolder,
+                  isDeleted: true,
+                );
+                if (!ok) allOk = false;
+              }
               if (!mounted) return;
               ScaffoldMessenger.of(context).showSnackBar(
                 SnackBar(
                   backgroundColor: const Color(0xFF0F172A),
                   content: Text(
-                    ok ? '✔ "${node.name}" supprimé.' : '⚠ Supprimé localement.',
+                    allOk
+                        ? '✔ "${node.name}"${subCount > 0 ? ' et $subCount sous-élément(s)' : ''} supprimé(s).'
+                        : '⚠ Supprimé localement.',
                     style: const TextStyle(color: Colors.white, fontSize: 12),
                   ),
                 ),
@@ -2106,101 +2301,145 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<void> _showCreateAlbumDialog({String? defaultParentId}) async {
     final nameController = TextEditingController();
-    bool isFolder = false;
+    bool isFolder = defaultParentId == _kPaysFolderId;
     String? selectedParentId = defaultParentId;
+    WorldCountryMeta? selectedCountry;
     final folderNodes = _nodesById.values.where((n) => n.isFolder && n.id != _kYearsRootId).toList()
       ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
 
     await showDialog<void>(
       context: context,
       builder: (dialogCtx) => StatefulBuilder(
-        builder: (ctx, setDialogState) => AlertDialog(
-          backgroundColor: const Color(0xFF0F172A),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-            side: const BorderSide(color: Colors.white12),
-          ),
-          title: const Row(
-            children: [
-              Icon(Icons.create_new_folder_outlined, color: Color(0xFFFBBF24), size: 24),
-              SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  "Nouveau dossier ou album",
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white),
-                ),
-              ),
-            ],
-          ),
-          content: SizedBox(
-            width: 400,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
+        builder: (ctx, setDialogState) {
+          final isPaysParent = selectedParentId == _kPaysFolderId;
+          return AlertDialog(
+            backgroundColor: const Color(0xFF0F172A),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+              side: const BorderSide(color: Colors.white12),
+            ),
+            title: Row(
               children: [
-                TextField(
-                  controller: nameController,
-                  autofocus: true,
-                  decoration: InputDecoration(
-                    labelText: "Nom du dossier ou de l'album",
-                    hintText: "Ex: Vacances Été 2027",
-                    filled: true,
-                    fillColor: const Color(0xFF1E293B),
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-                  ),
+                Icon(
+                  isPaysParent ? Icons.public_rounded : Icons.create_new_folder_outlined,
+                  color: isPaysParent ? const Color(0xFF38BDF8) : const Color(0xFFFBBF24),
+                  size: 24,
                 ),
-                const SizedBox(height: 14),
-                DropdownButtonFormField<String?>(
-                  value: selectedParentId == null ||
-                          selectedParentId == _kYearsRootId ||
-                          folderNodes.any((f) => f.id == selectedParentId)
-                      ? selectedParentId
-                      : null,
-                  isExpanded: true,
-                  dropdownColor: const Color(0xFF1E293B),
-                  decoration: InputDecoration(
-                    labelText: "Emplacement (Dossier parent)",
-                    filled: true,
-                    fillColor: const Color(0xFF1E293B),
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    isPaysParent ? "Ajouter un pays (lié à La carte)" : "Nouveau dossier ou album",
+                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white),
                   ),
-                  items: [
-                    const DropdownMenuItem<String?>(
-                      value: null,
-                      child: Text("📁 Racine de Thématiques"),
-                    ),
-                    const DropdownMenuItem<String?>(
-                      value: _kYearsRootId,
-                      child: Text("📅 Racine de Années (00 - Années)"),
-                    ),
-                    ...folderNodes.map(
-                      (f) => DropdownMenuItem<String?>(
-                        value: f.id,
-                        child: Text(
-                          "${_isInsideYearsTree(f.id) ? '📅' : '📁'} ${f.name}",
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                    ),
-                  ],
-                  onChanged: (val) => setDialogState(() => selectedParentId = val),
-                ),
-                const SizedBox(height: 12),
-                SwitchListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: const Text("Créer comme Dossier (peut contenir des sous-albums)", style: TextStyle(fontSize: 13)),
-                  subtitle: Text(
-                    isFolder ? "Type : Dossier parent 📁" : "Type : Album photo 🖼️",
-                    style: const TextStyle(fontSize: 11, color: Colors.white54),
-                  ),
-                  value: isFolder,
-                  activeThumbColor: const Color(0xFFFBBF24),
-                  onChanged: (val) => setDialogState(() => isFolder = val),
                 ),
               ],
             ),
-          ),
-          actions: [
+            content: SizedBox(
+              width: 420,
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (isPaysParent) ...[
+                      DropdownButtonFormField<WorldCountryMeta>(
+                        value: selectedCountry,
+                        isExpanded: true,
+                        dropdownColor: const Color(0xFF1E293B),
+                        decoration: InputDecoration(
+                          labelText: "Choisir un pays (connecté à La carte)",
+                          filled: true,
+                          fillColor: const Color(0xFF1E293B),
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                        ),
+                        items: kWorldCountries
+                            .map(
+                              (c) => DropdownMenuItem<WorldCountryMeta>(
+                                value: c,
+                                child: Text('${c.flag}  ${c.nameFr} (${c.continent})'),
+                              ),
+                            )
+                            .toList(),
+                        onChanged: (c) {
+                          setDialogState(() {
+                            selectedCountry = c;
+                            if (c != null) {
+                              nameController.text = c.nameFr;
+                            }
+                          });
+                        },
+                      ),
+                      const SizedBox(height: 12),
+                    ],
+                    TextField(
+                      controller: nameController,
+                      autofocus: !isPaysParent,
+                      decoration: InputDecoration(
+                        labelText: isPaysParent ? "Nom du dossier pays (modifiable)" : "Nom du dossier ou de l'album",
+                        hintText: isPaysParent ? "Ex: Japon" : "Ex: Vacances Été 2027",
+                        filled: true,
+                        fillColor: const Color(0xFF1E293B),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    DropdownButtonFormField<String?>(
+                      value: selectedParentId == null ||
+                              selectedParentId == _kYearsRootId ||
+                              folderNodes.any((f) => f.id == selectedParentId)
+                          ? selectedParentId
+                          : null,
+                      isExpanded: true,
+                      dropdownColor: const Color(0xFF1E293B),
+                      decoration: InputDecoration(
+                        labelText: "Emplacement (Dossier parent)",
+                        filled: true,
+                        fillColor: const Color(0xFF1E293B),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                      ),
+                      items: [
+                        const DropdownMenuItem<String?>(
+                          value: null,
+                          child: Text("📁 Racine de Thématiques"),
+                        ),
+                        const DropdownMenuItem<String?>(
+                          value: _kYearsRootId,
+                          child: Text("📅 Racine de Années (00 - Années)"),
+                        ),
+                        ...folderNodes.map(
+                          (f) => DropdownMenuItem<String?>(
+                            value: f.id,
+                            child: Text(
+                              "${f.id == _kPaysFolderId ? '🌍' : (_isInsideYearsTree(f.id) ? '📅' : '📁')} ${f.name}",
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ),
+                      ],
+                      onChanged: (val) => setDialogState(() {
+                        selectedParentId = val;
+                        if (val == _kPaysFolderId) {
+                          isFolder = true;
+                        }
+                      }),
+                    ),
+                    const SizedBox(height: 12),
+                    SwitchListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text("Créer comme Dossier (peut contenir des sous-albums)", style: TextStyle(fontSize: 13)),
+                      subtitle: Text(
+                        isFolder ? "Type : Dossier parent 📁" : "Type : Album photo 🖼️",
+                        style: const TextStyle(fontSize: 11, color: Colors.white54),
+                      ),
+                      value: isFolder,
+                      activeThumbColor: const Color(0xFFFBBF24),
+                      onChanged: (val) => setDialogState(() => isFolder = val),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            actions: [
             TextButton(
               onPressed: () => Navigator.of(dialogCtx).pop(),
               child: const Text("Annuler", style: TextStyle(color: Colors.white54)),
@@ -2253,7 +2492,8 @@ class _HomeScreenState extends State<HomeScreen> {
               },
             ),
           ],
-        ),
+        );
+      },
       ),
     );
   }
@@ -2512,6 +2752,82 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  Future<void> _handleBulkAssignAlbumToPhotos(List<PhotoItem> photos, String albumId) async {
+    if (photos.isEmpty) return;
+    setState(() {
+      for (final photo in photos) {
+        if (!photo.albums.contains(albumId)) {
+          photo.albums.add(albumId);
+        }
+      }
+      _recalculateAlbumCounts();
+    });
+    bool allOk = true;
+    for (final photo in photos) {
+      final existing = _overridesByPhotoId[photo.id];
+      final added = <String>{...(existing?.addedAlbums ?? []), albumId}.toList();
+      final removed = <String>{...(existing?.removedAlbums ?? [])}..remove(albumId);
+      final rec = PhotoOverrideRecord(
+        photoId: photo.id,
+        addedAlbums: added,
+        removedAlbums: removed.toList(),
+        isDeleted: existing?.isDeleted ?? false,
+      );
+      _overridesByPhotoId[photo.id] = rec;
+      final ok = await CloudSyncService.savePhotoOverride(rec);
+      if (!ok) allOk = false;
+    }
+    if (!mounted) return;
+    final albumName = _nodesById[albumId]?.name ?? albumId;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        backgroundColor: const Color(0xFF0F172A),
+        content: Text(
+          allOk
+              ? '✔ ${photos.length} média(s) classé(s) dans "$albumName" pour toute la famille.'
+              : '⚠ ${photos.length} média(s) classé(s) localement.',
+          style: const TextStyle(color: Colors.white, fontSize: 12),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _handleBulkDeletePhotos(List<PhotoItem> photos) async {
+    if (photos.isEmpty) return;
+    final ids = photos.map((p) => p.id).toSet();
+    setState(() {
+      _allPhotos.removeWhere((p) => ids.contains(p.id));
+      _photosOnly.removeWhere((p) => ids.contains(p.id));
+      _videosOnly.removeWhere((p) => ids.contains(p.id));
+      _recalculateAlbumCounts();
+    });
+    bool allOk = true;
+    for (final photo in photos) {
+      final existing = _overridesByPhotoId[photo.id];
+      final rec = PhotoOverrideRecord(
+        photoId: photo.id,
+        addedAlbums: existing?.addedAlbums ?? [],
+        removedAlbums: existing?.removedAlbums ?? [],
+        isDeleted: true,
+      );
+      _overridesByPhotoId[photo.id] = rec;
+      final ok = await CloudSyncService.savePhotoOverride(rec);
+      if (!ok) allOk = false;
+    }
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        backgroundColor: const Color(0xFF0F172A),
+        content: Text(
+          allOk
+              ? '✔ ${photos.length} média(s) mis à la corbeille pour tout le monde.'
+              : '⚠ ${photos.length} média(s) masqué(s) localement.',
+          style: const TextStyle(color: Colors.white, fontSize: 12),
+        ),
+      ),
+    );
+  }
+
   Future<void> _handleDeletePhoto(PhotoItem photo) async {
     setState(() {
       _allPhotos.removeWhere((p) => p.id == photo.id);
@@ -2592,6 +2908,8 @@ class PhotoGridScreen extends StatelessWidget {
   final Future<void> Function(PhotoItem photo)? onToggleLike;
   final Future<void> Function(PhotoItem photo, String albumId)? onAssignAlbum;
   final Future<void> Function(PhotoItem photo)? onDeletePhoto;
+  final Future<void> Function(List<PhotoItem> photos, String albumId)? onBulkAssignAlbum;
+  final Future<void> Function(List<PhotoItem> photos)? onBulkDeletePhotos;
 
   const PhotoGridScreen({
     super.key,
@@ -2604,6 +2922,8 @@ class PhotoGridScreen extends StatelessWidget {
     this.onToggleLike,
     this.onAssignAlbum,
     this.onDeletePhoto,
+    this.onBulkAssignAlbum,
+    this.onBulkDeletePhotos,
   });
 
   @override
@@ -2628,6 +2948,8 @@ class PhotoGridScreen extends StatelessWidget {
         onToggleLike: onToggleLike,
         onAssignAlbum: onAssignAlbum,
         onDeletePhoto: onDeletePhoto,
+        onBulkAssignAlbum: onBulkAssignAlbum,
+        onBulkDeletePhotos: onBulkDeletePhotos,
       ),
     );
   }
@@ -2643,6 +2965,8 @@ class PhotoGridBody extends StatefulWidget {
   final Future<void> Function(PhotoItem photo)? onToggleLike;
   final Future<void> Function(PhotoItem photo, String albumId)? onAssignAlbum;
   final Future<void> Function(PhotoItem photo)? onDeletePhoto;
+  final Future<void> Function(List<PhotoItem> photos, String albumId)? onBulkAssignAlbum;
+  final Future<void> Function(List<PhotoItem> photos)? onBulkDeletePhotos;
 
   const PhotoGridBody({
     super.key,
@@ -2655,6 +2979,8 @@ class PhotoGridBody extends StatefulWidget {
     this.onToggleLike,
     this.onAssignAlbum,
     this.onDeletePhoto,
+    this.onBulkAssignAlbum,
+    this.onBulkDeletePhotos,
   });
 
   @override
@@ -2665,6 +2991,8 @@ class _PhotoGridBodyState extends State<PhotoGridBody> {
   static const int _pageSize = 60;
   int _visibleCount = _pageSize;
   final ScrollController _scrollController = ScrollController();
+  bool _isSelectionMode = false;
+  final Set<int> _selectedPhotoIds = {};
 
   @override
   void initState() {
@@ -2705,6 +3033,147 @@ class _PhotoGridBodyState extends State<PhotoGridBody> {
     super.dispose();
   }
 
+  void _toggleSelection(int photoId) {
+    setState(() {
+      if (_selectedPhotoIds.contains(photoId)) {
+        _selectedPhotoIds.remove(photoId);
+        if (_selectedPhotoIds.isEmpty) {
+          _isSelectionMode = false;
+        }
+      } else {
+        _isSelectionMode = true;
+        _selectedPhotoIds.add(photoId);
+      }
+    });
+  }
+
+  Future<void> _promptBulkAssignAlbum(BuildContext context, List<PhotoItem> selectedPhotos) async {
+    if (selectedPhotos.isEmpty) return;
+    final albumsSorted = widget.nodesById.values.toList()
+      ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+    String? selectedAlbumId = albumsSorted.isNotEmpty ? albumsSorted.first.id : null;
+
+    await showDialog<void>(
+      context: context,
+      builder: (dialogCtx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          backgroundColor: const Color(0xFF0F172A),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+            side: const BorderSide(color: Colors.white12),
+          ),
+          title: Text(
+            'Ranger ${selectedPhotos.length} média(s) dans un album',
+            style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Colors.white),
+          ),
+          content: DropdownButtonFormField<String>(
+            value: selectedAlbumId,
+            isExpanded: true,
+            dropdownColor: const Color(0xFF1E293B),
+            decoration: InputDecoration(
+              filled: true,
+              fillColor: const Color(0xFF1E293B),
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+            items: albumsSorted
+                .map(
+                  (a) => DropdownMenuItem<String>(
+                    value: a.id,
+                    child: Text("${a.isFolder ? '📁' : '🖼️'} ${a.name}", overflow: TextOverflow.ellipsis),
+                  ),
+                )
+                .toList(),
+            onChanged: (val) => setDialogState(() => selectedAlbumId = val),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogCtx).pop(),
+              child: const Text("Annuler", style: TextStyle(color: Colors.white54)),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF0284C7),
+                foregroundColor: Colors.white,
+              ),
+              onPressed: () async {
+                Navigator.of(dialogCtx).pop();
+                if (selectedAlbumId == null) return;
+                if (widget.onBulkAssignAlbum != null) {
+                  await widget.onBulkAssignAlbum!(selectedPhotos, selectedAlbumId!);
+                } else if (widget.onAssignAlbum != null) {
+                  for (final p in selectedPhotos) {
+                    await widget.onAssignAlbum!(p, selectedAlbumId!);
+                  }
+                }
+                if (mounted) {
+                  setState(() {
+                    _isSelectionMode = false;
+                    _selectedPhotoIds.clear();
+                  });
+                }
+              },
+              child: const Text("Valider"),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _confirmBulkDelete(BuildContext context, List<PhotoItem> selectedPhotos) async {
+    if (selectedPhotos.isEmpty) return;
+    await showDialog<void>(
+      context: context,
+      builder: (dialogCtx) => AlertDialog(
+        backgroundColor: const Color(0xFF0F172A),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+          side: const BorderSide(color: Colors.white12),
+        ),
+        title: Text(
+          'Mettre ${selectedPhotos.length} média(s) à la corbeille ?',
+          style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Colors.white),
+        ),
+        content: const Text(
+          'Ces photos/vidéos seront masquées de la galerie et des albums pour toute la famille.',
+          style: TextStyle(fontSize: 12, color: Colors.white70),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogCtx).pop(),
+            child: const Text("Annuler", style: TextStyle(color: Colors.white54)),
+          ),
+          ElevatedButton.icon(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFFEF4444),
+              foregroundColor: Colors.white,
+            ),
+            icon: const Icon(Icons.delete_outline, size: 17),
+            label: Text('Supprimer (${selectedPhotos.length})'),
+            onPressed: () async {
+              Navigator.of(dialogCtx).pop();
+              if (widget.onBulkDeletePhotos != null) {
+                await widget.onBulkDeletePhotos!(selectedPhotos);
+              } else if (widget.onDeletePhoto != null) {
+                for (final p in selectedPhotos) {
+                  await widget.onDeletePhoto!(p);
+                }
+              }
+              if (mounted) {
+                setState(() {
+                  final deletedIds = selectedPhotos.map((p) => p.id).toSet();
+                  widget.photos.removeWhere((p) => deletedIds.contains(p.id));
+                  _isSelectionMode = false;
+                  _selectedPhotoIds.clear();
+                });
+              }
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final photos = widget.photos;
@@ -2722,6 +3191,11 @@ class _PhotoGridBodyState extends State<PhotoGridBody> {
     }
 
     final displayCount = _visibleCount < photos.length ? _visibleCount : photos.length;
+    final supportsBulk = widget.onAssignAlbum != null ||
+        widget.onDeletePhoto != null ||
+        widget.onBulkAssignAlbum != null ||
+        widget.onBulkDeletePhotos != null;
+    final selectedPhotos = photos.where((p) => _selectedPhotoIds.contains(p.id)).toList();
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -2734,6 +3208,65 @@ class _PhotoGridBodyState extends State<PhotoGridBody> {
         return Column(
           children: [
             if (widget.header != null) widget.header!,
+            if (supportsBulk)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                  color: _isSelectionMode ? const Color(0xFF0C4A6E).withValues(alpha: 0.45) : const Color(0xFF0B1120),
+                  border: const Border(bottom: BorderSide(color: Colors.white10)),
+                ),
+                child: Row(
+                  children: [
+                    if (_isSelectionMode) ...[
+                      Text(
+                        '${selectedPhotos.length} sélectionné(s)',
+                        style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: Color(0xFF7DD3FC)),
+                      ),
+                      const Spacer(),
+                      TextButton(
+                        onPressed: () {
+                          setState(() {
+                            if (selectedPhotos.length == photos.length) {
+                              _selectedPhotoIds.clear();
+                            } else {
+                              _selectedPhotoIds.addAll(photos.map((p) => p.id));
+                            }
+                          });
+                        },
+                        child: Text(
+                          selectedPhotos.length == photos.length ? 'Aucun' : 'Tout sélect. (${photos.length})',
+                          style: const TextStyle(fontSize: 12, color: Color(0xFF38BDF8)),
+                        ),
+                      ),
+                      TextButton.icon(
+                        onPressed: () => setState(() {
+                          _isSelectionMode = false;
+                          _selectedPhotoIds.clear();
+                        }),
+                        icon: const Icon(Icons.close, size: 15, color: Colors.white70),
+                        label: const Text('Annuler', style: TextStyle(fontSize: 12, color: Colors.white70)),
+                      ),
+                    ] else ...[
+                      Text(
+                        'Appui long ou bouton pour sélectionner',
+                        style: const TextStyle(fontSize: 11, color: Colors.white38),
+                      ),
+                      const Spacer(),
+                      TextButton.icon(
+                        style: TextButton.styleFrom(
+                          foregroundColor: const Color(0xFF38BDF8),
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                          minimumSize: Size.zero,
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        ),
+                        onPressed: () => setState(() => _isSelectionMode = true),
+                        icon: const Icon(Icons.checklist_rounded, size: 16),
+                        label: const Text('Sélectionner', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
             Expanded(
               child: NotificationListener<ScrollNotification>(
                 onNotification: (notification) {
@@ -2757,23 +3290,79 @@ class _PhotoGridBodyState extends State<PhotoGridBody> {
                     final photoLikes = widget.likesByPhotoId?[photo.id] ?? const <PhotoLikeRecord>[];
                     final isLikedByMe = widget.currentUserEmail != null &&
                         photoLikes.any((l) => l.userEmail == widget.currentUserEmail);
+                    final isSelected = _selectedPhotoIds.contains(photo.id);
                     return _PhotoGridTile(
                       key: ValueKey(photo.id),
                       photo: photo,
                       likeCount: photoLikes.length,
                       isLikedByMe: isLikedByMe,
+                      isSelectionMode: _isSelectionMode,
+                      isSelected: isSelected,
+                      onLongPress: supportsBulk ? () => _toggleSelection(photo.id) : null,
                       onToggleLike: widget.onToggleLike != null
                           ? () async {
                               await widget.onToggleLike!(photo);
                               if (mounted) setState(() {});
                             }
                           : null,
-                      onTap: () => _openLightbox(context, photo),
+                      onTap: () {
+                        if (_isSelectionMode) {
+                          _toggleSelection(photo.id);
+                        } else {
+                          _openLightbox(context, photo);
+                        }
+                      },
                     );
                   },
                 ),
               ),
             ),
+            if (_isSelectionMode && selectedPhotos.isNotEmpty)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                decoration: const BoxDecoration(
+                  color: Color(0xFF0F172A),
+                  border: Border(top: BorderSide(color: Colors.white12)),
+                ),
+                child: SafeArea(
+                  top: false,
+                  child: Row(
+                    children: [
+                      if (widget.onAssignAlbum != null || widget.onBulkAssignAlbum != null)
+                        Expanded(
+                          child: OutlinedButton.icon(
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: const Color(0xFF38BDF8),
+                              side: const BorderSide(color: Color(0xFF0284C7)),
+                              padding: const EdgeInsets.symmetric(vertical: 11),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                            ),
+                            onPressed: () => _promptBulkAssignAlbum(context, selectedPhotos),
+                            icon: const Icon(Icons.create_new_folder_outlined, size: 17),
+                            label: Text('Album (${selectedPhotos.length})', style: const TextStyle(fontSize: 12.5)),
+                          ),
+                        ),
+                      if ((widget.onAssignAlbum != null || widget.onBulkAssignAlbum != null) &&
+                          (widget.onDeletePhoto != null || widget.onBulkDeletePhotos != null))
+                        const SizedBox(width: 10),
+                      if (widget.onDeletePhoto != null || widget.onBulkDeletePhotos != null)
+                        Expanded(
+                          child: FilledButton.icon(
+                            style: FilledButton.styleFrom(
+                              backgroundColor: const Color(0xFFEF4444),
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(vertical: 11),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                            ),
+                            onPressed: () => _confirmBulkDelete(context, selectedPhotos),
+                            icon: const Icon(Icons.delete_outline, size: 17),
+                            label: Text('Corbeille (${selectedPhotos.length})', style: const TextStyle(fontSize: 12.5)),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
           ],
         );
       },
@@ -3428,6 +4017,9 @@ class _PhotoGridTile extends StatefulWidget {
   final PhotoItem photo;
   final int likeCount;
   final bool isLikedByMe;
+  final bool isSelectionMode;
+  final bool isSelected;
+  final VoidCallback? onLongPress;
   final VoidCallback? onToggleLike;
   final VoidCallback onTap;
 
@@ -3436,6 +4028,9 @@ class _PhotoGridTile extends StatefulWidget {
     required this.photo,
     this.likeCount = 0,
     this.isLikedByMe = false,
+    this.isSelectionMode = false,
+    this.isSelected = false,
+    this.onLongPress,
     this.onToggleLike,
     required this.onTap,
   });
@@ -3480,14 +4075,17 @@ class _PhotoGridTileState extends State<_PhotoGridTile> {
       child: InkWell(
         borderRadius: BorderRadius.circular(10),
         onTap: widget.onTap,
+        onLongPress: widget.onLongPress,
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 160),
           decoration: BoxDecoration(
             color: const Color(0xFF1E293B),
             borderRadius: BorderRadius.circular(10),
             border: Border.all(
-              color: _isHovered ? const Color(0xFF38BDF8).withValues(alpha: 0.6) : Colors.white10,
-              width: _isHovered ? 1.5 : 1.0,
+              color: widget.isSelected
+                  ? const Color(0xFF38BDF8)
+                  : (_isHovered ? const Color(0xFF38BDF8).withValues(alpha: 0.6) : Colors.white10),
+              width: widget.isSelected ? 2.5 : (_isHovered ? 1.5 : 1.0),
             ),
             boxShadow: _isHovered
                 ? [
@@ -3600,6 +4198,32 @@ class _PhotoGridTileState extends State<_PhotoGridTile> {
                         SizedBox(width: 3),
                         Text("En attente Drive", style: TextStyle(fontSize: 8, color: Colors.white, fontWeight: FontWeight.bold)),
                       ],
+                    ),
+                  ),
+                ),
+              if (widget.isSelectionMode)
+                Positioned.fill(
+                  child: IgnorePointer(
+                    child: Container(
+                      color: widget.isSelected
+                          ? const Color(0xFF0EA5E9).withValues(alpha: 0.25)
+                          : Colors.black.withValues(alpha: 0.15),
+                    ),
+                  ),
+                ),
+              if (widget.isSelectionMode)
+                Positioned(
+                  top: 6,
+                  left: 6,
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: Colors.black.withValues(alpha: 0.65),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(
+                      widget.isSelected ? Icons.check_circle : Icons.radio_button_unchecked,
+                      size: 22,
+                      color: widget.isSelected ? const Color(0xFF38BDF8) : Colors.white70,
                     ),
                   ),
                 ),
