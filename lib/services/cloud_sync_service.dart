@@ -253,7 +253,12 @@ class CloudSyncService {
       );
       if (!kIsWeb) {
         _googleSignIn = GoogleSignIn(
-          scopes: const ['email', 'openid', 'profile'],
+          scopes: const [
+            'email',
+            'openid',
+            'profile',
+            'https://www.googleapis.com/auth/drive.file',
+          ],
           signInOption: SignInOption.standard,
           serverClientId: googleWebClientId.isEmpty ? null : googleWebClientId,
           forceCodeForRefreshToken: false,
@@ -305,6 +310,7 @@ class CloudSyncService {
         await client.auth.signInWithOAuth(
           OAuthProvider.google,
           redirectTo: redirect,
+          scopes: 'https://www.googleapis.com/auth/drive.file',
         );
         return _currentAuth;
       }
@@ -640,6 +646,82 @@ class CloudSyncService {
       debugPrint('CloudSyncService.togglePhotoLike error: $e');
       return false;
     }
+  }
+
+  /// Récupère un accessToken Google OAuth autorisé pour Google Drive (drive.file)
+  static Future<String?> _getGoogleDriveAccessToken() async {
+    if (kIsWeb) {
+      return Supabase.instance.client.auth.currentSession?.providerToken;
+    }
+    var account = _googleSignIn.currentUser;
+    account ??= await _googleSignIn.signInSilently();
+    account ??= await _googleSignIn.signIn();
+    if (account == null) return null;
+    try {
+      await _googleSignIn.requestScopes(const ['https://www.googleapis.com/auth/drive.file']);
+    } catch (_) {}
+    final auth = await account.authentication;
+    return auth.accessToken;
+  }
+
+  /// Envoie un fichier (photo/vidéo) vers Google Drive et le rend lisible par la famille
+  static Future<String> uploadFileToGoogleDrive({
+    required String filename,
+    required List<int> bytes,
+    String mimeType = 'image/jpeg',
+  }) async {
+    final token = await _getGoogleDriveAccessToken();
+    if (token == null || token.isEmpty) {
+      throw StateError(
+        'Session Google Drive requise : déconnectez-vous puis reconnectez-vous avec Google pour autoriser l\'envoi vers Drive.',
+      );
+    }
+
+    final boundary = 'gallerie_upload_${DateTime.now().millisecondsSinceEpoch}';
+    final metaJson = jsonEncode({'name': filename, 'mimeType': mimeType});
+    final bodyBytes = <int>[
+      ...utf8.encode('--$boundary\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n$metaJson\r\n'),
+      ...utf8.encode('--$boundary\r\nContent-Type: $mimeType\r\n\r\n'),
+      ...bytes,
+      ...utf8.encode('\r\n--$boundary--\r\n'),
+    ];
+
+    final uploadResp = await http
+        .post(
+          Uri.parse('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id'),
+          headers: {
+            'Authorization': 'Bearer $token',
+            'Content-Type': 'multipart/related; boundary=$boundary',
+          },
+          body: bodyBytes,
+        )
+        .timeout(const Duration(seconds: 60));
+
+    if (uploadResp.statusCode < 200 || uploadResp.statusCode >= 300) {
+      throw StateError('Erreur Google Drive (${uploadResp.statusCode}) : ${uploadResp.body}');
+    }
+
+    final parsed = jsonDecode(uploadResp.body) as Map<String, dynamic>;
+    final fileId = parsed['id']?.toString();
+    if (fileId == null || fileId.isEmpty) {
+      throw StateError('ID Google Drive manquant après envoi.');
+    }
+
+    // Rendre la miniature/aperçu visible pour les autres membres de la famille
+    try {
+      await http
+          .post(
+            Uri.parse('https://www.googleapis.com/drive/v3/files/$fileId/permissions'),
+            headers: {
+              'Authorization': 'Bearer $token',
+              'Content-Type': 'application/json',
+            },
+            body: jsonEncode({'role': 'reader', 'type': 'anyone'}),
+          )
+          .timeout(const Duration(seconds: 8));
+    } catch (_) {}
+
+    return fileId;
   }
 
   /// Récupère éventuellement un catalog.json plus récent depuis GitHub

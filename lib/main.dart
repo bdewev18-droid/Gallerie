@@ -1,5 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
+import 'package:connectivity_plus/connectivity_plus.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -7,8 +9,8 @@ import 'services/app_update_service.dart';
 import 'services/cloud_sync_service.dart';
 import 'widgets/world_map_tab.dart';
 
-const int appBuildNumber = 16;
-const String appVersionLabel = "1.0.15";
+const int appBuildNumber = 17;
+const String appVersionLabel = "1.0.16";
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -131,6 +133,8 @@ class AlbumNode {
   final bool isFolder;
   final int directCount;
   final int totalCount;
+  final int directVideoCount;
+  final int totalVideoCount;
   final String? createdByName;
 
   AlbumNode({
@@ -140,6 +144,8 @@ class AlbumNode {
     required this.isFolder,
     required this.directCount,
     required this.totalCount,
+    this.directVideoCount = 0,
+    this.totalVideoCount = 0,
     this.createdByName,
   });
 
@@ -154,6 +160,53 @@ class AlbumNode {
       directCount: (json['direct_count'] as num?)?.toInt() ?? 0,
       totalCount: (json['count'] as num?)?.toInt() ?? 0,
     );
+  }
+}
+
+class ActiveTripConfig {
+  final String title;
+  final String countryIso;
+  final String countryName;
+  final String countryFlag;
+  final String startDate; // YYYY-MM-DD
+  final String endDate;   // YYYY-MM-DD
+  final String? createdBy;
+
+  const ActiveTripConfig({
+    required this.title,
+    required this.countryIso,
+    required this.countryName,
+    required this.countryFlag,
+    required this.startDate,
+    required this.endDate,
+    this.createdBy,
+  });
+
+  String toJsonString() => jsonEncode({
+        'title': title,
+        'countryIso': countryIso,
+        'countryName': countryName,
+        'countryFlag': countryFlag,
+        'startDate': startDate,
+        'endDate': endDate,
+        if (createdBy != null) 'createdBy': createdBy,
+      });
+
+  static ActiveTripConfig? tryParse(String raw) {
+    try {
+      final m = jsonDecode(raw) as Map<String, dynamic>;
+      return ActiveTripConfig(
+        title: m['title'] as String? ?? 'Voyage en cours',
+        countryIso: m['countryIso'] as String? ?? 'FRA',
+        countryName: m['countryName'] as String? ?? 'France',
+        countryFlag: m['countryFlag'] as String? ?? '🌍',
+        startDate: m['startDate'] as String? ?? '',
+        endDate: m['endDate'] as String? ?? '',
+        createdBy: m['createdBy'] as String?,
+      );
+    } catch (_) {
+      return null;
+    }
   }
 }
 
@@ -217,7 +270,10 @@ class _HomeScreenState extends State<HomeScreen> {
   static const String _kYear2026Id = '8a27a7356de54a4fa7aae6fdea783597';
   static const String _kPaysFolderId = '2956c2bdbaf04c7984849dbacdb605ab';
   static const String _kCountryMetaParentId = '__country_meta__';
+  static const String _kTripMetaParentId = '__trip_meta__';
+  static const String _kActiveTripNodeId = '__active_trip__';
   static const String _kCollabTripAlbumId = 'collab_voyage_en_cours';
+  ActiveTripConfig? _activeTrip;
   AuthUserSession _auth = CloudSyncService.currentAuth;
   StreamSubscription<AuthUserSession>? _authSub;
 
@@ -652,12 +708,18 @@ class _HomeScreenState extends State<HomeScreen> {
         directCounts[aId] = (directCounts[aId] ?? 0) + 1;
       }
     }
+    final directVideoCounts = <String, int>{};
+    for (final v in _videosOnly) {
+      for (final aId in v.albums) {
+        directVideoCounts[aId] = (directVideoCounts[aId] ?? 0) + 1;
+      }
+    }
 
-    int computeTotal(String nodeId, Set<String> visited) {
+    int computeTotal(String nodeId, Map<String, int> map, Set<String> visited) {
       if (!visited.add(nodeId)) return 0;
-      int sum = directCounts[nodeId] ?? 0;
+      int sum = map[nodeId] ?? 0;
       for (final child in _childrenByParent[nodeId] ?? const <AlbumNode>[]) {
-        sum += computeTotal(child.id, visited);
+        sum += computeTotal(child.id, map, visited);
       }
       return sum;
     }
@@ -666,7 +728,9 @@ class _HomeScreenState extends State<HomeScreen> {
     for (final entry in _nodesById.entries) {
       final node = entry.value;
       final dCount = directCounts[node.id] ?? 0;
-      final tCount = node.isFolder ? computeTotal(node.id, {}) : dCount;
+      final tCount = node.isFolder ? computeTotal(node.id, directCounts, {}) : dCount;
+      final dvCount = directVideoCounts[node.id] ?? 0;
+      final tvCount = node.isFolder ? computeTotal(node.id, directVideoCounts, {}) : dvCount;
       updatedNodes[node.id] = AlbumNode(
         id: node.id,
         name: node.name,
@@ -674,6 +738,9 @@ class _HomeScreenState extends State<HomeScreen> {
         isFolder: node.isFolder,
         directCount: dCount,
         totalCount: tCount,
+        directVideoCount: dvCount,
+        totalVideoCount: tvCount,
+        createdByName: node.createdByName,
       );
     }
     _nodesById = updatedNodes;
@@ -688,8 +755,16 @@ class _HomeScreenState extends State<HomeScreen> {
       if (!mounted) return;
       _cloudTableReady = delta.tableReady;
 
-      // 1. Appliquer les nouveaux dossiers & albums (ainsi que déplacements, suppressions et pays assignés)
+      // 1. Appliquer les nouveaux dossiers & albums (ainsi que déplacements, suppressions, pays et voyage actif)
       for (final ca in delta.customAlbums) {
+        if (ca.parentId == _kTripMetaParentId || ca.id == _kActiveTripNodeId) {
+          if (ca.isDeleted) {
+            _activeTrip = null;
+          } else {
+            _activeTrip = ActiveTripConfig.tryParse(ca.name);
+          }
+          continue;
+        }
         if (ca.parentId == _kCountryMetaParentId || ca.id.startsWith('__country__')) {
           final targetAlbumId = ca.id.startsWith('__country__') ? ca.id.substring('__country__'.length) : ca.id;
           if (ca.isDeleted || ca.name.trim().isEmpty) {
@@ -854,11 +929,164 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _openCollaborativeTripAlbum() async {
-    // Ensure collaborative album exists locally & in cloud
+    if (_activeTrip == null) {
+      await _showCreateActiveTripDialog();
+      return;
+    }
+    await _openActiveTripScreen();
+  }
+
+  Future<void> _showCreateActiveTripDialog() async {
+    if (_activeTrip != null) return;
+    final titleCtrl = TextEditingController();
+    WorldCountryMeta selectedCountry = kCountriesByIso['ESP'] ?? kWorldCountries.first;
+    DateTimeRange selectedRange = DateTimeRange(
+      start: DateTime.now(),
+      end: DateTime.now().add(const Duration(days: 7)),
+    );
+    String fmtDate(DateTime d) =>
+        '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+
+    final sortedCountries = List<WorldCountryMeta>.from(kWorldCountries)
+      ..sort((a, b) => a.nameFr.toLowerCase().compareTo(b.nameFr.toLowerCase()));
+
+    await showDialog<void>(
+      context: context,
+      builder: (dialogCtx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          backgroundColor: Colors.white,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: const Row(
+            children: [
+              Icon(Icons.flight_takeoff_rounded, color: Color(0xFF10B981)),
+              SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  'Créer un voyage en cours',
+                  style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: Color(0xFF1E293B)),
+                ),
+              ),
+            ],
+          ),
+          content: SizedBox(
+            width: 420,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const Text(
+                    'Un seul voyage peut être actif à la fois pour toute la famille.',
+                    style: TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: titleCtrl,
+                    decoration: InputDecoration(
+                      labelText: 'Nom du voyage',
+                      hintText: 'Ex: Vacances Espagne',
+                      filled: true,
+                      fillColor: const Color(0xFFF6EFE2),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  DropdownButtonFormField<WorldCountryMeta>(
+                    value: selectedCountry,
+                    isExpanded: true,
+                    decoration: InputDecoration(
+                      labelText: 'Pays de destination',
+                      filled: true,
+                      fillColor: const Color(0xFFF6EFE2),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    items: sortedCountries
+                        .map(
+                          (c) => DropdownMenuItem<WorldCountryMeta>(
+                            value: c,
+                            child: Text('${c.flag}  ${c.nameFr}'),
+                          ),
+                        )
+                        .toList(),
+                    onChanged: (c) {
+                      if (c != null) setDialogState(() => selectedCountry = c);
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                  OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 12),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    onPressed: () async {
+                      final picked = await showDateRangePicker(
+                        context: ctx,
+                        initialDateRange: selectedRange,
+                        firstDate: DateTime(2020),
+                        lastDate: DateTime(2035),
+                      );
+                      if (picked != null) {
+                        setDialogState(() => selectedRange = picked);
+                      }
+                    },
+                    icon: const Icon(Icons.date_range_rounded, color: Color(0xFFF97316)),
+                    label: Text(
+                      'Dates : ${fmtDate(selectedRange.start)} → ${fmtDate(selectedRange.end)}',
+                      style: const TextStyle(color: Color(0xFF1E293B), fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogCtx).pop(),
+              child: const Text('Annuler'),
+            ),
+            FilledButton.icon(
+              style: FilledButton.styleFrom(backgroundColor: const Color(0xFF10B981)),
+              onPressed: () async {
+                final title = titleCtrl.text.trim().isEmpty
+                    ? 'Voyage ${selectedCountry.nameFr}'
+                    : titleCtrl.text.trim();
+                final cfg = ActiveTripConfig(
+                  title: title,
+                  countryIso: selectedCountry.iso3,
+                  countryName: selectedCountry.nameFr,
+                  countryFlag: selectedCountry.flag,
+                  startDate: fmtDate(selectedRange.start),
+                  endDate: fmtDate(selectedRange.end),
+                  createdBy: _auth.isSignedIn ? _auth.shortLabel : null,
+                );
+                Navigator.of(dialogCtx).pop();
+                setState(() => _activeTrip = cfg);
+                await CloudSyncService.createCustomAlbum(
+                  id: _kActiveTripNodeId,
+                  name: cfg.toJsonString(),
+                  parentId: _kTripMetaParentId,
+                  isFolder: false,
+                );
+                if (!mounted) return;
+                await _openActiveTripScreen();
+              },
+              icon: const Icon(Icons.check),
+              label: const Text('Démarrer le voyage'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openActiveTripScreen() async {
+    final trip = _activeTrip;
+    if (trip == null) return;
+
     if (!_nodesById.containsKey(_kCollabTripAlbumId)) {
       _nodesById[_kCollabTripAlbumId] = AlbumNode(
         id: _kCollabTripAlbumId,
-        name: 'Voyage en cours (Collaboratif)',
+        name: trip.title,
         parentId: _kYearsRootId,
         isFolder: false,
         directCount: 0,
@@ -866,94 +1094,116 @@ class _HomeScreenState extends State<HomeScreen> {
       );
       _customAlbumIds.add(_kCollabTripAlbumId);
       _recalculateAlbumCounts();
-      CloudSyncService.createCustomAlbum(
-        id: _kCollabTripAlbumId,
-        name: 'Voyage en cours (Collaboratif)',
-        parentId: _kYearsRootId,
-        isFolder: false,
-      );
     }
-
-    final collabMedia = _allPhotos
-        .where((p) => p.albums.contains(_kCollabTripAlbumId))
-        .toList();
 
     await Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => Scaffold(
-          appBar: AppBar(
-            backgroundColor: const Color(0xFFFFFFFF),
-            title: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text('✈️ Voyage en cours (Collaboratif)', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
-                Text('${collabMedia.length} média(s) partagé(s) par la famille', style: const TextStyle(fontSize: 11, color: Color(0xFF64748B))),
-              ],
-            ),
-            actions: [
-              TextButton.icon(
-                style: TextButton.styleFrom(foregroundColor: const Color(0xFF4ADE80)),
-                onPressed: () => _showAddPhotoDialog(defaultAlbumId: _kCollabTripAlbumId),
-                icon: const Icon(Icons.add_photo_alternate_outlined, size: 18),
-                label: const Text('Déposer', style: TextStyle(fontWeight: FontWeight.bold)),
-              ),
-              const SizedBox(width: 6),
-            ],
-          ),
-          body: collabMedia.isEmpty
-              ? Center(
-                  child: Padding(
-                    padding: const EdgeInsets.all(24),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.all(18),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF0EA5E9).withValues(alpha: 0.14),
-                            shape: BoxShape.circle,
-                          ),
-                          child: const Icon(Icons.flight_takeoff_rounded, size: 42, color: Color(0xFF0EA5E9)),
-                        ),
-                        const SizedBox(height: 16),
-                        const Text(
-                          'Album collaboratif du voyage en cours',
-                          style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: const Color(0xFF1E293B)),
-                          textAlign: TextAlign.center,
-                        ),
-                        const SizedBox(height: 8),
-                        const Text(
-                          'Chaque membre de la famille peut déposer ici ses photos et vidéos pour les partager en direct.',
-                          style: TextStyle(fontSize: 13, color: Color(0xFF64748B)),
-                          textAlign: TextAlign.center,
-                        ),
-                        const SizedBox(height: 20),
-                        FilledButton.icon(
-                          style: FilledButton.styleFrom(
-                            backgroundColor: const Color(0xFF0EA5E9),
-                            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 13),
-                          ),
-                          onPressed: () => _showAddPhotoDialog(defaultAlbumId: _kCollabTripAlbumId),
-                          icon: const Icon(Icons.add_photo_alternate_outlined),
-                          label: const Text('Déposer une photo ou vidéo'),
-                        ),
-                      ],
-                    ),
-                  ),
-                )
-              : PhotoGridBody(
-                  photos: collabMedia,
-                  nodesById: _nodesById,
-                  gdriveUrl: _gdriveUrl,
-                  likesByPhotoId: _likesByPhotoId,
-                  currentUserEmail: _auth.email,
-                  onToggleLike: _handleTogglePhotoLike,
-                  onAssignAlbum: _handleAssignAlbumToPhoto,
-                  onDeletePhoto: _handleDeletePhoto,
-                  onBulkAssignAlbum: _handleBulkAssignAlbumToPhotos,
-                  onBulkDeletePhotos: _handleBulkDeletePhotos,
+        builder: (_) => _ActiveTripScreen(
+          trip: trip,
+          getTripMedia: () => _allPhotos
+              .where((p) => p.albums.contains(_kCollabTripAlbumId))
+              .toList(),
+          currentUserName: _auth.shortLabel,
+          currentUserEmail: _auth.email,
+          gdriveUrl: _gdriveUrl,
+          onUploadSelectedFiles: (files, onProgress) async {
+            int done = 0;
+            for (final f in files) {
+              final bytes = f.bytes;
+              if (bytes == null) continue;
+              final lower = f.name.toLowerCase();
+              final isVid = lower.endsWith('.mp4') || lower.endsWith('.mov') || lower.endsWith('.avi');
+              final mime = isVid ? 'video/mp4' : 'image/jpeg';
+              final driveId = await CloudSyncService.uploadFileToGoogleDrive(
+                filename: f.name,
+                bytes: bytes,
+                mimeType: mime,
+              );
+              final now = DateTime.now();
+              final dFolder =
+                  '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
+              final photoId = DateTime.now().millisecondsSinceEpoch + done;
+              final rec = CustomPhotoRecord(
+                id: photoId,
+                filename: f.name,
+                year: now.year.toString(),
+                dateFolder: dFolder,
+                captureDate: now.toIso8601String(),
+                width: 0,
+                height: 0,
+                fileSize: bytes.length,
+                isVideo: isVid,
+                driveId: driveId,
+                country: trip.countryName,
+                albums: [_kCollabTripAlbumId],
+                addedByName: _auth.isSignedIn ? _auth.shortLabel : 'Invité',
+                addedByEmail: _auth.email,
+              );
+              await CloudSyncService.addCustomPhoto(rec);
+              final item = PhotoItem(
+                id: photoId,
+                filename: f.name,
+                year: now.year.toString(),
+                dateFolder: dFolder,
+                captureDate: now.toIso8601String(),
+                width: 0,
+                height: 0,
+                fileSize: bytes.length,
+                isVideo: isVid,
+                driveId: driveId,
+                country: trip.countryName,
+                albums: [_kCollabTripAlbumId],
+                addedByName: rec.addedByName,
+                addedByEmail: rec.addedByEmail,
+              );
+              if (mounted) {
+                setState(() {
+                  _allPhotos.insert(0, item);
+                  if (isVid) {
+                    _videosOnly.insert(0, item);
+                  } else {
+                    _photosOnly.insert(0, item);
+                  }
+                  _recalculateAlbumCounts();
+                });
+              }
+              done++;
+              onProgress(done, files.length);
+            }
+          },
+          onAddViaLink: () => _showAddPhotoDialog(defaultAlbumId: _kCollabTripAlbumId),
+          onTerminateTrip: () async {
+            setState(() {
+              _activeTrip = null;
+              for (final p in _allPhotos) {
+                p.albums.remove(_kCollabTripAlbumId);
+              }
+              _recalculateAlbumCounts();
+            });
+            await CloudSyncService.createCustomAlbum(
+              id: _kActiveTripNodeId,
+              name: '',
+              parentId: _kTripMetaParentId,
+              isFolder: false,
+              isDeleted: true,
+            );
+          },
+          onOpenPhoto: (photo, allTripMedia) {
+            final idx = allTripMedia.indexWhere((p) => p.id == photo.id);
+            Navigator.of(context).push(
+              PageRouteBuilder<void>(
+                opaque: false,
+                barrierColor: Colors.black.withValues(alpha: 0.96),
+                pageBuilder: (_, __, ___) => _FullScreenPhotoViewer(
+                  photos: allTripMedia,
+                  initialIndex: idx < 0 ? 0 : idx,
+                  defaultGdriveUrl: _gdriveUrl,
+                  onLaunchDrive: (ctx, url) => _openUrl(url),
                 ),
+              ),
+            );
+          },
         ),
       ),
     );
@@ -1255,8 +1505,12 @@ class _HomeScreenState extends State<HomeScreen> {
                     badgeIcon: Icons.luggage_rounded,
                     color: const Color(0xFF10B981),
                     gradientColors: const [Color(0xFF059669), Color(0xFF34D399)],
-                    title: 'Voyage en cours · Album Partagé',
-                    subtitle: '$collabCount souvenir(s) · Déposez vos photos de vacances ici !',
+                    title: _activeTrip != null
+                        ? '${_activeTrip!.countryFlag} ${_activeTrip!.title}'
+                        : 'Créer un voyage en cours ✈️',
+                    subtitle: _activeTrip != null
+                        ? '${_activeTrip!.countryName} · Du ${_activeTrip!.startDate} au ${_activeTrip!.endDate} · $collabCount souvenir(s)'
+                        : 'Aucun voyage actif · Créez l\'album partagé des vacances',
                     onTap: _openCollaborativeTripAlbum,
                   ),
                 ],
@@ -1378,8 +1632,8 @@ class _HomeScreenState extends State<HomeScreen> {
         title: Row(
           children: [
             IconButton(
-              tooltip: 'Accueil (Pré-homepage)',
-              icon: const Icon(Icons.home_outlined, color: Color(0xFF0EA5E9)),
+              tooltip: 'Retour à l\'accueil',
+              icon: const Icon(Icons.arrow_back_rounded, color: Color(0xFFF97316)),
               onPressed: () => setState(() => _showPreHome = true),
             ),
             const SizedBox(width: 4),
@@ -1394,53 +1648,26 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
                 borderRadius: BorderRadius.circular(10),
               ),
-              child: const Icon(Icons.photo_library_outlined, color: const Color(0xFF1E293B), size: 19),
+              child: Icon(
+                isVideos ? Icons.videocam_rounded : Icons.photo_camera_rounded,
+                color: Colors.white,
+                size: 19,
+              ),
             ),
             const SizedBox(width: 10),
             Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Text(
-                  "Medias Familly",
-                  style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16, letterSpacing: -0.3),
+                Text(
+                  isVideos ? "Films & Vidéos" : "Photos de Vacances",
+                  style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16, letterSpacing: -0.3),
                 ),
                 Text(
-                  "${_allPhotos.length} médias indexés",
+                  "${isVideos ? _videosOnly.length : _photosOnly.length} ${isVideos ? 'vidéos' : 'photos'}",
                   style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)),
                 ),
               ],
-            ),
-            const SizedBox(width: 24),
-            SizedBox(
-              width: 320,
-              child: SegmentedButton<int>(
-                showSelectedIcon: false,
-                style: SegmentedButton.styleFrom(
-                  visualDensity: VisualDensity.compact,
-                  selectedBackgroundColor: const Color(0xFFF97316),
-                  selectedForegroundColor: Colors.white,
-                  backgroundColor: const Color(0xFFF6EFE2),
-                  foregroundColor: Color(0xFF475569),
-                  side: const BorderSide(color: Color(0xFFEBDDC6)),
-                ),
-                segments: [
-                  ButtonSegment(
-                    value: 0,
-                    icon: const Icon(Icons.camera_alt_outlined, size: 15),
-                    label: Text("Photos (${_photosOnly.length})", style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
-                  ),
-                  ButtonSegment(
-                    value: 1,
-                    icon: const Icon(Icons.videocam_outlined, size: 15),
-                    label: Text("Vidéos (${_videosOnly.length})", style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
-                  ),
-                ],
-                selected: {_mediaMode},
-                onSelectionChanged: (set) => setState(() {
-                  _mediaMode = set.first;
-                }),
-              ),
             ),
           ],
         ),
@@ -1509,7 +1736,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   icon: Icons.backpack_outlined,
                   selectedIcon: Icons.backpack_rounded,
                   label: "Thématiques",
-                  badge: "${_countPhotosInTree(yearsTree: false, videosOnly: isVideos)}",
+                  badge: isVideos ? "0" : "${_countPhotosInTree(yearsTree: false, videosOnly: false)}",
                 ),
                 _buildDesktopNavItem(
                   index: 3,
@@ -1630,11 +1857,14 @@ class _HomeScreenState extends State<HomeScreen> {
       appBar: AppBar(
         backgroundColor: const Color(0xFFFFFFFF),
         leading: IconButton(
-          tooltip: 'Accueil (Pré-homepage)',
-          icon: const Icon(Icons.home_outlined, color: Color(0xFF0EA5E9)),
+          tooltip: 'Retour à l\'accueil',
+          icon: const Icon(Icons.arrow_back_rounded, color: Color(0xFFF97316)),
           onPressed: () => setState(() => _showPreHome = true),
         ),
-        title: const Text("Medias Familly", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 17)),
+        title: Text(
+          isVideos ? "Films & Vidéos" : "Photos de Vacances",
+          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 17),
+        ),
         actions: [
           _buildAuthHeaderChip(compact: true),
           IconButton(
@@ -1654,38 +1884,6 @@ class _HomeScreenState extends State<HomeScreen> {
             onPressed: () => _syncWithCloud(silent: false),
           ),
         ],
-        bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(48),
-          child: Padding(
-            padding: const EdgeInsets.only(bottom: 8, left: 16, right: 16),
-            child: SizedBox(
-              width: double.infinity,
-              child: SegmentedButton<int>(
-                style: SegmentedButton.styleFrom(
-                  selectedBackgroundColor: const Color(0xFFF97316).withValues(alpha: 0.3),
-                  selectedForegroundColor: const Color(0xFF0EA5E9),
-                  backgroundColor: const Color(0xFFF6EFE2),
-                ),
-                segments: [
-                  ButtonSegment(
-                    value: 0,
-                    icon: const Icon(Icons.camera_alt_outlined, size: 16),
-                    label: Text("Photos (${_photosOnly.length})", style: const TextStyle(fontSize: 12)),
-                  ),
-                  ButtonSegment(
-                    value: 1,
-                    icon: const Icon(Icons.videocam_outlined, size: 16),
-                    label: Text("Vidéos (${_videosOnly.length})", style: const TextStyle(fontSize: 12)),
-                  ),
-                ],
-                selected: {_mediaMode},
-                onSelectionChanged: (set) => setState(() {
-                  _mediaMode = set.first;
-                }),
-              ),
-            ),
-          ),
-        ),
       ),
       body: IndexedStack(
         index: _currentIndex,
@@ -2278,8 +2476,39 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // --- PHOTOS: Lightroom Thematics Tab ---
+  // --- PHOTOS / VIDEOS: Lightroom Thematics Tab ---
   Widget _buildAlbumsTab() {
+    if (_mediaMode == 1) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(18),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF0EA5E9).withValues(alpha: 0.12),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.backpack_outlined, size: 42, color: Color(0xFF0EA5E9)),
+              ),
+              const SizedBox(height: 16),
+              const Text(
+                'Thématiques Vidéos',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF1E293B)),
+              ),
+              const SizedBox(height: 6),
+              const Text(
+                'Pas encore de thématiques spécifiques pour les vidéos.\nUtilisez La carte ou Années pour parcourir vos vidéos !',
+                style: TextStyle(fontSize: 13, color: Color(0xFF64748B)),
+                textAlign: TextAlign.center,
+              ),
+            ],
+          ),
+        ),
+      );
+    }
     return _buildTreeExplorer(
       rootParentId: null,
       rootTitle: "Thématiques",
@@ -2313,10 +2542,11 @@ class _HomeScreenState extends State<HomeScreen> {
     required ValueChanged<String> onSearchChanged,
     required bool isYearsTab,
   }) {
+    final isVideoMode = _mediaMode == 1;
     final currentParentId = history.isEmpty ? rootParentId : history.last.id;
     final currentChildren = _childrenByParent[currentParentId] ?? [];
 
-    final filtered = searchQuery.isEmpty
+    final baseFiltered = searchQuery.isEmpty
         ? currentChildren
         : _nodesById.values.where((a) {
             if (a.id == _kYearsRootId) return false;
@@ -2324,6 +2554,10 @@ class _HomeScreenState extends State<HomeScreen> {
             if (isYearsTab != inYears) return false;
             return a.name.toLowerCase().contains(searchQuery.toLowerCase());
           }).toList();
+
+    final filtered = isVideoMode
+        ? baseFiltered.where((n) => n.totalVideoCount > 0).toList()
+        : baseFiltered;
 
     return Column(
       children: [
@@ -2445,8 +2679,11 @@ class _HomeScreenState extends State<HomeScreen> {
                   itemCount: filtered.length,
                   itemBuilder: (context, idx) {
                     final node = filtered[idx];
-                    final children = _childrenByParent[node.id] ?? [];
+                    final children = (_childrenByParent[node.id] ?? []).where((c) => !isVideoMode || c.totalVideoCount > 0).toList();
                     final hasChildren = children.isNotEmpty;
+                    final displayTotal = isVideoMode ? node.totalVideoCount : node.totalCount;
+                    final displayDirect = isVideoMode ? node.directVideoCount : node.directCount;
+                    final unitLabel = isVideoMode ? 'vidéos' : 'photos';
 
                     return ListTile(
                       leading: Container(
@@ -2459,7 +2696,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         child: Icon(
                           node.isFolder
                               ? (isYearsTab && history.isEmpty ? Icons.calendar_month_outlined : Icons.folder_outlined)
-                              : Icons.photo_library_outlined,
+                              : (isVideoMode ? Icons.movie_outlined : Icons.photo_library_outlined),
                           color: node.isFolder ? const Color(0xFFFBBF24) : const Color(0xFF0EA5E9),
                           size: 22,
                         ),
@@ -2472,17 +2709,17 @@ class _HomeScreenState extends State<HomeScreen> {
                         ),
                       ),
                       subtitle: Text(
-                        "${node.isFolder ? '${children.length} sous-dossiers/albums • ${node.totalCount} photos' : '${node.directCount} photos'}"
+                        "${node.isFolder ? '${children.length} sous-dossiers/albums • $displayTotal $unitLabel' : '$displayDirect $unitLabel'}"
                         "${node.createdByName != null && node.createdByName!.isNotEmpty ? ' • par ${node.createdByName}' : ''}",
                         style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)),
                       ),
                       trailing: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          if (node.isFolder && node.totalCount > 0)
+                          if (node.isFolder && displayTotal > 0)
                             IconButton(
                               icon: const Icon(Icons.grid_view, size: 18, color: Color(0xFF64748B)),
-                              tooltip: "Voir toutes les photos du dossier",
+                              tooltip: "Voir tous les médias du dossier",
                               onPressed: () => _openPhotosForNode(node),
                             ),
                           IconButton(
@@ -5222,6 +5459,440 @@ class _ZoomablePhotoPageState extends State<_ZoomablePhotoPage> {
             },
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _ActiveTripScreen extends StatefulWidget {
+  final ActiveTripConfig trip;
+  final List<PhotoItem> Function() getTripMedia;
+  final String currentUserName;
+  final String? currentUserEmail;
+  final String gdriveUrl;
+  final Future<void> Function(List<PlatformFile> files, void Function(int done, int total) onProgress)
+      onUploadSelectedFiles;
+  final Future<void> Function() onAddViaLink;
+  final Future<void> Function() onTerminateTrip;
+  final void Function(PhotoItem photo, List<PhotoItem> allTripMedia) onOpenPhoto;
+
+  const _ActiveTripScreen({
+    required this.trip,
+    required this.getTripMedia,
+    required this.currentUserName,
+    this.currentUserEmail,
+    required this.gdriveUrl,
+    required this.onUploadSelectedFiles,
+    required this.onAddViaLink,
+    required this.onTerminateTrip,
+    required this.onOpenPhoto,
+  });
+
+  @override
+  State<_ActiveTripScreen> createState() => _ActiveTripScreenState();
+}
+
+class _ActiveTripScreenState extends State<_ActiveTripScreen> {
+  bool _isUploading = false;
+  int _uploadDone = 0;
+  int _uploadTotal = 0;
+
+  Future<bool> _confirmWifiBeforeUpload() async {
+    try {
+      final results = await Connectivity().checkConnectivity();
+      final hasWifi = results.contains(ConnectivityResult.wifi) ||
+          results.contains(ConnectivityResult.ethernet);
+      if (hasWifi) return true;
+      if (!mounted) return false;
+      final proceed = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          backgroundColor: Colors.white,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+          title: const Row(
+            children: [
+              Icon(Icons.wifi_off_rounded, color: Color(0xFFF97316)),
+              SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  'Protection Wi-Fi',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF1E293B)),
+                ),
+              ),
+            ],
+          ),
+          content: const Text(
+            'Vous n\'êtes pas connecté en Wi-Fi (données mobiles ou réseau non vérifié).\n'
+            'L\'envoi de photos vers Google Drive peut consommer votre forfait mobile.\n\n'
+            'Voulez-vous envoyer quand même ?',
+            style: TextStyle(fontSize: 13, color: Color(0xFF475569)),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: const Text('Attendre le Wi-Fi'),
+            ),
+            FilledButton(
+              style: FilledButton.styleFrom(backgroundColor: const Color(0xFFF97316)),
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: const Text('Envoyer quand même'),
+            ),
+          ],
+        ),
+      );
+      return proceed == true;
+    } catch (_) {
+      return true;
+    }
+  }
+
+  Future<void> _pickAndUpload() async {
+    final okWifi = await _confirmWifiBeforeUpload();
+    if (!okWifi || !mounted) return;
+
+    final picked = await FilePicker.platform.pickFiles(
+      type: FileType.media,
+      allowMultiple: true,
+      withData: true,
+    );
+    if (picked == null || picked.files.isEmpty || !mounted) return;
+
+    setState(() {
+      _isUploading = true;
+      _uploadDone = 0;
+      _uploadTotal = picked.files.length;
+    });
+
+    try {
+      await widget.onUploadSelectedFiles(picked.files, (done, total) {
+        if (mounted) {
+          setState(() {
+            _uploadDone = done;
+            _uploadTotal = total;
+          });
+        }
+      });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            backgroundColor: const Color(0xFF1E293B),
+            content: Text(
+              '✔ ${picked.files.length} média(s) envoyé(s) sur Drive et partagé(s) !',
+              style: const TextStyle(color: Colors.white),
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            backgroundColor: const Color(0xFF1E293B),
+            content: Text(
+              'Erreur envoi Drive : $e',
+              style: const TextStyle(color: Colors.white, fontSize: 12),
+            ),
+            duration: const Duration(seconds: 5),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isUploading = false);
+    }
+  }
+
+  Future<void> _downloadAllPhotos(List<PhotoItem> media) async {
+    final withDrive = media.where((m) => m.driveId != null).toList();
+    if (withDrive.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          backgroundColor: Color(0xFF1E293B),
+          content: Text('Aucune photo Google Drive à télécharger.', style: TextStyle(color: Colors.white)),
+        ),
+      );
+      return;
+    }
+    for (final m in withDrive) {
+      final url = Uri.parse('https://drive.google.com/uc?export=download&id=${m.driveId}');
+      await launchUrl(url, mode: LaunchMode.externalApplication);
+    }
+  }
+
+  Future<void> _confirmTerminateTrip() async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+        title: const Text(
+          'Terminer et supprimer le voyage ?',
+          style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF1E293B)),
+        ),
+        content: const Text(
+          'Une fois les vacances terminées, vous pouvez supprimer cet album collaboratif afin de pouvoir créer un prochain voyage en cours.\n\n(Pensez à télécharger les photos avant si besoin.)',
+          style: TextStyle(fontSize: 13, color: Color(0xFF475569)),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Annuler'),
+          ),
+          FilledButton.icon(
+            style: FilledButton.styleFrom(backgroundColor: const Color(0xFFEF4444)),
+            onPressed: () => Navigator.of(ctx).pop(true),
+            icon: const Icon(Icons.delete_outline, size: 17),
+            label: const Text('Supprimer le voyage'),
+          ),
+        ],
+      ),
+    );
+    if (confirm == true) {
+      await widget.onTerminateTrip();
+      if (mounted) Navigator.of(context).pop();
+    }
+  }
+
+  String _dayKey(PhotoItem p) {
+    if (p.dateFolder.isNotEmpty && p.dateFolder.length >= 10) {
+      return p.dateFolder.substring(0, 10);
+    }
+    if (p.captureDate.isNotEmpty && p.captureDate.length >= 10) {
+      return p.captureDate.substring(0, 10);
+    }
+    return 'Autres';
+  }
+
+  String _formatDayTitle(String key, DateTime? tripStart) {
+    final dt = DateTime.tryParse(key);
+    if (dt == null) return key;
+    final dd = dt.day.toString().padLeft(2, '0');
+    final mm = dt.month.toString().padLeft(2, '0');
+    if (tripStart != null) {
+      final dayNum = dt.difference(tripStart).inDays + 1;
+      if (dayNum >= 1 && dayNum <= 60) {
+        return 'Jour $dayNum · $dd/$mm/${dt.year}';
+      }
+    }
+    return '$dd/$mm/${dt.year}';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final media = widget.getTripMedia();
+    final tripStart = DateTime.tryParse(widget.trip.startDate);
+    final Map<String, List<PhotoItem>> byDay = {};
+    for (final m in media) {
+      byDay.putIfAbsent(_dayKey(m), () => []).add(m);
+    }
+    final dayKeys = byDay.keys.toList()..sort((a, b) => a.compareTo(b));
+
+    return Scaffold(
+      appBar: AppBar(
+        backgroundColor: Colors.white,
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              '${widget.trip.countryFlag} ${widget.trip.title}',
+              style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Color(0xFF1E293B)),
+            ),
+            Text(
+              '${widget.trip.countryName} · ${widget.trip.startDate} → ${widget.trip.endDate}',
+              style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)),
+            ),
+          ],
+        ),
+        actions: [
+          IconButton(
+            tooltip: 'Télécharger toutes les photos',
+            icon: const Icon(Icons.download_rounded, color: Color(0xFF0EA5E9)),
+            onPressed: () => _downloadAllPhotos(media),
+          ),
+          IconButton(
+            tooltip: 'Terminer / supprimer ce voyage',
+            icon: const Icon(Icons.delete_outline_rounded, color: Color(0xFFEF4444)),
+            onPressed: _confirmTerminateTrip,
+          ),
+        ],
+      ),
+      body: Column(
+        children: [
+          if (_isUploading)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              color: const Color(0xFFE0F7FA),
+              child: Row(
+                children: [
+                  const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF0EA5E9)),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      'Envoi vers Google Drive : $_uploadDone / $_uploadTotal...',
+                      style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF0369A1)),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            decoration: const BoxDecoration(
+              color: Color(0xFFFFF7E8),
+              border: Border(bottom: BorderSide(color: Color(0xFFF1E6D2))),
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: FilledButton.icon(
+                    style: FilledButton.styleFrom(
+                      backgroundColor: const Color(0xFF10B981),
+                      padding: const EdgeInsets.symmetric(vertical: 11),
+                    ),
+                    onPressed: _isUploading ? null : _pickAndUpload,
+                    icon: const Icon(Icons.wifi_tethering_rounded, size: 18),
+                    label: const Text('Envoyer photos (Wi-Fi)', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                OutlinedButton.icon(
+                  onPressed: () async {
+                    await widget.onAddViaLink();
+                    if (mounted) setState(() {});
+                  },
+                  icon: const Icon(Icons.link, size: 17),
+                  label: const Text('Lien Drive', style: TextStyle(fontSize: 12)),
+                ),
+              ],
+            ),
+          ),
+          Expanded(
+            child: media.isEmpty
+                ? Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(24),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.beach_access_rounded, size: 48, color: Color(0xFFF97316)),
+                          const SizedBox(height: 12),
+                          Text(
+                            'Bienvenue en ${widget.trip.countryName} ${widget.trip.countryFlag}',
+                            style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: Color(0xFF1E293B)),
+                          ),
+                          const SizedBox(height: 6),
+                          const Text(
+                            'Sélectionnez des photos depuis votre téléphone ou PC (avec vérification Wi-Fi) pour alimenter l\'album jour par jour.',
+                            style: TextStyle(fontSize: 13, color: Color(0xFF64748B)),
+                            textAlign: TextAlign.center,
+                          ),
+                        ],
+                      ),
+                    ),
+                  )
+                : ListView.builder(
+                    padding: const EdgeInsets.all(14),
+                    itemCount: dayKeys.length,
+                    itemBuilder: (_, idx) {
+                      final key = dayKeys[idx];
+                      final dayItems = byDay[key]!;
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 8),
+                            child: Row(
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFFF97316).withValues(alpha: 0.14),
+                                    borderRadius: BorderRadius.circular(10),
+                                  ),
+                                  child: Text(
+                                    _formatDayTitle(key, tripStart),
+                                    style: const TextStyle(
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.bold,
+                                      color: Color(0xFFEA580C),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Text(
+                                  '${dayItems.length} souvenir(s)',
+                                  style: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+                                ),
+                              ],
+                            ),
+                          ),
+                          GridView.builder(
+                            shrinkWrap: true,
+                            physics: const NeverScrollableScrollPhysics(),
+                            gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+                              maxCrossAxisExtent: 175,
+                              crossAxisSpacing: 8,
+                              mainAxisSpacing: 8,
+                              childAspectRatio: 0.85,
+                            ),
+                            itemCount: dayItems.length,
+                            itemBuilder: (_, pIdx) {
+                              final p = dayItems[pIdx];
+                              final thumb = p.thumbnailUrl;
+                              return InkWell(
+                                borderRadius: BorderRadius.circular(12),
+                                onTap: () => widget.onOpenPhoto(p, media),
+                                child: Container(
+                                  decoration: BoxDecoration(
+                                    color: Colors.white,
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: Border.all(color: const Color(0xFFEBDDC6)),
+                                  ),
+                                  clipBehavior: Clip.antiAlias,
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                                    children: [
+                                      Expanded(
+                                        child: thumb != null
+                                            ? Image.network(thumb, fit: BoxFit.cover)
+                                            : const Center(child: Icon(Icons.photo, color: Color(0xFF94A3B8))),
+                                      ),
+                                      Padding(
+                                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                                        child: Row(
+                                          children: [
+                                            const Icon(Icons.person_outline, size: 12, color: Color(0xFF0EA5E9)),
+                                            const SizedBox(width: 4),
+                                            Expanded(
+                                              child: Text(
+                                                p.addedByName ?? 'Famille',
+                                                style: const TextStyle(
+                                                  fontSize: 10.5,
+                                                  fontWeight: FontWeight.w600,
+                                                  color: Color(0xFF475569),
+                                                ),
+                                                overflow: TextOverflow.ellipsis,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                          const SizedBox(height: 12),
+                        ],
+                      );
+                    },
+                  ),
+          ),
+        ],
       ),
     );
   }

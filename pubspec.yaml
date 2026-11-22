@@ -2,7 +2,7 @@ name: gallerie
 description: "Galerie de photos connectee a Google Drive et Lightroom."
 publish_to: 'none'
 
-version: 1.0.15+16
+version: 1.0.16+17
 
 environment:
   sdk: ">=3.8.0 <4.0.0"
@@ -16,6 +16,8 @@ dependencies:
   supabase_flutter: ^2.8.0
   google_sign_in: ^6.2.2
   google_sign_in_android: ^6.1.26
+  file_picker: ^8.1.4
+  connectivity_plus: ^6.1.0
 
 dev_dependencies:
   flutter_test:
