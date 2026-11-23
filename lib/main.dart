@@ -9,8 +9,8 @@ import 'services/app_update_service.dart';
 import 'services/cloud_sync_service.dart';
 import 'widgets/world_map_tab.dart';
 
-const int appBuildNumber = 19;
-const String appVersionLabel = "1.0.18";
+const int appBuildNumber = 20;
+const String appVersionLabel = "1.0.19";
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -51,6 +51,26 @@ class GallerieApp extends StatelessWidget {
       ),
       home: const HomeScreen(),
     );
+  }
+}
+
+enum PhotoFlagStatus { neutral, pick, reject }
+
+class PhotoRatingRecord {
+  final int rating; // 0..5
+  final PhotoFlagStatus status;
+
+  const PhotoRatingRecord({this.rating = 0, this.status = PhotoFlagStatus.neutral});
+
+  static PhotoRatingRecord parse(String raw) {
+    final parts = raw.split(':');
+    final r = (int.tryParse(parts.isNotEmpty ? parts[0] : '0') ?? 0).clamp(0, 5);
+    final stName = parts.length > 1 ? parts[1] : 'neutral';
+    final st = PhotoFlagStatus.values.firstWhere(
+      (e) => e.name == stName,
+      orElse: () => PhotoFlagStatus.neutral,
+    );
+    return PhotoRatingRecord(rating: r, status: st);
   }
 }
 
@@ -271,10 +291,12 @@ class _HomeScreenState extends State<HomeScreen> {
   static const String _kPaysFolderId = '2956c2bdbaf04c7984849dbacdb605ab';
   static const String _kCountryMetaParentId = '__country_meta__';
   static const String _kCoverMetaParentId = '__cover_meta__';
+  static const String _kRateMetaParentId = '__rate_meta__';
   static const String _kTripMetaParentId = '__trip_meta__';
   static const String _kActiveTripNodeId = '__active_trip__';
   static const String _kCollabTripAlbumId = 'collab_voyage_en_cours';
   final Map<String, int> _albumCoverPhotoIdById = {};
+  final Map<int, PhotoRatingRecord> _ratingsByPhotoId = {};
   ActiveTripConfig? _activeTrip;
   AuthUserSession _auth = CloudSyncService.currentAuth;
   StreamSubscription<AuthUserSession>? _authSub;
@@ -757,8 +779,20 @@ class _HomeScreenState extends State<HomeScreen> {
       if (!mounted) return;
       _cloudTableReady = delta.tableReady;
 
-      // 1. Appliquer les nouveaux dossiers & albums (ainsi que déplacements, suppressions, pays, couvertures et voyage actif)
+      // 1. Appliquer les nouveaux dossiers & albums (ainsi que déplacements, suppressions, pays, couvertures, notes et voyage actif)
       for (final ca in delta.customAlbums) {
+        if (ca.parentId == _kRateMetaParentId || ca.id.startsWith('__rate__')) {
+          final targetIdStr = ca.id.startsWith('__rate__') ? ca.id.substring('__rate__'.length) : ca.id;
+          final targetPhotoId = int.tryParse(targetIdStr);
+          if (targetPhotoId != null) {
+            if (ca.isDeleted) {
+              _ratingsByPhotoId.remove(targetPhotoId);
+            } else {
+              _ratingsByPhotoId[targetPhotoId] = PhotoRatingRecord.parse(ca.name);
+            }
+          }
+          continue;
+        }
         if (ca.parentId == _kCoverMetaParentId || ca.id.startsWith('__cover__')) {
           final targetAlbumId = ca.id.startsWith('__cover__') ? ca.id.substring('__cover__'.length) : ca.id;
           final parsedId = int.tryParse(ca.name.trim());
@@ -1202,6 +1236,7 @@ class _HomeScreenState extends State<HomeScreen> {
               isDeleted: true,
             );
           },
+          onBulkDeleteTripPhotos: _handleBulkDeletePhotos,
           onOpenPhoto: (photo, allTripMedia) {
             final idx = allTripMedia.indexWhere((p) => p.id == photo.id);
             Navigator.of(context).push(
@@ -2391,8 +2426,10 @@ class _HomeScreenState extends State<HomeScreen> {
               nodesById: _nodesById,
               gdriveUrl: _gdriveUrl,
               likesByPhotoId: _likesByPhotoId,
+              ratingsByPhotoId: _ratingsByPhotoId,
               currentUserEmail: _auth.email,
               onToggleLike: _handleTogglePhotoLike,
+              onUpdateRating: _handleUpdatePhotoRating,
               onAssignAlbum: _handleAssignAlbumToPhoto,
               onDeletePhoto: _handleDeletePhoto,
               onBulkAssignAlbum: _handleBulkAssignAlbumToPhotos,
@@ -2971,8 +3008,10 @@ class _HomeScreenState extends State<HomeScreen> {
           nodesById: _nodesById,
           gdriveUrl: _gdriveUrl,
           likesByPhotoId: _likesByPhotoId,
+          ratingsByPhotoId: _ratingsByPhotoId,
           currentUserEmail: _auth.email,
           onToggleLike: _handleTogglePhotoLike,
+          onUpdateRating: _handleUpdatePhotoRating,
           onAssignAlbum: _handleAssignAlbumToPhoto,
           onDeletePhoto: _handleDeletePhoto,
           onBulkAssignAlbum: _handleBulkAssignAlbumToPhotos,
@@ -3435,8 +3474,10 @@ class _HomeScreenState extends State<HomeScreen> {
       nodesById: _nodesById,
       gdriveUrl: _gdriveUrl,
       likesByPhotoId: _likesByPhotoId,
+      ratingsByPhotoId: _ratingsByPhotoId,
       currentUserEmail: _auth.email,
       onToggleLike: _handleTogglePhotoLike,
+      onUpdateRating: _handleUpdatePhotoRating,
       onAssignAlbum: _handleAssignAlbumToPhoto,
       onDeletePhoto: _handleDeletePhoto,
     );
@@ -4001,6 +4042,19 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  Future<void> _handleUpdatePhotoRating(PhotoItem photo, int rating, PhotoFlagStatus status) async {
+    final rec = PhotoRatingRecord(rating: rating.clamp(0, 5), status: status);
+    setState(() {
+      _ratingsByPhotoId[photo.id] = rec;
+    });
+    await CloudSyncService.createCustomAlbum(
+      id: '__rate__${photo.id}',
+      name: '${rec.rating}:${rec.status.name}',
+      parentId: _kRateMetaParentId,
+      isFolder: false,
+    );
+  }
+
   Future<void> _handleTogglePhotoLike(PhotoItem photo) async {
     if (!_auth.isSignedIn || _auth.email == null) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -4048,8 +4102,10 @@ class PhotoGridScreen extends StatefulWidget {
   final Map<String, AlbumNode> nodesById;
   final String gdriveUrl;
   final Map<int, List<PhotoLikeRecord>>? likesByPhotoId;
+  final Map<int, PhotoRatingRecord>? ratingsByPhotoId;
   final String? currentUserEmail;
   final Future<void> Function(PhotoItem photo)? onToggleLike;
+  final Future<void> Function(PhotoItem photo, int rating, PhotoFlagStatus status)? onUpdateRating;
   final Future<void> Function(PhotoItem photo, String albumId)? onAssignAlbum;
   final Future<void> Function(PhotoItem photo)? onDeletePhoto;
   final Future<void> Function(List<PhotoItem> photos, String albumId)? onBulkAssignAlbum;
@@ -4065,8 +4121,10 @@ class PhotoGridScreen extends StatefulWidget {
     required this.nodesById,
     required this.gdriveUrl,
     this.likesByPhotoId,
+    this.ratingsByPhotoId,
     this.currentUserEmail,
     this.onToggleLike,
+    this.onUpdateRating,
     this.onAssignAlbum,
     this.onDeletePhoto,
     this.onBulkAssignAlbum,
@@ -4188,8 +4246,10 @@ class _PhotoGridScreenState extends State<PhotoGridScreen> {
         nodesById: widget.nodesById,
         gdriveUrl: widget.gdriveUrl,
         likesByPhotoId: widget.likesByPhotoId,
+        ratingsByPhotoId: widget.ratingsByPhotoId,
         currentUserEmail: widget.currentUserEmail,
         onToggleLike: widget.onToggleLike,
+        onUpdateRating: widget.onUpdateRating,
         onAssignAlbum: widget.onAssignAlbum,
         onDeletePhoto: widget.onDeletePhoto,
         onBulkAssignAlbum: widget.onBulkAssignAlbum,
@@ -4206,8 +4266,10 @@ class PhotoGridBody extends StatefulWidget {
   final String gdriveUrl;
   final Widget? header;
   final Map<int, List<PhotoLikeRecord>>? likesByPhotoId;
+  final Map<int, PhotoRatingRecord>? ratingsByPhotoId;
   final String? currentUserEmail;
   final Future<void> Function(PhotoItem photo)? onToggleLike;
+  final Future<void> Function(PhotoItem photo, int rating, PhotoFlagStatus status)? onUpdateRating;
   final Future<void> Function(PhotoItem photo, String albumId)? onAssignAlbum;
   final Future<void> Function(PhotoItem photo)? onDeletePhoto;
   final Future<void> Function(List<PhotoItem> photos, String albumId)? onBulkAssignAlbum;
@@ -4221,8 +4283,10 @@ class PhotoGridBody extends StatefulWidget {
     required this.gdriveUrl,
     this.header,
     this.likesByPhotoId,
+    this.ratingsByPhotoId,
     this.currentUserEmail,
     this.onToggleLike,
+    this.onUpdateRating,
     this.onAssignAlbum,
     this.onDeletePhoto,
     this.onBulkAssignAlbum,
@@ -4240,6 +4304,9 @@ class _PhotoGridBodyState extends State<PhotoGridBody> {
   final ScrollController _scrollController = ScrollController();
   bool _isSelectionMode = false;
   final Set<int> _selectedPhotoIds = {};
+  bool _filterLikedOnly = false;
+  int _filterMinRating = 0;
+  PhotoFlagStatus? _filterStatus;
 
   @override
   void initState() {
@@ -4423,8 +4490,8 @@ class _PhotoGridBodyState extends State<PhotoGridBody> {
 
   @override
   Widget build(BuildContext context) {
-    final photos = widget.photos;
-    if (photos.isEmpty) {
+    final allPhotos = widget.photos;
+    if (allPhotos.isEmpty) {
       return Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -4436,6 +4503,21 @@ class _PhotoGridBodyState extends State<PhotoGridBody> {
         ),
       );
     }
+
+    final hasFilterBar = widget.ratingsByPhotoId != null || widget.likesByPhotoId != null;
+    final hasActiveFilter = _filterLikedOnly || _filterMinRating > 0 || _filterStatus != null;
+    final photos = !hasActiveFilter
+        ? allPhotos
+        : allPhotos.where((p) {
+            if (_filterLikedOnly) {
+              final likes = widget.likesByPhotoId?[p.id] ?? const <PhotoLikeRecord>[];
+              if (likes.isEmpty) return false;
+            }
+            final rec = widget.ratingsByPhotoId?[p.id] ?? const PhotoRatingRecord();
+            if (_filterMinRating > 0 && rec.rating < _filterMinRating) return false;
+            if (_filterStatus != null && rec.status != _filterStatus) return false;
+            return true;
+          }).toList();
 
     final displayCount = _visibleCount < photos.length ? _visibleCount : photos.length;
     final supportsBulk = widget.onAssignAlbum != null ||
@@ -4455,6 +4537,118 @@ class _PhotoGridBodyState extends State<PhotoGridBody> {
         return Column(
           children: [
             if (widget.header != null) widget.header!,
+            if (hasFilterBar)
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: const BoxDecoration(
+                  color: Color(0xFFFFFFFF),
+                  border: Border(bottom: BorderSide(color: Color(0xFFF1E6D2))),
+                ),
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: [
+                      FilterChip(
+                        avatar: Icon(
+                          _filterLikedOnly ? Icons.favorite : Icons.favorite_border,
+                          size: 14,
+                          color: _filterLikedOnly ? Colors.white : const Color(0xFFF43F5E),
+                        ),
+                        label: Text(
+                          'Likées',
+                          style: TextStyle(
+                            fontSize: 11.5,
+                            color: _filterLikedOnly ? Colors.white : const Color(0xFF475569),
+                            fontWeight: _filterLikedOnly ? FontWeight.bold : FontWeight.w500,
+                          ),
+                        ),
+                        selected: _filterLikedOnly,
+                        selectedColor: const Color(0xFFF43F5E),
+                        backgroundColor: const Color(0xFFF6EFE2),
+                        visualDensity: VisualDensity.compact,
+                        onSelected: (v) => setState(() => _filterLikedOnly = v),
+                      ),
+                      const SizedBox(width: 6),
+                      PopupMenuButton<int>(
+                        tooltip: 'Filtrer par étoiles',
+                        onSelected: (v) => setState(() => _filterMinRating = v),
+                        itemBuilder: (_) => const [
+                          PopupMenuItem(value: 0, child: Text('Toutes les notes')),
+                          PopupMenuItem(value: 1, child: Text('★ 1+ étoile')),
+                          PopupMenuItem(value: 2, child: Text('★★ 2+ étoiles')),
+                          PopupMenuItem(value: 3, child: Text('★★★ 3+ étoiles')),
+                          PopupMenuItem(value: 4, child: Text('★★★★ 4+ étoiles')),
+                          PopupMenuItem(value: 5, child: Text('★★★★★ 5 étoiles')),
+                        ],
+                        child: Chip(
+                          avatar: const Icon(Icons.star_rounded, size: 15, color: Color(0xFFF59E0B)),
+                          label: Text(
+                            _filterMinRating == 0 ? 'Note' : '★ $_filterMinRating+',
+                            style: TextStyle(
+                              fontSize: 11.5,
+                              fontWeight: _filterMinRating > 0 ? FontWeight.bold : FontWeight.w500,
+                              color: _filterMinRating > 0 ? const Color(0xFFB45309) : const Color(0xFF475569),
+                            ),
+                          ),
+                          backgroundColor: _filterMinRating > 0
+                              ? const Color(0xFFFEF3C7)
+                              : const Color(0xFFF6EFE2),
+                          visualDensity: VisualDensity.compact,
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      PopupMenuButton<PhotoFlagStatus?>(
+                        tooltip: 'Filtrer par statut',
+                        onSelected: (v) => setState(() => _filterStatus = v),
+                        itemBuilder: (_) => const [
+                          PopupMenuItem(value: null, child: Text('Tous les statuts')),
+                          PopupMenuItem(value: PhotoFlagStatus.pick, child: Text('✓ Validées')),
+                          PopupMenuItem(value: PhotoFlagStatus.neutral, child: Text('○ Neutres')),
+                          PopupMenuItem(value: PhotoFlagStatus.reject, child: Text('✕ Rejetées')),
+                        ],
+                        child: Chip(
+                          avatar: Icon(
+                            _filterStatus == PhotoFlagStatus.pick
+                                ? Icons.check_circle
+                                : (_filterStatus == PhotoFlagStatus.reject ? Icons.cancel : Icons.flag_outlined),
+                            size: 15,
+                            color: _filterStatus == PhotoFlagStatus.pick
+                                ? const Color(0xFF10B981)
+                                : (_filterStatus == PhotoFlagStatus.reject ? const Color(0xFFEF4444) : const Color(0xFF64748B)),
+                          ),
+                          label: Text(
+                            _filterStatus == null
+                                ? 'Statut'
+                                : (_filterStatus == PhotoFlagStatus.pick
+                                    ? 'Validées'
+                                    : (_filterStatus == PhotoFlagStatus.reject ? 'Rejetées' : 'Neutres')),
+                            style: const TextStyle(fontSize: 11.5, color: Color(0xFF475569)),
+                          ),
+                          backgroundColor: const Color(0xFFF6EFE2),
+                          visualDensity: VisualDensity.compact,
+                        ),
+                      ),
+                      if (hasActiveFilter) ...[
+                        const SizedBox(width: 6),
+                        ActionChip(
+                          label: Text(
+                            'Réinit. (${photos.length}/${allPhotos.length})',
+                            style: const TextStyle(fontSize: 11, color: Color(0xFFEA580C), fontWeight: FontWeight.w600),
+                          ),
+                          backgroundColor: const Color(0xFFFFEDD5),
+                          visualDensity: VisualDensity.compact,
+                          onPressed: () => setState(() {
+                            _filterLikedOnly = false;
+                            _filterMinRating = 0;
+                            _filterStatus = null;
+                          }),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
             if (supportsBulk)
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
@@ -4537,12 +4731,15 @@ class _PhotoGridBodyState extends State<PhotoGridBody> {
                     final photoLikes = widget.likesByPhotoId?[photo.id] ?? const <PhotoLikeRecord>[];
                     final isLikedByMe = widget.currentUserEmail != null &&
                         photoLikes.any((l) => l.userEmail == widget.currentUserEmail);
+                    final ratingRec = widget.ratingsByPhotoId?[photo.id] ?? const PhotoRatingRecord();
                     final isSelected = _selectedPhotoIds.contains(photo.id);
                     return _PhotoGridTile(
                       key: ValueKey(photo.id),
                       photo: photo,
                       likeCount: photoLikes.length,
                       isLikedByMe: isLikedByMe,
+                      rating: ratingRec.rating,
+                      flagStatus: ratingRec.status,
                       isSelectionMode: _isSelectionMode,
                       isSelected: isSelected,
                       onLongPress: supportsBulk ? () => _toggleSelection(photo.id) : null,
@@ -4661,6 +4858,96 @@ class _PhotoGridBodyState extends State<PhotoGridBody> {
     );
   }
 
+  Widget _buildRatingAndStatusBar(PhotoItem photo, void Function(VoidCallback) setInnerState) {
+    final current = widget.ratingsByPhotoId?[photo.id] ?? const PhotoRatingRecord();
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF6EFE2),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFEBDDC6)),
+      ),
+      child: Column(
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Text('Note : ', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF475569))),
+              for (int star = 1; star <= 5; star++)
+                IconButton(
+                  padding: const EdgeInsets.symmetric(horizontal: 2),
+                  constraints: const BoxConstraints(),
+                  icon: Icon(
+                    star <= current.rating ? Icons.star_rounded : Icons.star_border_rounded,
+                    color: star <= current.rating ? const Color(0xFFF59E0B) : const Color(0xFF94A3B8),
+                    size: 26,
+                  ),
+                  onPressed: widget.onUpdateRating == null
+                      ? null
+                      : () async {
+                          final nextRating = current.rating == star ? 0 : star;
+                          await widget.onUpdateRating!(photo, nextRating, current.status);
+                          setInnerState(() {});
+                          if (mounted) setState(() {});
+                        },
+                ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Row(
+            children: [
+              Expanded(
+                child: ChoiceChip(
+                  label: const Center(child: Text('✓ Validée', style: TextStyle(fontSize: 11.5))),
+                  selected: current.status == PhotoFlagStatus.pick,
+                  selectedColor: const Color(0xFFD1FAE5),
+                  onSelected: widget.onUpdateRating == null
+                      ? null
+                      : (_) async {
+                          await widget.onUpdateRating!(photo, current.rating, PhotoFlagStatus.pick);
+                          setInnerState(() {});
+                          if (mounted) setState(() {});
+                        },
+                ),
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: ChoiceChip(
+                  label: const Center(child: Text('○ Neutre', style: TextStyle(fontSize: 11.5))),
+                  selected: current.status == PhotoFlagStatus.neutral,
+                  selectedColor: const Color(0xFFE2E8F0),
+                  onSelected: widget.onUpdateRating == null
+                      ? null
+                      : (_) async {
+                          await widget.onUpdateRating!(photo, current.rating, PhotoFlagStatus.neutral);
+                          setInnerState(() {});
+                          if (mounted) setState(() {});
+                        },
+                ),
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: ChoiceChip(
+                  label: const Center(child: Text('✕ Rejetée', style: TextStyle(fontSize: 11.5))),
+                  selected: current.status == PhotoFlagStatus.reject,
+                  selectedColor: const Color(0xFFFEE2E2),
+                  onSelected: widget.onUpdateRating == null
+                      ? null
+                      : (_) async {
+                          await widget.onUpdateRating!(photo, current.rating, PhotoFlagStatus.reject);
+                          setInnerState(() {});
+                          if (mounted) setState(() {});
+                        },
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
   void _openLightbox(BuildContext context, PhotoItem photo) {
     final isWide = MediaQuery.of(context).size.width >= 900;
     final photoAlbumNames = photo.albums
@@ -4674,7 +4961,8 @@ class _PhotoGridBodyState extends State<PhotoGridBody> {
     if (isWide) {
       showDialog(
         context: context,
-        builder: (dialogCtx) => Dialog(
+        builder: (dialogCtx) => StatefulBuilder(
+          builder: (_, setInnerState) => Dialog(
           backgroundColor: const Color(0xFFFFFFFF),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(16),
@@ -4834,6 +5122,8 @@ class _PhotoGridBodyState extends State<PhotoGridBody> {
                     ),
                   ],
                   const SizedBox(height: 16),
+                  const SizedBox(height: 12),
+                  _buildRatingAndStatusBar(photo, setInnerState),
                   Row(
                     children: [
                       if (widget.onToggleLike != null) ...[
@@ -4962,6 +5252,7 @@ class _PhotoGridBodyState extends State<PhotoGridBody> {
               ),
             ),
           ),
+        ),
         ),
       );
       return;
@@ -5116,6 +5407,7 @@ class _PhotoGridBodyState extends State<PhotoGridBody> {
                   ),
                   const SizedBox(height: 16),
                 ],
+                _buildRatingAndStatusBar(photo, (fn) => setState(fn)),
                 Row(
                   children: [
                     if (widget.onToggleLike != null) ...[
@@ -5323,6 +5615,8 @@ class _PhotoGridTile extends StatefulWidget {
   final PhotoItem photo;
   final int likeCount;
   final bool isLikedByMe;
+  final int rating;
+  final PhotoFlagStatus flagStatus;
   final bool isSelectionMode;
   final bool isSelected;
   final VoidCallback? onLongPress;
@@ -5334,6 +5628,8 @@ class _PhotoGridTile extends StatefulWidget {
     required this.photo,
     this.likeCount = 0,
     this.isLikedByMe = false,
+    this.rating = 0,
+    this.flagStatus = PhotoFlagStatus.neutral,
     this.isSelectionMode = false,
     this.isSelected = false,
     this.onLongPress,
@@ -5487,6 +5783,46 @@ class _PhotoGridTileState extends State<_PhotoGridTile> {
                     ),
                   ),
                 ),
+              if (widget.flagStatus != PhotoFlagStatus.neutral)
+                Positioned(
+                  top: 6,
+                  right: 6,
+                  child: Container(
+                    padding: const EdgeInsets.all(2),
+                    decoration: const BoxDecoration(
+                      color: Colors.white,
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(
+                      widget.flagStatus == PhotoFlagStatus.pick ? Icons.check_circle : Icons.cancel,
+                      size: 16,
+                      color: widget.flagStatus == PhotoFlagStatus.pick
+                          ? const Color(0xFF10B981)
+                          : const Color(0xFFEF4444),
+                    ),
+                  ),
+                ),
+              if (widget.rating > 0)
+                Positioned(
+                  bottom: 6,
+                  left: 6,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withValues(alpha: 0.68),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Text(
+                      '★' * widget.rating,
+                      style: const TextStyle(
+                        fontSize: 9.5,
+                        color: Color(0xFFFBBF24),
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 0.5,
+                      ),
+                    ),
+                  ),
+                ),
               if (widget.isSelectionMode)
                 Positioned.fill(
                   child: IgnorePointer(
@@ -5526,8 +5862,10 @@ class PhotoSearchScreen extends StatefulWidget {
   final Map<String, AlbumNode> nodesById;
   final String gdriveUrl;
   final Map<int, List<PhotoLikeRecord>>? likesByPhotoId;
+  final Map<int, PhotoRatingRecord>? ratingsByPhotoId;
   final String? currentUserEmail;
   final Future<void> Function(PhotoItem photo)? onToggleLike;
+  final Future<void> Function(PhotoItem photo, int rating, PhotoFlagStatus status)? onUpdateRating;
   final Future<void> Function(PhotoItem photo, String albumId)? onAssignAlbum;
   final Future<void> Function(PhotoItem photo)? onDeletePhoto;
 
@@ -5537,8 +5875,10 @@ class PhotoSearchScreen extends StatefulWidget {
     required this.nodesById,
     required this.gdriveUrl,
     this.likesByPhotoId,
+    this.ratingsByPhotoId,
     this.currentUserEmail,
     this.onToggleLike,
+    this.onUpdateRating,
     this.onAssignAlbum,
     this.onDeletePhoto,
   });
@@ -5599,31 +5939,22 @@ class _PhotoSearchScreenState extends State<PhotoSearchScreen> {
           ),
         ),
         Expanded(
-          child: _query.isEmpty
+          child: _query.isNotEmpty && _results.isEmpty
               ? const Center(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(Icons.search, size: 48, color: Color(0xFFCBD5E1)),
-                      SizedBox(height: 12),
-                      Text("Tapez pour rechercher dans les photos", style: TextStyle(color: Color(0xFF94A3B8))),
-                    ],
-                  ),
+                  child: Text("Aucun résultat", style: TextStyle(color: Color(0xFF94A3B8))),
                 )
-              : _results.isEmpty
-                  ? const Center(
-                      child: Text("Aucun résultat", style: TextStyle(color: Color(0xFF94A3B8))),
-                    )
-                  : PhotoGridBody(
-                      photos: _results,
-                      nodesById: widget.nodesById,
-                      gdriveUrl: widget.gdriveUrl,
-                      likesByPhotoId: widget.likesByPhotoId,
-                      currentUserEmail: widget.currentUserEmail,
-                      onToggleLike: widget.onToggleLike,
-                      onAssignAlbum: widget.onAssignAlbum,
-                      onDeletePhoto: widget.onDeletePhoto,
-                    ),
+              : PhotoGridBody(
+                  photos: _query.isEmpty ? widget.allPhotos : _results,
+                  nodesById: widget.nodesById,
+                  gdriveUrl: widget.gdriveUrl,
+                  likesByPhotoId: widget.likesByPhotoId,
+                  ratingsByPhotoId: widget.ratingsByPhotoId,
+                  currentUserEmail: widget.currentUserEmail,
+                  onToggleLike: widget.onToggleLike,
+                  onUpdateRating: widget.onUpdateRating,
+                  onAssignAlbum: widget.onAssignAlbum,
+                  onDeletePhoto: widget.onDeletePhoto,
+                ),
         ),
       ],
     );
@@ -5872,6 +6203,7 @@ class _ActiveTripScreen extends StatefulWidget {
       onUploadSelectedFiles;
   final Future<void> Function() onAddViaLink;
   final Future<void> Function() onTerminateTrip;
+  final Future<void> Function(List<PhotoItem> photos) onBulkDeleteTripPhotos;
   final void Function(PhotoItem photo, List<PhotoItem> allTripMedia) onOpenPhoto;
 
   const _ActiveTripScreen({
@@ -5883,6 +6215,7 @@ class _ActiveTripScreen extends StatefulWidget {
     required this.onUploadSelectedFiles,
     required this.onAddViaLink,
     required this.onTerminateTrip,
+    required this.onBulkDeleteTripPhotos,
     required this.onOpenPhoto,
   });
 
@@ -5894,6 +6227,8 @@ class _ActiveTripScreenState extends State<_ActiveTripScreen> {
   bool _isUploading = false;
   int _uploadDone = 0;
   int _uploadTotal = 0;
+  bool _isSelectionMode = false;
+  final Set<int> _selectedIds = {};
 
   Future<bool> _confirmWifiBeforeUpload() async {
     try {
@@ -6101,6 +6436,18 @@ class _ActiveTripScreenState extends State<_ActiveTripScreen> {
           ],
         ),
         actions: [
+          if (media.isNotEmpty)
+            IconButton(
+              tooltip: _isSelectionMode ? 'Annuler la sélection' : 'Sélection multiple',
+              icon: Icon(
+                _isSelectionMode ? Icons.close : Icons.checklist_rounded,
+                color: const Color(0xFFF97316),
+              ),
+              onPressed: () => setState(() {
+                _isSelectionMode = !_isSelectionMode;
+                if (!_isSelectionMode) _selectedIds.clear();
+              }),
+            ),
           IconButton(
             tooltip: 'Télécharger toutes les photos',
             icon: const Icon(Icons.download_rounded, color: Color(0xFF0EA5E9)),
@@ -6240,23 +6587,71 @@ class _ActiveTripScreenState extends State<_ActiveTripScreen> {
                             itemBuilder: (_, pIdx) {
                               final p = dayItems[pIdx];
                               final thumb = p.thumbnailUrl;
+                              final isSel = _selectedIds.contains(p.id);
                               return InkWell(
                                 borderRadius: BorderRadius.circular(12),
-                                onTap: () => widget.onOpenPhoto(p, media),
+                                onLongPress: () {
+                                  setState(() {
+                                    _isSelectionMode = true;
+                                    if (isSel) {
+                                      _selectedIds.remove(p.id);
+                                    } else {
+                                      _selectedIds.add(p.id);
+                                    }
+                                  });
+                                },
+                                onTap: () {
+                                  if (_isSelectionMode) {
+                                    setState(() {
+                                      if (isSel) {
+                                        _selectedIds.remove(p.id);
+                                        if (_selectedIds.isEmpty) _isSelectionMode = false;
+                                      } else {
+                                        _selectedIds.add(p.id);
+                                      }
+                                    });
+                                  } else {
+                                    widget.onOpenPhoto(p, media);
+                                  }
+                                },
                                 child: Container(
                                   decoration: BoxDecoration(
                                     color: Colors.white,
                                     borderRadius: BorderRadius.circular(12),
-                                    border: Border.all(color: const Color(0xFFEBDDC6)),
+                                    border: Border.all(
+                                      color: isSel ? const Color(0xFF0EA5E9) : const Color(0xFFEBDDC6),
+                                      width: isSel ? 2.5 : 1.0,
+                                    ),
                                   ),
                                   clipBehavior: Clip.antiAlias,
                                   child: Column(
                                     crossAxisAlignment: CrossAxisAlignment.stretch,
                                     children: [
                                       Expanded(
-                                        child: thumb != null
-                                            ? Image.network(thumb, fit: BoxFit.cover)
-                                            : const Center(child: Icon(Icons.photo, color: Color(0xFF94A3B8))),
+                                        child: Stack(
+                                          fit: StackFit.expand,
+                                          children: [
+                                            thumb != null
+                                                ? Image.network(thumb, fit: BoxFit.cover)
+                                                : const Center(child: Icon(Icons.photo, color: Color(0xFF94A3B8))),
+                                            if (_isSelectionMode)
+                                              Positioned(
+                                                top: 6,
+                                                left: 6,
+                                                child: Container(
+                                                  decoration: BoxDecoration(
+                                                    color: Colors.black.withValues(alpha: 0.65),
+                                                    shape: BoxShape.circle,
+                                                  ),
+                                                  child: Icon(
+                                                    isSel ? Icons.check_circle : Icons.radio_button_unchecked,
+                                                    size: 20,
+                                                    color: isSel ? const Color(0xFF0EA5E9) : Colors.white,
+                                                  ),
+                                                ),
+                                              ),
+                                          ],
+                                        ),
                                       ),
                                       Padding(
                                         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
@@ -6290,6 +6685,60 @@ class _ActiveTripScreenState extends State<_ActiveTripScreen> {
                     },
                   ),
           ),
+          if (_isSelectionMode && _selectedIds.isNotEmpty)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              decoration: const BoxDecoration(
+                color: Colors.white,
+                border: Border(top: BorderSide(color: Color(0xFFEBDDC6))),
+              ),
+              child: SafeArea(
+                top: false,
+                child: SizedBox(
+                  width: double.infinity,
+                  child: FilledButton.icon(
+                    style: FilledButton.styleFrom(backgroundColor: const Color(0xFFEF4444)),
+                    onPressed: () async {
+                      final toDelete = media.where((m) => _selectedIds.contains(m.id)).toList();
+                      final ok = await showDialog<bool>(
+                        context: context,
+                        builder: (ctx) => AlertDialog(
+                          backgroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+                          title: Text(
+                            'Supprimer ${toDelete.length} photo(s) ?',
+                            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF1E293B)),
+                          ),
+                          content: const Text(
+                            'Elles seront retirées de l\'album de voyage (les originaux restent conservés sur Google Drive).',
+                            style: TextStyle(fontSize: 13, color: Color(0xFF475569)),
+                          ),
+                          actions: [
+                            TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Annuler')),
+                            FilledButton(
+                              style: FilledButton.styleFrom(backgroundColor: const Color(0xFFEF4444)),
+                              onPressed: () => Navigator.of(ctx).pop(true),
+                              child: const Text('Supprimer'),
+                            ),
+                          ],
+                        ),
+                      );
+                      if (ok == true) {
+                        await widget.onBulkDeleteTripPhotos(toDelete);
+                        if (mounted) {
+                          setState(() {
+                            _isSelectionMode = false;
+                            _selectedIds.clear();
+                          });
+                        }
+                      }
+                    },
+                    icon: const Icon(Icons.delete_outline_rounded),
+                    label: Text('Supprimer (${_selectedIds.length})'),
+                  ),
+                ),
+              ),
+            ),
         ],
       ),
     );
