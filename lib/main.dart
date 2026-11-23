@@ -9,8 +9,8 @@ import 'services/app_update_service.dart';
 import 'services/cloud_sync_service.dart';
 import 'widgets/world_map_tab.dart';
 
-const int appBuildNumber = 21;
-const String appVersionLabel = "1.0.20";
+const int appBuildNumber = 22;
+const String appVersionLabel = "1.0.21";
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -2246,14 +2246,14 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   List<CountryVisitStats> _computeVisitedCountryStats({bool videosOnly = false}) {
-    final mediaPool = videosOnly ? _videosOnly : _allPhotos;
+    final mediaPool = videosOnly ? _videosOnly : _photosOnly;
     final Map<String, Set<int>> photoIdsByIso = {};
     final Map<String, Set<int>> videoIdsByIso = {};
+    final Map<String, CountryAlbumSummary> discoveryByIso = {};
     final Map<String, List<CountryAlbumSummary>> albumsByIso = {};
     final Map<String, List<CountrySlideshowPhoto>> slidesByIso = {};
     final Map<String, Set<int>> slideSeenIds = {};
     final Map<String, Set<String>> addedAlbumIdsByIso = {};
-    final Map<int, PhotoItem> mediaById = {for (final m in mediaPool) m.id: m};
 
     void ensureIso(String iso) {
       photoIdsByIso.putIfAbsent(iso, () => <int>{});
@@ -2264,7 +2264,40 @@ class _HomeScreenState extends State<HomeScreen> {
       addedAlbumIdsByIso.putIfAbsent(iso, () => <String>{});
     }
 
-    // 1. Scan all direct children of "02 - Pays" (_kPaysFolderId) -> populates slideshowPhotos too!
+    ({String? range, int latestTs, String? coverThumb}) computeAlbumStats(
+      String albumId,
+      Iterable<PhotoItem> items,
+      String iso,
+    ) {
+      int latestTs = 0;
+      DateTime? minDt;
+      DateTime? maxDt;
+      String? coverThumb;
+      final customCoverId = _albumCoverPhotoIdById[albumId];
+      for (final m in items) {
+        if (customCoverId != null && m.id == customCoverId && m.thumbnailUrl != null) {
+          coverThumb = m.thumbnailUrl;
+        } else if (coverThumb == null && m.thumbnailUrl != null) {
+          coverThumb = m.thumbnailUrl;
+        }
+        final dt = _parseMediaDate(m);
+        if (dt != null && dt.year >= 1980 && dt.year <= 2035) {
+          final ms = dt.millisecondsSinceEpoch;
+          if (ms > latestTs) latestTs = ms;
+          if (minDt == null || dt.isBefore(minDt)) minDt = dt;
+          if (maxDt == null || dt.isAfter(maxDt)) maxDt = dt;
+        }
+      }
+      String? range;
+      if (iso != 'FRA' && minDt != null && maxDt != null) {
+        range = (minDt.year == maxDt.year && minDt.month == maxDt.month && minDt.day == maxDt.day)
+            ? _fmtFrDate(minDt)
+            : 'Du ${_fmtFrDate(minDt)} au ${_fmtFrDate(maxDt)}';
+      }
+      return (range: range, latestTs: latestTs, coverThumb: coverThumb);
+    }
+
+    // 1. Scan all direct children of "02 - Pays" (_kPaysFolderId) -> populates slideshowPhotos + separate discoveryAlbum!
     final paysChildren = _childrenByParent[_kPaysFolderId] ?? const <AlbumNode>[];
     for (final child in paysChildren) {
       final meta = matchCountryMeta(child.name);
@@ -2272,11 +2305,15 @@ class _HomeScreenState extends State<HomeScreen> {
       ensureIso(meta.iso3);
 
       final descendantIds = _getAllDescendantAlbumIds(child.id);
+      int pDisc = 0;
+      int vDisc = 0;
       for (final m in mediaPool) {
         if (m.albums.any((a) => descendantIds.contains(a))) {
           if (m.isVideo) {
+            vDisc++;
             videoIdsByIso[meta.iso3]!.add(m.id);
           } else {
+            pDisc++;
             photoIdsByIso[meta.iso3]!.add(m.id);
             if ((m.largePreviewUrl ?? m.thumbnailUrl) != null &&
                 slideSeenIds[meta.iso3]!.add(m.id) &&
@@ -2294,40 +2331,20 @@ class _HomeScreenState extends State<HomeScreen> {
           }
         }
       }
-
-      final subNodes = child.isFolder ? (_childrenByParent[child.id] ?? const <AlbumNode>[]) : const <AlbumNode>[];
-      final nodesToList = subNodes.isNotEmpty ? subNodes : [child];
-      for (final node in nodesToList) {
-        if (!addedAlbumIdsByIso[meta.iso3]!.add(node.id)) continue;
-        final targetIds = node.isFolder ? _getAllDescendantAlbumIds(node.id) : {node.id};
-        int pCount = 0;
-        int vCount = 0;
-        for (final m in mediaPool) {
-          if (m.albums.any((a) => targetIds.contains(a))) {
-            if (m.isVideo) {
-              vCount++;
-            } else {
-              pCount++;
-            }
-          }
-        }
-        if (videosOnly && vCount == 0) continue;
-        albumsByIso[meta.iso3]!.add(
-          CountryAlbumSummary(
-            albumId: node.id,
-            name: node.name,
-            dateHint: _extractDateHint(node.name),
-            sourceLabel: 'Pays',
-            photoCount: pCount,
-            videoCount: vCount,
-            isFolder: node.isFolder,
-          ),
+      if (!videosOnly && pDisc > 0) {
+        discoveryByIso[meta.iso3] = CountryAlbumSummary(
+          albumId: child.id,
+          name: child.name,
+          sourceLabel: 'Pays',
+          photoCount: pDisc,
+          videoCount: vDisc,
+          isFolder: child.isFolder,
         );
       }
     }
 
     // 2. Scan all Années albums (default FRA, or overridden via _albumCountryIsoById)
-    //    plus any Thématiques album with an explicit _albumCountryIsoById override
+    //    plus any Thématiques album (outside 02 - Pays) with an explicit _albumCountryIsoById override
     final Map<String, List<PhotoItem>> photosByAlbumId = {};
     for (final m in mediaPool) {
       for (final aId in m.albums) {
@@ -2336,7 +2353,7 @@ class _HomeScreenState extends State<HomeScreen> {
     }
 
     for (final node in _nodesById.values) {
-      if (node.id == _kYearsRootId) continue;
+      if (node.id == _kYearsRootId || node.id == _kPaysFolderId || node.parentId == _kPaysFolderId) continue;
       final inYears = _isInsideYearsTree(node.id);
       final hasExplicit = _albumCountryIsoById.containsKey(node.id);
       if (!inYears && !hasExplicit) continue;
@@ -2348,10 +2365,14 @@ class _HomeScreenState extends State<HomeScreen> {
       ensureIso(iso);
 
       final targetIds = node.isFolder ? _getAllDescendantAlbumIds(node.id) : {node.id};
+      final Set<int> seenInAlb = {};
+      final List<PhotoItem> albItems = [];
       int pCount = 0;
       int vCount = 0;
       for (final aId in targetIds) {
         for (final m in (photosByAlbumId[aId] ?? const <PhotoItem>[])) {
+          if (!seenInAlb.add(m.id)) continue;
+          albItems.add(m);
           if (m.isVideo) {
             vCount++;
             videoIdsByIso[iso]!.add(m.id);
@@ -2362,11 +2383,21 @@ class _HomeScreenState extends State<HomeScreen> {
         }
       }
       if ((pCount > 0 || vCount > 0) && addedAlbumIdsByIso[iso]!.add(node.id)) {
+        final metaStats = computeAlbumStats(node.id, albItems, iso);
+        final yearHint = _extractDateHint(node.name);
+        final fallbackYearTs = int.tryParse((yearHint ?? '').replaceAll(RegExp(r'[^0-9]'), '')) ?? 0;
+        final sortTs = metaStats.latestTs > 0
+            ? metaStats.latestTs
+            : (fallbackYearTs > 1900 ? DateTime(fallbackYearTs).millisecondsSinceEpoch : 0);
+
         albumsByIso[iso]!.add(
           CountryAlbumSummary(
             albumId: node.id,
             name: node.name,
-            dateHint: _extractDateHint(node.name),
+            dateHint: yearHint,
+            dateRange: metaStats.range,
+            coverThumbUrl: metaStats.coverThumb,
+            sortTimestamp: sortTs,
             sourceLabel: inYears ? 'Années' : 'Thématiques',
             photoCount: pCount,
             videoCount: vCount,
@@ -2410,24 +2441,18 @@ class _HomeScreenState extends State<HomeScreen> {
       final pSet = photoIdsByIso[iso]!;
       final vSet = videoIdsByIso[iso]!;
       if (videosOnly && vSet.isEmpty) continue;
-      if (!videosOnly && pSet.isEmpty && vSet.isEmpty) continue;
+      if (!videosOnly && pSet.isEmpty) continue;
       final albums = albumsByIso[iso]!
-        ..sort((a, b) => (b.photoCount + b.videoCount).compareTo(a.photoCount + a.videoCount));
-
-      final travelDates = iso == 'FRA'
-          ? const <String>[]
-          : _computeTravelDateRanges(
-              [...pSet, ...vSet].map((id) => mediaById[id]).whereType<PhotoItem>(),
-            );
+        ..sort((a, b) => b.sortTimestamp.compareTo(a.sortTimestamp));
 
       result.add(
         CountryVisitStats(
           meta: meta,
-          photoCount: pSet.length,
-          videoCount: vSet.length,
+          photoCount: videosOnly ? 0 : pSet.length,
+          videoCount: videosOnly ? vSet.length : 0,
+          discoveryAlbum: discoveryByIso[iso],
           albums: albums,
           slideshowPhotos: slidesByIso[iso] ?? const [],
-          travelDateRanges: travelDates,
         ),
       );
     }
@@ -2440,12 +2465,13 @@ class _HomeScreenState extends State<HomeScreen> {
     final visited = _computeVisitedCountryStats(videosOnly: videosOnly);
     final totalP = visited.fold<int>(0, (acc, c) => acc + c.photoCount);
     final totalV = visited.fold<int>(0, (acc, c) => acc + c.videoCount);
-    final mediaPool = videosOnly ? _videosOnly : _allPhotos;
+    final mediaPool = videosOnly ? _videosOnly : _photosOnly;
 
     return WorldMapTab(
       visitedCountries: visited,
       totalPhotos: totalP,
       totalVideos: totalV,
+      isVideoMode: videosOnly,
       onAddCountryFolder: () => _showCreateAlbumDialog(defaultParentId: _kPaysFolderId),
       onOpenAlbum: (albumId) {
         final node = _nodesById[albumId];
@@ -2454,7 +2480,10 @@ class _HomeScreenState extends State<HomeScreen> {
         }
       },
       onOpenCountryMedia: (stats) {
-        final matchingAlbumIds = stats.albums.map((a) => a.albumId).expand((id) {
+        final matchingAlbumIds = <String>{
+          if (stats.discoveryAlbum != null) stats.discoveryAlbum!.albumId,
+          ...stats.albums.map((a) => a.albumId),
+        }.expand((id) {
           final n = _nodesById[id];
           return n != null && n.isFolder ? _getAllDescendantAlbumIds(id) : {id};
         }).toSet();
@@ -5005,6 +5034,11 @@ class _PhotoGridBodyState extends State<PhotoGridBody> {
           initialIndex: initialIdx,
           defaultGdriveUrl: widget.gdriveUrl,
           onLaunchDrive: _launchDriveUrl,
+          likesByPhotoId: widget.likesByPhotoId,
+          ratingsByPhotoId: widget.ratingsByPhotoId,
+          currentUserEmail: widget.currentUserEmail,
+          onToggleLike: widget.onToggleLike,
+          onUpdateRating: widget.onUpdateRating,
         ),
       ),
     );
@@ -5418,12 +5452,14 @@ class _PhotoGridBodyState extends State<PhotoGridBody> {
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
       builder: (sheetCtx) {
-        return DraggableScrollableSheet(
-          initialChildSize: 0.78,
-          maxChildSize: 0.95,
-          minChildSize: 0.4,
-          expand: false,
-          builder: (context, scrollController) {
+        return StatefulBuilder(
+          builder: (_, setSheetState) {
+            return DraggableScrollableSheet(
+              initialChildSize: 0.78,
+              maxChildSize: 0.95,
+              minChildSize: 0.4,
+              expand: false,
+              builder: (context, scrollController) {
             return ListView(
               controller: scrollController,
               padding: const EdgeInsets.all(20),
@@ -5559,7 +5595,7 @@ class _PhotoGridBodyState extends State<PhotoGridBody> {
                   ),
                   const SizedBox(height: 16),
                 ],
-                _buildRatingAndStatusBar(photo, (fn) => setState(fn)),
+                _buildRatingAndStatusBar(photo, setSheetState),
                 Row(
                   children: [
                     if (widget.onToggleLike != null) ...[
@@ -5579,8 +5615,8 @@ class _PhotoGridBodyState extends State<PhotoGridBody> {
                             icon: Icon(isLiked ? Icons.favorite : Icons.favorite_border, size: 17),
                             label: Text("(${likes.length})", style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
                             onPressed: () async {
-                              Navigator.of(context).pop();
                               await widget.onToggleLike!(photo);
+                              if (sheetCtx.mounted) setSheetState(() {});
                             },
                           );
                         },
@@ -5686,6 +5722,8 @@ class _PhotoGridBodyState extends State<PhotoGridBody> {
                 ),
               ],
             );
+          },
+        );
           },
         );
       },
@@ -6117,12 +6155,22 @@ class _FullScreenPhotoViewer extends StatefulWidget {
   final int initialIndex;
   final String defaultGdriveUrl;
   final Future<void> Function(BuildContext context, String url) onLaunchDrive;
+  final Map<int, List<PhotoLikeRecord>>? likesByPhotoId;
+  final Map<int, PhotoRatingRecord>? ratingsByPhotoId;
+  final String? currentUserEmail;
+  final Future<void> Function(PhotoItem photo)? onToggleLike;
+  final Future<void> Function(PhotoItem photo, int rating, PhotoFlagStatus status)? onUpdateRating;
 
   const _FullScreenPhotoViewer({
     required this.photos,
     required this.initialIndex,
     required this.defaultGdriveUrl,
     required this.onLaunchDrive,
+    this.likesByPhotoId,
+    this.ratingsByPhotoId,
+    this.currentUserEmail,
+    this.onToggleLike,
+    this.onUpdateRating,
   });
 
   @override
@@ -6247,14 +6295,121 @@ class _FullScreenPhotoViewerState extends State<_FullScreenPhotoViewer> {
                 ),
               ),
             ),
-          const Positioned(
-            bottom: 14,
-            left: 0,
-            right: 0,
-            child: Center(
-              child: Text(
-                'Double-tap pour zoomer · Glissez gauche/droite pour changer de photo',
-                style: TextStyle(fontSize: 11, color: Colors.white54),
+          Positioned(
+            bottom: 12,
+            left: 12,
+            right: 12,
+            child: SafeArea(
+              top: false,
+              child: Center(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.72),
+                    borderRadius: BorderRadius.circular(24),
+                    border: Border.all(color: Colors.white24),
+                  ),
+                  child: Builder(
+                    builder: (_) {
+                      final likes = widget.likesByPhotoId?[currentPhoto.id] ?? const <PhotoLikeRecord>[];
+                      final isLiked = widget.currentUserEmail != null &&
+                          likes.any((l) => l.userEmail == widget.currentUserEmail);
+                      final rateRec = widget.ratingsByPhotoId?[currentPhoto.id] ?? const PhotoRatingRecord();
+                      return SingleChildScrollView(
+                        scrollDirection: Axis.horizontal,
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            if (widget.onToggleLike != null) ...[
+                              InkWell(
+                                borderRadius: BorderRadius.circular(16),
+                                onTap: () async {
+                                  await widget.onToggleLike!(currentPhoto);
+                                  if (mounted) setState(() {});
+                                },
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                                  child: Row(
+                                    children: [
+                                      Icon(
+                                        isLiked ? Icons.favorite : Icons.favorite_border,
+                                        color: isLiked ? const Color(0xFFF43F5E) : Colors.white70,
+                                        size: 20,
+                                      ),
+                                      if (likes.isNotEmpty) ...[
+                                        const SizedBox(width: 4),
+                                        Text('${likes.length}', style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
+                                      ],
+                                    ],
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                            ],
+                            for (int star = 1; star <= 5; star++)
+                              InkWell(
+                                onTap: widget.onUpdateRating == null
+                                    ? null
+                                    : () async {
+                                        final next = rateRec.rating == star ? 0 : star;
+                                        await widget.onUpdateRating!(currentPhoto, next, rateRec.status);
+                                        if (mounted) setState(() {});
+                                      },
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 4),
+                                  child: Icon(
+                                    star <= rateRec.rating ? Icons.star_rounded : Icons.star_border_rounded,
+                                    color: star <= rateRec.rating ? const Color(0xFFFBBF24) : Colors.white54,
+                                    size: 22,
+                                  ),
+                                ),
+                              ),
+                            const SizedBox(width: 8),
+                            IconButton(
+                              padding: EdgeInsets.zero,
+                              constraints: const BoxConstraints(),
+                              tooltip: 'Validée',
+                              icon: Icon(
+                                Icons.check_circle,
+                                size: 20,
+                                color: rateRec.status == PhotoFlagStatus.pick ? const Color(0xFF10B981) : Colors.white54,
+                              ),
+                              onPressed: widget.onUpdateRating == null
+                                  ? null
+                                  : () async {
+                                      final next = rateRec.status == PhotoFlagStatus.pick
+                                          ? PhotoFlagStatus.neutral
+                                          : PhotoFlagStatus.pick;
+                                      await widget.onUpdateRating!(currentPhoto, rateRec.rating, next);
+                                      if (mounted) setState(() {});
+                                    },
+                            ),
+                            const SizedBox(width: 6),
+                            IconButton(
+                              padding: EdgeInsets.zero,
+                              constraints: const BoxConstraints(),
+                              tooltip: 'Rejetée',
+                              icon: Icon(
+                                Icons.cancel,
+                                size: 20,
+                                color: rateRec.status == PhotoFlagStatus.reject ? const Color(0xFFEF4444) : Colors.white54,
+                              ),
+                              onPressed: widget.onUpdateRating == null
+                                  ? null
+                                  : () async {
+                                      final next = rateRec.status == PhotoFlagStatus.reject
+                                          ? PhotoFlagStatus.neutral
+                                          : PhotoFlagStatus.reject;
+                                      await widget.onUpdateRating!(currentPhoto, rateRec.rating, next);
+                                      if (mounted) setState(() {});
+                                    },
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
+                ),
               ),
             ),
           ),

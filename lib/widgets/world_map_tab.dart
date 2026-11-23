@@ -28,6 +28,9 @@ class CountryAlbumSummary {
   final String albumId;
   final String name;
   final String? dateHint;
+  final String? dateRange;
+  final String? coverThumbUrl;
+  final int sortTimestamp;
   final String sourceLabel; // e.g. "Pays" or "Années"
   final int photoCount;
   final int videoCount;
@@ -37,6 +40,9 @@ class CountryAlbumSummary {
     required this.albumId,
     required this.name,
     this.dateHint,
+    this.dateRange,
+    this.coverThumbUrl,
+    this.sortTimestamp = 0,
     this.sourceLabel = 'Pays',
     required this.photoCount,
     required this.videoCount,
@@ -64,17 +70,17 @@ class CountryVisitStats {
   final WorldCountryMeta meta;
   final int photoCount;
   final int videoCount;
-  final List<CountryAlbumSummary> albums;
+  final CountryAlbumSummary? discoveryAlbum; // Album "02 - Pays" (découverte sans personnes)
+  final List<CountryAlbumSummary> albums; // Albums de voyages (Années / Thématiques) triés du plus récent au plus vieux
   final List<CountrySlideshowPhoto> slideshowPhotos;
-  final List<String> travelDateRanges;
 
   const CountryVisitStats({
     required this.meta,
     required this.photoCount,
     required this.videoCount,
+    this.discoveryAlbum,
     required this.albums,
     this.slideshowPhotos = const [],
-    this.travelDateRanges = const [],
   });
 
   int get totalMedia => photoCount + videoCount;
@@ -242,6 +248,7 @@ class WorldMapTab extends StatefulWidget {
   final List<CountryVisitStats> visitedCountries;
   final int totalPhotos;
   final int totalVideos;
+  final bool isVideoMode;
   final VoidCallback onAddCountryFolder;
   final void Function(String albumId) onOpenAlbum;
   final void Function(CountryVisitStats stats) onOpenCountryMedia;
@@ -251,6 +258,7 @@ class WorldMapTab extends StatefulWidget {
     required this.visitedCountries,
     required this.totalPhotos,
     required this.totalVideos,
+    this.isVideoMode = false,
     required this.onAddCountryFolder,
     required this.onOpenAlbum,
     required this.onOpenCountryMedia,
@@ -621,16 +629,18 @@ class _WorldMapTabState extends State<WorldMapTab> {
                           '${widget.visitedCountries.length} pays',
                           const Color(0xFFF97316),
                         ),
-                        _summaryPill(
-                          Icons.photo_outlined,
-                          '${widget.totalPhotos}',
-                          const Color(0xFF0284C7),
-                        ),
-                        _summaryPill(
-                          Icons.videocam_outlined,
-                          '${widget.totalVideos}',
-                          const Color(0xFFA78BFA),
-                        ),
+                        if (!widget.isVideoMode)
+                          _summaryPill(
+                            Icons.photo_outlined,
+                            '${widget.totalPhotos}',
+                            const Color(0xFF0284C7),
+                          ),
+                        if (widget.isVideoMode)
+                          _summaryPill(
+                            Icons.videocam_outlined,
+                            '${widget.totalVideos}',
+                            const Color(0xFF8B5CF6),
+                          ),
                       ],
                     ),
                   ),
@@ -1107,9 +1117,9 @@ class _CountryDetailSheetState extends State<_CountryDetailSheet> {
                       spacing: 10,
                       runSpacing: 4,
                       children: [
-                        _infoChip(Icons.location_city_outlined, stats.meta.capital, const Color(0xFFCBD5E1)),
-                        _infoChip(Icons.groups_outlined, stats.meta.population, const Color(0xFFCBD5E1)),
-                        _infoChip(Icons.public_rounded, stats.meta.continent, const Color(0xFF94A3B8)),
+                        _infoChip(Icons.location_city_outlined, stats.meta.capital, const Color(0xFF475569)),
+                        _infoChip(Icons.groups_outlined, stats.meta.population, const Color(0xFF475569)),
+                        _infoChip(Icons.public_rounded, stats.meta.continent, const Color(0xFF64748B)),
                       ],
                     ),
                     const SizedBox(height: 4),
@@ -1117,9 +1127,10 @@ class _CountryDetailSheetState extends State<_CountryDetailSheet> {
                       spacing: 10,
                       runSpacing: 4,
                       children: [
-                        _infoChip(Icons.photo_library_outlined, '${stats.photoCount} photos', const Color(0xFFF97316)),
+                        if (stats.photoCount > 0)
+                          _infoChip(Icons.photo_library_outlined, '${stats.photoCount} photos', const Color(0xFFF97316)),
                         if (stats.videoCount > 0)
-                          _infoChip(Icons.videocam_outlined, '${stats.videoCount} vidéos', const Color(0xFFA78BFA)),
+                          _infoChip(Icons.videocam_outlined, '${stats.videoCount} vidéos', const Color(0xFF8B5CF6)),
                       ],
                     ),
                   ],
@@ -1138,66 +1149,12 @@ class _CountryDetailSheetState extends State<_CountryDetailSheet> {
             controller: widget.scrollController,
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
             children: [
-              // Travel Dates (from / to) for countries other than France
-              if (stats.meta.iso3 != 'FRA' && stats.travelDateRanges.isNotEmpty) ...[
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  margin: const EdgeInsets.only(bottom: 14),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF0EA5E9).withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: const Color(0xFFF97316).withOpacity(0.28)),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Row(
-                        children: [
-                          Icon(Icons.flight_takeoff_rounded, size: 15, color: Color(0xFFF97316)),
-                          SizedBox(width: 6),
-                          Text(
-                            'DATES DES VOYAGES',
-                            style: TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w700,
-                              letterSpacing: 0.9,
-                              color: Color(0xFF0284C7),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 6),
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 6,
-                        children: stats.travelDateRanges
-                            .map(
-                              (r) => Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFFFFFFFF),
-                                  borderRadius: BorderRadius.circular(8),
-                                  border: Border.all(color: Color(0xFFEBDDC6)),
-                                ),
-                                child: Text(
-                                  r,
-                                  style: const TextStyle(fontSize: 11.5, color: const Color(0xFF1E293B), fontWeight: FontWeight.w500),
-                                ),
-                              ),
-                            )
-                            .toList(),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-
               // Slideshow ("mode diapo" with prev/next arrows from Thématique / Pays)
               if (currentSlide != null && (currentSlide.largePreviewUrl ?? currentSlide.thumbnailUrl) != null) ...[
                 Row(
                   children: [
                     const Text(
-                      'DIAPORAMA (THÉMATIQUE PAYS)',
+                      'DÉCOUVERTE DU PAYS (DIAPORAMA)',
                       style: TextStyle(
                         fontSize: 11,
                         fontWeight: FontWeight.w700,
@@ -1287,7 +1244,7 @@ class _CountryDetailSheetState extends State<_CountryDetailSheet> {
                           ),
                           child: Text(
                             currentSlide.filename,
-                            style: const TextStyle(fontSize: 11, color: Color(0xFF475569)),
+                            style: const TextStyle(fontSize: 11, color: Colors.white),
                             overflow: TextOverflow.ellipsis,
                           ),
                         ),
@@ -1295,13 +1252,34 @@ class _CountryDetailSheetState extends State<_CountryDetailSheet> {
                     ],
                   ),
                 ),
-                const SizedBox(height: 14),
+                const SizedBox(height: 10),
+              ],
+
+              if (stats.discoveryAlbum != null) ...[
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 14),
+                  child: OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: const Color(0xFF0284C7),
+                      backgroundColor: const Color(0xFFE0F2FE),
+                      side: const BorderSide(color: Color(0xFF7DD3FC)),
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    onPressed: () => widget.onOpenAlbum(stats.discoveryAlbum!.albumId),
+                    icon: const Icon(Icons.explore_rounded, size: 18),
+                    label: Text(
+                      'Découverte du pays (${stats.discoveryAlbum!.photoCount} photos sans personnes)',
+                      style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                ),
               ],
 
               Row(
                 children: [
                   const Text(
-                    'ALBUMS & DOSSIERS',
+                    'ALBUMS DE VACANCES',
                     style: TextStyle(
                       fontSize: 11,
                       fontWeight: FontWeight.w700,
@@ -1311,7 +1289,7 @@ class _CountryDetailSheetState extends State<_CountryDetailSheet> {
                   ),
                   const Spacer(),
                   Text(
-                    '${stats.albums.length} ${stats.albums.length > 1 ? 'éléments' : 'élément'}',
+                    '${stats.albums.length} ${stats.albums.length > 1 ? 'albums' : 'album'}',
                     style: const TextStyle(fontSize: 11, color: Color(0xFF94A3B8)),
                   ),
                 ],
@@ -1326,12 +1304,13 @@ class _CountryDetailSheetState extends State<_CountryDetailSheet> {
                     border: Border.all(color: Color(0xFFF1E6D2)),
                   ),
                   child: const Text(
-                    'Pays détecté via les métadonnées des photos (aucun album dédié assigné).',
+                    'Aucun album de voyage rattaché pour le moment.',
                     style: TextStyle(fontSize: 12, color: Color(0xFF64748B)),
                   ),
                 )
               else
                 ...stats.albums.map((alb) {
+                  final dateLabel = alb.dateRange ?? alb.dateHint;
                   return Padding(
                     padding: const EdgeInsets.only(bottom: 8),
                     child: Material(
@@ -1341,13 +1320,23 @@ class _CountryDetailSheetState extends State<_CountryDetailSheet> {
                         borderRadius: BorderRadius.circular(12),
                         onTap: () => widget.onOpenAlbum(alb.albumId),
                         child: Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
                           child: Row(
                             children: [
-                              Icon(
-                                alb.isFolder ? Icons.folder_rounded : Icons.photo_album_outlined,
-                                color: alb.isFolder ? const Color(0xFFFBBF24) : const Color(0xFFF97316),
-                                size: 22,
+                              ClipRRect(
+                                borderRadius: BorderRadius.circular(8),
+                                child: Container(
+                                  width: 46,
+                                  height: 46,
+                                  color: Colors.white,
+                                  child: alb.coverThumbUrl != null
+                                      ? Image.network(alb.coverThumbUrl!, fit: BoxFit.cover, cacheWidth: 100)
+                                      : Icon(
+                                          alb.isFolder ? Icons.folder_rounded : Icons.photo_album_outlined,
+                                          color: alb.isFolder ? const Color(0xFFFBBF24) : const Color(0xFFF97316),
+                                          size: 22,
+                                        ),
+                                ),
                               ),
                               const SizedBox(width: 12),
                               Expanded(
@@ -1362,7 +1351,7 @@ class _CountryDetailSheetState extends State<_CountryDetailSheet> {
                                             style: const TextStyle(
                                               fontSize: 13.5,
                                               fontWeight: FontWeight.w600,
-                                              color: const Color(0xFF1E293B),
+                                              color: Color(0xFF1E293B),
                                             ),
                                             overflow: TextOverflow.ellipsis,
                                           ),
@@ -1372,8 +1361,8 @@ class _CountryDetailSheetState extends State<_CountryDetailSheet> {
                                           padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                                           decoration: BoxDecoration(
                                             color: alb.sourceLabel == 'Années'
-                                                ? const Color(0xFF6366F1).withOpacity(0.25)
-                                                : const Color(0xFF0EA5E9).withOpacity(0.2),
+                                                ? const Color(0xFF6366F1).withOpacity(0.16)
+                                                : const Color(0xFF0EA5E9).withOpacity(0.16),
                                             borderRadius: BorderRadius.circular(6),
                                           ),
                                           child: Text(
@@ -1382,7 +1371,7 @@ class _CountryDetailSheetState extends State<_CountryDetailSheet> {
                                               fontSize: 9.5,
                                               fontWeight: FontWeight.w600,
                                               color: alb.sourceLabel == 'Années'
-                                                  ? const Color(0xFFA5B4FC)
+                                                  ? const Color(0xFF4F46E5)
                                                   : const Color(0xFF0284C7),
                                             ),
                                           ),
@@ -1392,17 +1381,20 @@ class _CountryDetailSheetState extends State<_CountryDetailSheet> {
                                     const SizedBox(height: 2),
                                     Row(
                                       children: [
-                                        if (alb.dateHint != null) ...[
+                                        if (dateLabel != null) ...[
                                           const Icon(Icons.calendar_today_outlined, size: 11, color: Color(0xFFF97316)),
                                           const SizedBox(width: 4),
-                                          Text(
-                                            alb.dateHint!,
-                                            style: const TextStyle(fontSize: 11, color: Color(0xFF0284C7)),
+                                          Flexible(
+                                            child: Text(
+                                              dateLabel,
+                                              style: const TextStyle(fontSize: 11, color: Color(0xFFEA580C), fontWeight: FontWeight.w500),
+                                              overflow: TextOverflow.ellipsis,
+                                            ),
                                           ),
-                                          const SizedBox(width: 10),
+                                          const SizedBox(width: 8),
                                         ],
                                         Text(
-                                          '${alb.photoCount} photos${alb.videoCount > 0 ? ' · ${alb.videoCount} vidéos' : ''}',
+                                          '${alb.photoCount > 0 ? '${alb.photoCount} photos' : ''}${alb.photoCount > 0 && alb.videoCount > 0 ? ' · ' : ''}${alb.videoCount > 0 ? '${alb.videoCount} vidéos' : ''}',
                                           style: const TextStyle(fontSize: 11.5, color: Color(0xFF64748B)),
                                         ),
                                       ],
