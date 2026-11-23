@@ -9,8 +9,8 @@ import 'services/app_update_service.dart';
 import 'services/cloud_sync_service.dart';
 import 'widgets/world_map_tab.dart';
 
-const int appBuildNumber = 20;
-const String appVersionLabel = "1.0.19";
+const int appBuildNumber = 21;
+const String appVersionLabel = "1.0.20";
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -292,11 +292,16 @@ class _HomeScreenState extends State<HomeScreen> {
   static const String _kCountryMetaParentId = '__country_meta__';
   static const String _kCoverMetaParentId = '__cover_meta__';
   static const String _kRateMetaParentId = '__rate_meta__';
+  static const String _kTrashMetaParentId = '__trash_meta__';
+  static const String _kPurgeMetaParentId = '__purge_meta__';
   static const String _kTripMetaParentId = '__trip_meta__';
   static const String _kActiveTripNodeId = '__active_trip__';
   static const String _kCollabTripAlbumId = 'collab_voyage_en_cours';
   final Map<String, int> _albumCoverPhotoIdById = {};
   final Map<int, PhotoRatingRecord> _ratingsByPhotoId = {};
+  final Map<int, DateTime> _trashedAtByPhotoId = {};
+  final Set<int> _purgedPhotoIds = {};
+  final List<PhotoItem> _trashedPhotos = [];
   ActiveTripConfig? _activeTrip;
   AuthUserSession _auth = CloudSyncService.currentAuth;
   StreamSubscription<AuthUserSession>? _authSub;
@@ -779,8 +784,27 @@ class _HomeScreenState extends State<HomeScreen> {
       if (!mounted) return;
       _cloudTableReady = delta.tableReady;
 
-      // 1. Appliquer les nouveaux dossiers & albums (ainsi que déplacements, suppressions, pays, couvertures, notes et voyage actif)
+      // 1. Appliquer les nouveaux dossiers & albums (ainsi que déplacements, suppressions, pays, couvertures, notes, corbeille et voyage actif)
       for (final ca in delta.customAlbums) {
+        if (ca.parentId == _kPurgeMetaParentId || ca.id.startsWith('__purged__')) {
+          final idStr = ca.id.startsWith('__purged__') ? ca.id.substring('__purged__'.length) : ca.id;
+          final pid = int.tryParse(idStr);
+          if (pid != null && !ca.isDeleted) _purgedPhotoIds.add(pid);
+          continue;
+        }
+        if (ca.parentId == _kTrashMetaParentId || ca.id.startsWith('__trash__')) {
+          final idStr = ca.id.startsWith('__trash__') ? ca.id.substring('__trash__'.length) : ca.id;
+          final pid = int.tryParse(idStr);
+          if (pid != null) {
+            if (ca.isDeleted) {
+              _trashedAtByPhotoId.remove(pid);
+            } else {
+              final dt = DateTime.tryParse(ca.name.trim());
+              if (dt != null) _trashedAtByPhotoId[pid] = dt;
+            }
+          }
+          continue;
+        }
         if (ca.parentId == _kRateMetaParentId || ca.id.startsWith('__rate__')) {
           final targetIdStr = ca.id.startsWith('__rate__') ? ca.id.substring('__rate__'.length) : ca.id;
           final targetPhotoId = int.tryParse(targetIdStr);
@@ -881,14 +905,24 @@ class _HomeScreenState extends State<HomeScreen> {
         ..clear()
         ..addAll(delta.likesByPhotoId);
 
+      _trashedPhotos.clear();
+      final expiredToPurge = <PhotoItem>[];
       final updatedAll = <PhotoItem>[];
       for (final p in _allPhotos) {
+        if (_purgedPhotoIds.contains(p.id)) continue;
         final ov = _overridesByPhotoId[p.id];
         if (ov == null) {
           updatedAll.add(p);
           continue;
         }
         if (ov.isDeleted) {
+          final trashedAt = _trashedAtByPhotoId[p.id] ?? DateTime.now();
+          _trashedAtByPhotoId.putIfAbsent(p.id, () => trashedAt);
+          if (DateTime.now().difference(trashedAt).inDays >= 30) {
+            expiredToPurge.add(p);
+          } else {
+            _trashedPhotos.add(p);
+          }
           continue;
         }
         final albumSet = p.albums.toSet()
@@ -919,10 +953,14 @@ class _HomeScreenState extends State<HomeScreen> {
       _videosOnly = _allPhotos.where((p) => p.isVideo).toList();
       _recalculateAlbumCounts();
 
+      if (expiredToPurge.isNotEmpty) {
+        Future<void>.microtask(() => _permanentlyPurgePhotos(expiredToPurge));
+      }
+
       if (!silent && mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            backgroundColor: const Color(0xFFFFFFFF),
+            backgroundColor: const Color(0xFF1E293B),
             content: Text(
               _cloudTableReady
                   ? 'Synchronisé avec le cloud familial Supabase (${delta.customAlbums.length} dossiers créés, ${delta.customPhotos.length} médias ajoutés).'
@@ -1560,6 +1598,19 @@ class _HomeScreenState extends State<HomeScreen> {
                         ? '${_activeTrip!.countryName} · Du ${_activeTrip!.startDate} au ${_activeTrip!.endDate} · $collabCount souvenir(s)'
                         : 'Aucun voyage actif · Créez l\'album partagé des vacances',
                     onTap: _openCollaborativeTripAlbum,
+                  ),
+                  const SizedBox(height: 12),
+                  // 6. Corbeille (30 jours)
+                  _buildPreHomeModeCard(
+                    icon: Icons.delete_outline_rounded,
+                    badgeIcon: Icons.schedule_rounded,
+                    color: const Color(0xFFEF4444),
+                    gradientColors: const [Color(0xFFDC2626), Color(0xFFF87171)],
+                    title: 'Corbeille (${_trashedPhotos.length})',
+                    subtitle: _trashedPhotos.isEmpty
+                        ? 'Aucun élément · Suppression auto après 30 jours'
+                        : '${_trashedPhotos.length} élément(s) conservé(s) 30 jours avant suppression Drive',
+                    onTap: _openTrashScreen,
                   ),
                 ],
               ),
@@ -3979,10 +4030,17 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _handleBulkDeletePhotos(List<PhotoItem> photos) async {
     if (photos.isEmpty) return;
     final ids = photos.map((p) => p.id).toSet();
+    final now = DateTime.now();
     setState(() {
       _allPhotos.removeWhere((p) => ids.contains(p.id));
       _photosOnly.removeWhere((p) => ids.contains(p.id));
       _videosOnly.removeWhere((p) => ids.contains(p.id));
+      for (final p in photos) {
+        if (!_trashedPhotos.any((t) => t.id == p.id)) {
+          _trashedPhotos.insert(0, p);
+        }
+        _trashedAtByPhotoId[p.id] = now;
+      }
       _recalculateAlbumCounts();
     });
     bool allOk = true;
@@ -3996,6 +4054,12 @@ class _HomeScreenState extends State<HomeScreen> {
       );
       _overridesByPhotoId[photo.id] = rec;
       final ok = await CloudSyncService.savePhotoOverride(rec);
+      await CloudSyncService.createCustomAlbum(
+        id: '__trash__${photo.id}',
+        name: now.toIso8601String(),
+        parentId: _kTrashMetaParentId,
+        isFolder: false,
+      );
       if (!ok) allOk = false;
     }
     if (!mounted) return;
@@ -4004,8 +4068,8 @@ class _HomeScreenState extends State<HomeScreen> {
         backgroundColor: const Color(0xFF1E293B),
         content: Text(
           allOk
-              ? '✔ ${photos.length} média(s) mis à la corbeille pour tout le monde.'
-              : '⚠ ${photos.length} média(s) masqué(s) localement.',
+              ? '✔ ${photos.length} média(s) mis à la corbeille (conservés 30 jours).'
+              : '⚠ ${photos.length} média(s) mis à la corbeille localement.',
           style: const TextStyle(color: Colors.white, fontSize: 12),
         ),
       ),
@@ -4013,10 +4077,15 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _handleDeletePhoto(PhotoItem photo) async {
+    final now = DateTime.now();
     setState(() {
       _allPhotos.removeWhere((p) => p.id == photo.id);
       _photosOnly.removeWhere((p) => p.id == photo.id);
       _videosOnly.removeWhere((p) => p.id == photo.id);
+      if (!_trashedPhotos.any((t) => t.id == photo.id)) {
+        _trashedPhotos.insert(0, photo);
+      }
+      _trashedAtByPhotoId[photo.id] = now;
       _recalculateAlbumCounts();
     });
     final existing = _overridesByPhotoId[photo.id];
@@ -4028,18 +4097,101 @@ class _HomeScreenState extends State<HomeScreen> {
     );
     _overridesByPhotoId[photo.id] = rec;
     final ok = await CloudSyncService.savePhotoOverride(rec);
+    await CloudSyncService.createCustomAlbum(
+      id: '__trash__${photo.id}',
+      name: now.toIso8601String(),
+      parentId: _kTrashMetaParentId,
+      isFolder: false,
+    );
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         backgroundColor: const Color(0xFF1E293B),
         content: Text(
           ok
-              ? '✔ "${photo.filename}" masquée / mise à la corbeille pour tout le monde.'
-              : '⚠ Masquée localement.',
+              ? '✔ "${photo.filename}" mise à la corbeille (30 jours).'
+              : '⚠ Mise à la corbeille localement.',
           style: const TextStyle(color: Colors.white, fontSize: 12),
         ),
       ),
     );
+  }
+
+  Future<void> _restoreFromTrash(PhotoItem photo) async {
+    setState(() {
+      _trashedPhotos.removeWhere((t) => t.id == photo.id);
+      _trashedAtByPhotoId.remove(photo.id);
+      if (!_allPhotos.any((p) => p.id == photo.id)) {
+        _allPhotos.insert(0, photo);
+        if (photo.isVideo) {
+          _videosOnly.insert(0, photo);
+        } else {
+          _photosOnly.insert(0, photo);
+        }
+      }
+      _recalculateAlbumCounts();
+    });
+    final existing = _overridesByPhotoId[photo.id];
+    final rec = PhotoOverrideRecord(
+      photoId: photo.id,
+      addedAlbums: existing?.addedAlbums ?? [],
+      removedAlbums: existing?.removedAlbums ?? [],
+      isDeleted: false,
+    );
+    _overridesByPhotoId[photo.id] = rec;
+    await CloudSyncService.savePhotoOverride(rec);
+    await CloudSyncService.createCustomAlbum(
+      id: '__trash__${photo.id}',
+      name: '',
+      parentId: _kTrashMetaParentId,
+      isFolder: false,
+      isDeleted: true,
+    );
+  }
+
+  Future<void> _permanentlyPurgePhotos(List<PhotoItem> photos) async {
+    if (photos.isEmpty) return;
+    final ids = photos.map((p) => p.id).toSet();
+    setState(() {
+      _trashedPhotos.removeWhere((p) => ids.contains(p.id));
+      _purgedPhotoIds.addAll(ids);
+      for (final id in ids) {
+        _trashedAtByPhotoId.remove(id);
+      }
+    });
+    for (final p in photos) {
+      if (p.driveId != null && p.driveId!.isNotEmpty) {
+        await CloudSyncService.deleteFileFromGoogleDrive(p.driveId!);
+      }
+      await CloudSyncService.createCustomAlbum(
+        id: '__purged__${p.id}',
+        name: 'purged',
+        parentId: _kPurgeMetaParentId,
+        isFolder: false,
+      );
+      await CloudSyncService.createCustomAlbum(
+        id: '__trash__${p.id}',
+        name: '',
+        parentId: _kTrashMetaParentId,
+        isFolder: false,
+        isDeleted: true,
+      );
+    }
+  }
+
+  Future<void> _openTrashScreen() async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => _TrashScreen(
+          getTrashedPhotos: () => _trashedPhotos,
+          trashedAtByPhotoId: _trashedAtByPhotoId,
+          onRestore: _restoreFromTrash,
+          onEmptyOrDeletePermanent: _permanentlyPurgePhotos,
+        ),
+      ),
+    );
+    if (mounted) setState(() {});
   }
 
   Future<void> _handleUpdatePhotoRating(PhotoItem photo, int rating, PhotoFlagStatus status) async {
@@ -4059,7 +4211,7 @@ class _HomeScreenState extends State<HomeScreen> {
     if (!_auth.isSignedIn || _auth.email == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          backgroundColor: const Color(0xFFFFFFFF),
+          backgroundColor: const Color(0xFF1E293B),
           content: const Text(
             'Connectez-vous avec Google (en haut à droite) pour aimer des photos ❤️',
             style: TextStyle(color: Colors.white, fontSize: 12),
@@ -6739,6 +6891,217 @@ class _ActiveTripScreenState extends State<_ActiveTripScreen> {
                 ),
               ),
             ),
+        ],
+      ),
+    );
+  }
+}
+
+class _TrashScreen extends StatefulWidget {
+  final List<PhotoItem> Function() getTrashedPhotos;
+  final Map<int, DateTime> trashedAtByPhotoId;
+  final Future<void> Function(PhotoItem photo) onRestore;
+  final Future<void> Function(List<PhotoItem> photos) onEmptyOrDeletePermanent;
+
+  const _TrashScreen({
+    required this.getTrashedPhotos,
+    required this.trashedAtByPhotoId,
+    required this.onRestore,
+    required this.onEmptyOrDeletePermanent,
+  });
+
+  @override
+  State<_TrashScreen> createState() => _TrashScreenState();
+}
+
+class _TrashScreenState extends State<_TrashScreen> {
+  bool _isPurging = false;
+
+  int _daysRemaining(int photoId) {
+    final dt = widget.trashedAtByPhotoId[photoId];
+    if (dt == null) return 30;
+    final elapsed = DateTime.now().difference(dt).inDays;
+    return (30 - elapsed).clamp(0, 30);
+  }
+
+  Future<void> _confirmEmptyTrash(List<PhotoItem> items) async {
+    if (items.isEmpty) return;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+        title: const Text(
+          'Vider la corbeille ?',
+          style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF1E293B)),
+        ),
+        content: Text(
+          '${items.length} média(s) seront supprimés définitivement de l\'application ET de Google Drive.\n\nCette action est irréversible.',
+          style: const TextStyle(fontSize: 13, color: Color(0xFF475569)),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Annuler')),
+          FilledButton.icon(
+            style: FilledButton.styleFrom(backgroundColor: const Color(0xFFEF4444)),
+            onPressed: () => Navigator.of(ctx).pop(true),
+            icon: const Icon(Icons.delete_forever_rounded, size: 18),
+            label: const Text('Tout supprimer'),
+          ),
+        ],
+      ),
+    );
+    if (ok == true) {
+      setState(() => _isPurging = true);
+      await widget.onEmptyOrDeletePermanent(List<PhotoItem>.from(items));
+      if (mounted) {
+        setState(() => _isPurging = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            backgroundColor: Color(0xFF1E293B),
+            content: Text('✔ Corbeille vidée (app + Google Drive).', style: TextStyle(color: Colors.white)),
+          ),
+        );
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final items = widget.getTrashedPhotos();
+    return Scaffold(
+      appBar: AppBar(
+        backgroundColor: Colors.white,
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Corbeille (30 jours)', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF1E293B))),
+            Text('${items.length} élément(s)', style: const TextStyle(fontSize: 11, color: Color(0xFF64748B))),
+          ],
+        ),
+        actions: [
+          if (items.isNotEmpty)
+            TextButton.icon(
+              style: TextButton.styleFrom(foregroundColor: const Color(0xFFEF4444)),
+              onPressed: _isPurging ? null : () => _confirmEmptyTrash(items),
+              icon: const Icon(Icons.delete_forever_rounded, size: 18),
+              label: const Text('Vider', style: TextStyle(fontWeight: FontWeight.bold)),
+            ),
+        ],
+      ),
+      body: Column(
+        children: [
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            color: const Color(0xFFFFF7E8),
+            child: const Row(
+              children: [
+                Icon(Icons.schedule_rounded, size: 16, color: Color(0xFFF97316)),
+                SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Conservés 30 jours, puis supprimés automatiquement de l\'app et de Google Drive à l\'ouverture.',
+                    style: TextStyle(fontSize: 11.5, color: Color(0xFF475569)),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (_isPurging) const LinearProgressIndicator(color: Color(0xFFEF4444)),
+          Expanded(
+            child: items.isEmpty
+                ? const Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.delete_outline_rounded, size: 48, color: Color(0xFFCBD5E1)),
+                        SizedBox(height: 10),
+                        Text('La corbeille est vide', style: TextStyle(color: Color(0xFF64748B))),
+                      ],
+                    ),
+                  )
+                : ListView.separated(
+                    padding: const EdgeInsets.all(12),
+                    itemCount: items.length,
+                    separatorBuilder: (_, __) => const SizedBox(height: 8),
+                    itemBuilder: (_, idx) {
+                      final p = items[idx];
+                      final days = _daysRemaining(p.id);
+                      final thumb = p.thumbnailUrl;
+                      return Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(color: const Color(0xFFEBDDC6)),
+                        ),
+                        child: Row(
+                          children: [
+                            ClipRRect(
+                              borderRadius: BorderRadius.circular(10),
+                              child: Container(
+                                width: 56,
+                                height: 56,
+                                color: const Color(0xFFF6EFE2),
+                                child: thumb != null
+                                    ? Image.network(thumb, fit: BoxFit.cover)
+                                    : const Icon(Icons.photo, color: Color(0xFF94A3B8)),
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    p.filename,
+                                    style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600, color: Color(0xFF1E293B)),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                  const SizedBox(height: 3),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color: days <= 5 ? const Color(0xFFFEE2E2) : const Color(0xFFF6EFE2),
+                                      borderRadius: BorderRadius.circular(6),
+                                    ),
+                                    child: Text(
+                                      'J-$days avant suppression définitive',
+                                      style: TextStyle(
+                                        fontSize: 10.5,
+                                        fontWeight: FontWeight.w600,
+                                        color: days <= 5 ? const Color(0xFFDC2626) : const Color(0xFF64748B),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            IconButton(
+                              tooltip: 'Restaurer',
+                              icon: const Icon(Icons.restore_from_trash_rounded, color: Color(0xFF10B981)),
+                              onPressed: () async {
+                                await widget.onRestore(p);
+                                if (mounted) setState(() {});
+                              },
+                            ),
+                            IconButton(
+                              tooltip: 'Supprimer définitivement (App + Drive)',
+                              icon: const Icon(Icons.delete_forever_rounded, color: Color(0xFFEF4444)),
+                              onPressed: _isPurging
+                                  ? null
+                                  : () async {
+                                      setState(() => _isPurging = true);
+                                      await widget.onEmptyOrDeletePermanent([p]);
+                                      if (mounted) setState(() => _isPurging = false);
+                                    },
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
+          ),
         ],
       ),
     );

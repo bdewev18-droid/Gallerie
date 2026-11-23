@@ -775,6 +775,24 @@ class CloudSyncService {
     return fileId;
   }
 
+  /// Supprime définitivement un fichier sur Google Drive (si autorisé)
+  static Future<bool> deleteFileFromGoogleDrive(String fileId) async {
+    try {
+      final token = await _getGoogleDriveAccessToken();
+      if (token == null || token.isEmpty) return false;
+      final resp = await http
+          .delete(
+            Uri.parse('https://www.googleapis.com/drive/v3/files/$fileId'),
+            headers: {'Authorization': 'Bearer $token'},
+          )
+          .timeout(const Duration(seconds: 10));
+      return (resp.statusCode >= 200 && resp.statusCode < 300) || resp.statusCode == 404;
+    } catch (e) {
+      debugPrint('CloudSyncService.deleteFileFromGoogleDrive error: $e');
+      return false;
+    }
+  }
+
   /// Récupère éventuellement un catalog.json plus récent depuis GitHub
   static Future<Map<String, dynamic>?> fetchRemoteCatalogIfUpdated(int localPhotoCount) async {
     try {
