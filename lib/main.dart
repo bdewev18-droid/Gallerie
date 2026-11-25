@@ -9,8 +9,8 @@ import 'services/app_update_service.dart';
 import 'services/cloud_sync_service.dart';
 import 'widgets/world_map_tab.dart';
 
-const int appBuildNumber = 23;
-const String appVersionLabel = "1.0.22";
+const int appBuildNumber = 24;
+const String appVersionLabel = "1.0.23";
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -662,6 +662,84 @@ class _HomeScreenState extends State<HomeScreen> {
         setState(() {});
       }
     }
+    _attachOrphanVideosToYears();
+    _rebuildChildrenTree();
+    _recalculateAlbumCounts();
+    if (mounted) {
+      setState(() {});
+    }
+  }
+
+  void _attachOrphanVideosToYears() {
+    if (!_nodesById.containsKey(_kYearsRootId)) return;
+    bool nodesAdded = false;
+
+    for (final v in _videosOnly) {
+      if (v.albums.any((aid) => _nodesById.containsKey(aid))) continue;
+
+      final hasYear = RegExp(r'^\d{4}$').hasMatch(v.year);
+      if (!hasYear) {
+        const unknownAlbumId = 'video_unassigned_unknown';
+        if (!_nodesById.containsKey(unknownAlbumId)) {
+          _nodesById[unknownAlbumId] = AlbumNode(
+            id: unknownAlbumId,
+            name: 'Vidéos sans date',
+            parentId: _kYearsRootId,
+            isFolder: false,
+            directCount: 0,
+            totalCount: 0,
+          );
+          nodesAdded = true;
+        }
+        v.albums.add(unknownAlbumId);
+        continue;
+      }
+
+      final yearStr = v.year;
+      final yearCandidates = _nodesById.values
+          .where((n) => n.parentId == _kYearsRootId && n.isFolder && n.name == yearStr)
+          .toList();
+      AlbumNode? targetYearNode;
+      if (yearCandidates.isNotEmpty) {
+        targetYearNode = yearCandidates.firstWhere(
+          (n) => n.totalVideoCount > 0,
+          orElse: () => yearCandidates.first,
+        );
+      } else {
+        final newYearId = 'video_year_$yearStr';
+        targetYearNode = _nodesById[newYearId] ??
+            AlbumNode(
+              id: newYearId,
+              name: yearStr,
+              parentId: _kYearsRootId,
+              isFolder: true,
+              directCount: 0,
+              totalCount: 0,
+            );
+        if (!_nodesById.containsKey(newYearId)) {
+          _nodesById[newYearId] = targetYearNode;
+          nodesAdded = true;
+        }
+      }
+
+      final leafAlbumId = 'video_unassigned_$yearStr';
+      if (!_nodesById.containsKey(leafAlbumId)) {
+        _nodesById[leafAlbumId] = AlbumNode(
+          id: leafAlbumId,
+          name: 'Vidéos non classées ($yearStr)',
+          parentId: targetYearNode.id,
+          isFolder: false,
+          directCount: 0,
+          totalCount: 0,
+        );
+        nodesAdded = true;
+      }
+      v.albums.add(leafAlbumId);
+    }
+
+    if (nodesAdded) {
+      _rebuildChildrenTree();
+    }
   }
 
   void _normalizeAlbumHierarchy() {
@@ -955,6 +1033,8 @@ class _HomeScreenState extends State<HomeScreen> {
       _allPhotos = updatedAll;
       _photosOnly = _allPhotos.where((p) => !p.isVideo).toList();
       _videosOnly = _allPhotos.where((p) => p.isVideo).toList();
+      _attachOrphanVideosToYears();
+      _rebuildChildrenTree();
       _recalculateAlbumCounts();
 
       if (expiredToPurge.isNotEmpty) {
