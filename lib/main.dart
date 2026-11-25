@@ -9,8 +9,8 @@ import 'services/app_update_service.dart';
 import 'services/cloud_sync_service.dart';
 import 'widgets/world_map_tab.dart';
 
-const int appBuildNumber = 22;
-const String appVersionLabel = "1.0.21";
+const int appBuildNumber = 23;
+const String appVersionLabel = "1.0.22";
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -682,6 +682,10 @@ class _HomeScreenState extends State<HomeScreen> {
       }
       // 3. Placer le dossier "2026" dans "00 - Années" s'il était à la racine
       if (node.id == _kYear2026Id && (newParentId == null || newParentId == _kPhotosWrapperId)) {
+        newParentId = _kYearsRootId;
+      }
+      // 4. Rattacher les dossiers d'années vidéo orphelins (ex-racine Vidéos) à "00 - Années"
+      if (newParentId == 'bb3d36f6161042d4a2ba6a500c4fe504') {
         newParentId = _kYearsRootId;
       }
       updated[node.id] = AlbumNode(
@@ -1827,7 +1831,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   icon: Icons.backpack_outlined,
                   selectedIcon: Icons.backpack_rounded,
                   label: "Thématiques",
-                  badge: isVideos ? "0" : "${_countPhotosInTree(yearsTree: false, videosOnly: false)}",
+                  badge: "${_countPhotosInTree(yearsTree: false, videosOnly: isVideos)}",
                 ),
                 _buildDesktopNavItem(
                   index: 2,
@@ -2593,37 +2597,6 @@ class _HomeScreenState extends State<HomeScreen> {
 
   // --- PHOTOS / VIDEOS: Lightroom Thematics Tab ---
   Widget _buildAlbumsTab() {
-    if (_mediaMode == 1) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                padding: const EdgeInsets.all(18),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF0EA5E9).withValues(alpha: 0.12),
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(Icons.backpack_outlined, size: 42, color: Color(0xFF0EA5E9)),
-              ),
-              const SizedBox(height: 16),
-              const Text(
-                'Thématiques Vidéos',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF1E293B)),
-              ),
-              const SizedBox(height: 6),
-              const Text(
-                'Pas encore de thématiques spécifiques pour les vidéos.\nUtilisez La carte ou Années pour parcourir vos vidéos !',
-                style: TextStyle(fontSize: 13, color: Color(0xFF64748B)),
-                textAlign: TextAlign.center,
-              ),
-            ],
-          ),
-        ),
-      );
-    }
     return _buildTreeExplorer(
       rootParentId: null,
       rootTitle: "Thématiques",
@@ -2672,7 +2645,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
     final filtered = isVideoMode
         ? baseFiltered.where((n) => n.totalVideoCount > 0).toList()
-        : baseFiltered;
+        : baseFiltered.where((n) => !(n.totalCount == 0 && n.totalVideoCount > 0)).toList();
 
     return Column(
       children: [

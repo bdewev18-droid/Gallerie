@@ -1,6 +1,6 @@
 {
-  "version": "1.0.21",
-  "buildNumber": 22,
+  "version": "1.0.22",
+  "buildNumber": 23,
   "apkUrl": "https://github.com/bdewev18-droid/Gallerie/releases/latest/download/app-release.apk",
   "releaseNotes": "v1.0.14 : Thème Vacances Soleil & Lagon, drapeaux sur la carte, double-tap zoom + swipe photo plein écran, pré-homepage et correction mise à jour APK."
 }
