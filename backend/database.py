@@ -34,7 +34,10 @@ def init_db():
             gdrive_file_id TEXT,
             gdrive_url TEXT,
             has_thumbnail INTEGER DEFAULT 0,
-            media_type TEXT DEFAULT 'photo'
+            media_type TEXT DEFAULT 'photo',
+            latitude REAL,
+            longitude REAL,
+            gps_source TEXT
         );
 
         CREATE TABLE IF NOT EXISTS albums (

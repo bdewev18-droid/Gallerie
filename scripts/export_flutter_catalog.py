@@ -2,8 +2,70 @@ import sqlite3
 import msgpack
 import re
 import json
+from bisect import bisect_left
+from datetime import datetime
 from pathlib import Path
 from collections import defaultdict
+
+
+def _parse_iso_ts(raw: str):
+    if not raw or not isinstance(raw, str):
+        return None
+    s = raw.strip()
+    if not s:
+        return None
+    try:
+        if s.endswith("Z"):
+            s = s[:-1] + "+00:00"
+        return datetime.fromisoformat(s).replace(tzinfo=None).timestamp()
+    except Exception:
+        return None
+
+
+def _valid_coords(lat, lon):
+    if not isinstance(lat, (int, float)) or not isinstance(lon, (int, float)):
+        return None
+    lat_f = float(lat)
+    lon_f = float(lon)
+    if lat_f == 0.0 and lon_f == 0.0:
+        return None
+    if -90.0 <= lat_f <= 90.0 and -180.0 <= lon_f <= 180.0:
+        return (round(lat_f, 5), round(lon_f, 5))
+    return None
+
+
+def _propagate_gps_on_catalog(photos: list, window_hours: float = 2.0) -> int:
+    geotagged = []
+    missing = []
+    for p in photos:
+        ts = _parse_iso_ts(p.get("dt", ""))
+        if ts is None:
+            continue
+        if "lat" in p and "lon" in p:
+            geotagged.append((ts, p["lat"], p["lon"]))
+        else:
+            missing.append((p, ts))
+    if not geotagged or not missing:
+        return 0
+    geotagged.sort(key=lambda item: item[0])
+    geo_times = [item[0] for item in geotagged]
+    max_delta = window_hours * 3600.0
+    count = 0
+    for p, ts in missing:
+        idx = bisect_left(geo_times, ts)
+        best = None
+        best_diff = max_delta + 1.0
+        for cand_idx in (idx - 1, idx):
+            if 0 <= cand_idx < len(geotagged):
+                diff = abs(geotagged[cand_idx][0] - ts)
+                if diff <= max_delta and diff < best_diff:
+                    best_diff = diff
+                    best = geotagged[cand_idx]
+        if best is not None:
+            p["lat"] = best[1]
+            p["lon"] = best[2]
+            count += 1
+    return count
 
 def get_drive_file_ids():
     fs_base = Path(r"C:\Users\bdewe\AppData\Local\Google\DriveFS\118213793054156610633")
@@ -104,12 +166,18 @@ def export_hierarchical_catalog():
                     assets_by_name_size[(fname.lower(), fsize)] = doc_id
                     size_counts[fsize] += 1
                     assets_by_size[fsize] = doc_id
+                    loc = data.get("location") or {}
+                    coords = _valid_coords(loc.get("latitude"), loc.get("longitude"))
                     asset_meta[doc_id] = {
                         "fn": fname,
                         "s": fsize,
                         "dt": data.get("captureDate") or "",
                         "w": import_src.get("originalWidth") or 0,
-                        "h": import_src.get("originalHeight") or 0
+                        "h": import_src.get("originalHeight") or 0,
+                        "co": loc.get("country"),
+                        "ci": loc.get("city"),
+                        "lat": coords[0] if coords else None,
+                        "lon": coords[1] if coords else None,
                     }
         except Exception:
             pass
@@ -197,9 +265,10 @@ def export_hierarchical_catalog():
         albums_for_photo = []
 
         if ass_id and ass_id in asset_meta:
-            dt = asset_meta[ass_id]["dt"]
-            w = asset_meta[ass_id]["w"]
-            h = asset_meta[ass_id]["h"]
+            meta = asset_meta[ass_id]
+            dt = meta["dt"]
+            w = meta["w"]
+            h = meta["h"]
             albums_for_photo = list(asset_to_all_albums.get(ass_id, []))
 
         ext = Path(fn).suffix.lower()
@@ -219,10 +288,21 @@ def export_hierarchical_catalog():
         }
         if gid:
             photo_dict["gid"] = gid
+        if ass_id and ass_id in asset_meta:
+            meta = asset_meta[ass_id]
+            if meta.get("co"):
+                photo_dict["co"] = meta["co"]
+            if meta.get("ci"):
+                photo_dict["ci"] = meta["ci"]
+            if meta.get("lat") is not None and meta.get("lon") is not None:
+                photo_dict["lat"] = meta["lat"]
+                photo_dict["lon"] = meta["lon"]
 
         photos.append(photo_dict)
 
+    propagated = _propagate_gps_on_catalog(photos, window_hours=2.0)
     print(f"Photos linked with exact Google Drive File ID: {matched_drive} ({matched_drive/len(photos)*100:.1f}%)")
+    print(f"Propagated GPS (+/- 2h) to {propagated} camera photos")
 
     video_years_count = defaultdict(int)
     photo_years_count = defaultdict(int)

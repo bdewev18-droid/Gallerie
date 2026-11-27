@@ -2,7 +2,84 @@ import sqlite3
 import msgpack
 from pathlib import Path
 from collections import defaultdict
+from bisect import bisect_left
+from datetime import datetime
 import re
+
+
+def _parse_iso_ts(raw: str):
+    if not raw or not isinstance(raw, str):
+        return None
+    s = raw.strip()
+    if not s:
+        return None
+    try:
+        if s.endswith("Z"):
+            s = s[:-1] + "+00:00"
+        return datetime.fromisoformat(s).replace(tzinfo=None).timestamp()
+    except Exception:
+        return None
+
+
+def _valid_coords(lat, lon):
+    if not isinstance(lat, (int, float)) or not isinstance(lon, (int, float)):
+        return None
+    lat_f = float(lat)
+    lon_f = float(lon)
+    if lat_f == 0.0 and lon_f == 0.0:
+        return None
+    if -90.0 <= lat_f <= 90.0 and -180.0 <= lon_f <= 180.0:
+        return (round(lat_f, 6), round(lon_f, 6))
+    return None
+
+
+def propagate_gps_by_time(conn: sqlite3.Connection, window_hours: float = 2.0) -> int:
+    """Propagate GPS coordinates from geotagged photos (e.g. smartphones) to
+    camera photos without GPS taken within +/- window_hours."""
+    cur = conn.cursor()
+    rows = cur.execute(
+        "SELECT id, capture_date, latitude, longitude FROM photos WHERE capture_date IS NOT NULL AND capture_date != '';"
+    ).fetchall()
+
+    geotagged = []
+    missing = []
+    for pid, dt_str, lat, lon in rows:
+        ts = _parse_iso_ts(dt_str)
+        if ts is None:
+            continue
+        if lat is not None and lon is not None:
+            geotagged.append((ts, float(lat), float(lon)))
+        else:
+            missing.append((pid, ts))
+
+    if not geotagged or not missing:
+        return 0
+
+    geotagged.sort(key=lambda item: item[0])
+    geo_times = [item[0] for item in geotagged]
+    max_delta = window_hours * 3600.0
+    updates = []
+
+    for pid, ts in missing:
+        idx = bisect_left(geo_times, ts)
+        best = None
+        best_diff = max_delta + 1.0
+        for cand_idx in (idx - 1, idx):
+            if 0 <= cand_idx < len(geotagged):
+                diff = abs(geotagged[cand_idx][0] - ts)
+                if diff <= max_delta and diff < best_diff:
+                    best_diff = diff
+                    best = geotagged[cand_idx]
+        if best is not None:
+            updates.append((best[1], best[2], "propagated", pid))
+
+    if updates:
+        cur.executemany(
+            "UPDATE photos SET latitude = ?, longitude = ?, gps_source = ? WHERE id = ? AND latitude IS NULL;",
+            updates,
+        )
+        conn.commit()
+    return len(updates)
 
 def enrich_photos():
     db_path = Path(r"d:\LRforIA\data\photos.db")
@@ -23,7 +100,10 @@ def enrich_photos():
         "city": "TEXT",
         "state_prov": "TEXT",
         "score": "INTEGER",
-        "deleted_at": "TEXT"
+        "deleted_at": "TEXT",
+        "latitude": "REAL",
+        "longitude": "REAL",
+        "gps_source": "TEXT",
     }
     for col, col_type in needed_cols.items():
         if col not in existing_cols:
@@ -122,10 +202,15 @@ def enrich_photos():
             city = loc.get("city")
             state_prov = loc.get("state")
             score = aesthetics.get("score")
+            coords = _valid_coords(loc.get("latitude"), loc.get("longitude"))
+            lat = coords[0] if coords else None
+            lon = coords[1] if coords else None
+            gps_src = "exif" if coords else None
 
             updates.append((
                 make, model, iso, focal, aperture, exp_str,
                 country, city, state_prov, score,
+                lat, lon, gps_src,
                 pid
             ))
 
@@ -147,10 +232,16 @@ def enrich_photos():
         country = COALESCE(?, country),
         city = COALESCE(?, city),
         state_prov = COALESCE(?, state_prov),
-        score = COALESCE(?, score)
+        score = COALESCE(?, score),
+        latitude = COALESCE(?, latitude),
+        longitude = COALESCE(?, longitude),
+        gps_source = COALESCE(?, gps_source)
     WHERE id = ?;
     """, updates)
     conn.commit()
+
+    propagated_count = propagate_gps_by_time(conn, window_hours=2.0)
+    print(f"Propagated GPS (+/- 2h) to {propagated_count} camera photos")
 
     print("Creating indexes on metadata columns...")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_photos_gdrive ON photos(gdrive_file_id);")

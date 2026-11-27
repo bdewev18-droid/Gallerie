@@ -3,6 +3,8 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show rootBundle;
+import 'package:flutter_map/flutter_map.dart';
+import 'package:latlong2/latlong.dart';
 
 class WorldCountryMeta {
   final String iso3;
@@ -84,6 +86,26 @@ class CountryVisitStats {
   });
 
   int get totalMedia => photoCount + videoCount;
+}
+
+class MapGeoPhoto {
+  final int id;
+  final double latitude;
+  final double longitude;
+  final String? country;
+  final String? city;
+  final String captureDate;
+  final String? thumbnailUrl;
+
+  const MapGeoPhoto({
+    required this.id,
+    required this.latitude,
+    required this.longitude,
+    this.country,
+    this.city,
+    this.captureDate = '',
+    this.thumbnailUrl,
+  });
 }
 
 const List<WorldCountryMeta> kWorldCountries = [
@@ -233,19 +255,20 @@ WorldCountryMeta? matchCountryMeta(String rawName) {
 class _CountryGeoShape {
   final String iso3;
   final String name;
-  final Offset centerNorm;
-  final List<List<Offset>> polygonsNorm;
+  final LatLng centerLatLng;
+  final List<List<LatLng>> polygonsLatLng;
 
   const _CountryGeoShape({
     required this.iso3,
     required this.name,
-    required this.centerNorm,
-    required this.polygonsNorm,
+    required this.centerLatLng,
+    required this.polygonsLatLng,
   });
 }
 
 class WorldMapTab extends StatefulWidget {
   final List<CountryVisitStats> visitedCountries;
+  final List<MapGeoPhoto> geoPhotos;
   final int totalPhotos;
   final int totalVideos;
   final bool isVideoMode;
@@ -256,6 +279,7 @@ class WorldMapTab extends StatefulWidget {
   const WorldMapTab({
     super.key,
     required this.visitedCountries,
+    this.geoPhotos = const [],
     required this.totalPhotos,
     required this.totalVideos,
     this.isVideoMode = false,
@@ -271,32 +295,18 @@ class WorldMapTab extends StatefulWidget {
 class _WorldMapTabState extends State<WorldMapTab> {
   static List<_CountryGeoShape>? _cachedShapes;
   List<_CountryGeoShape>? _shapes;
-  final TransformationController _transformController = TransformationController();
-  double _currentZoom = 1.0;
+  final MapController _mapController = MapController();
+  double _currentZoom = 2.2;
   String _selectedContinent = 'Monde';
   String? _highlightedIso;
   bool _showListMode = false;
-  Size _lastViewportSize = const Size(800, 420);
+  bool _isSatellite = false;
+  bool _showRoutes = true;
 
   @override
   void initState() {
     super.initState();
-    _transformController.addListener(_onTransformChanged);
     _loadGeoJson();
-  }
-
-  void _onTransformChanged() {
-    final nextZoom = _transformController.value.getMaxScaleOnAxis();
-    if ((nextZoom - _currentZoom).abs() > 0.05) {
-      setState(() => _currentZoom = nextZoom);
-    }
-  }
-
-  @override
-  void dispose() {
-    _transformController.removeListener(_onTransformChanged);
-    _transformController.dispose();
-    super.dispose();
   }
 
   Future<void> _loadGeoJson() async {
@@ -314,10 +324,13 @@ class _WorldMapTabState extends State<WorldMapTab> {
         final name = m['name'] as String;
         final center = m['center'] as List<dynamic>;
         final polysRaw = m['polygons'] as List<dynamic>;
-        final polys = <List<Offset>>[];
+        final polys = <List<LatLng>>[];
         for (final pr in polysRaw) {
           final pts = (pr as List<dynamic>)
-              .map((pt) => _project((pt[0] as num).toDouble(), (pt[1] as num).toDouble()))
+              .map((pt) => LatLng(
+                    (pt[1] as num).toDouble().clamp(-85.0, 85.0),
+                    (pt[0] as num).toDouble().clamp(-180.0, 180.0),
+                  ))
               .toList();
           if (pts.length >= 3) polys.add(pts);
         }
@@ -325,8 +338,11 @@ class _WorldMapTabState extends State<WorldMapTab> {
         parsed.add(_CountryGeoShape(
           iso3: iso,
           name: name,
-          centerNorm: _project((center[0] as num).toDouble(), (center[1] as num).toDouble()),
-          polygonsNorm: polys,
+          centerLatLng: LatLng(
+            (center[1] as num).toDouble().clamp(-85.0, 85.0),
+            (center[0] as num).toDouble().clamp(-180.0, 180.0),
+          ),
+          polygonsLatLng: polys,
         ));
       }
       _cachedShapes = parsed;
@@ -334,171 +350,65 @@ class _WorldMapTabState extends State<WorldMapTab> {
     } catch (_) {}
   }
 
-  static Offset _project(double lon, double lat) {
-    final x = ((lon + 180.0) / 360.0).clamp(0.0, 1.0);
-    final clampedLat = lat.clamp(-58.0, 82.0);
-    final y = ((82.0 - clampedLat) / 140.0).clamp(0.0, 1.0);
-    return Offset(x, y);
-  }
-
-  void _focusContinent(String continent, Size viewportSize) {
+  void _focusContinent(String continent) {
     setState(() => _selectedContinent = continent);
     if (_showListMode) return;
-    if (continent == 'Monde') {
-      _transformController.value = Matrix4.identity();
-      return;
-    }
-    final Offset normTarget;
+    final LatLng target;
     final double zoom;
     switch (continent) {
       case 'Europe':
-        normTarget = _project(12, 47);
-        zoom = 3.6;
+        target = const LatLng(48.0, 12.0);
+        zoom = 4.0;
         break;
       case 'Afrique':
-        normTarget = _project(18, 6);
-        zoom = 2.5;
+        target = const LatLng(6.0, 18.0);
+        zoom = 3.2;
         break;
       case 'Amériques':
-        normTarget = _project(-72, 2);
-        zoom = 2.0;
+        target = const LatLng(12.0, -72.0);
+        zoom = 2.7;
         break;
       case 'Asie':
-        normTarget = _project(88, 30);
-        zoom = 2.4;
+        target = const LatLng(30.0, 88.0);
+        zoom = 3.2;
         break;
       case 'Océanie':
-        normTarget = _project(138, -24);
-        zoom = 2.8;
+        target = const LatLng(-24.0, 138.0);
+        zoom = 3.6;
         break;
       default:
-        normTarget = const Offset(0.5, 0.5);
-        zoom = 1.0;
+        target = const LatLng(22.0, 12.0);
+        zoom = 2.2;
     }
-    final mapBox = _computeMapBoxSize(viewportSize);
-    final offsetX = (viewportSize.width - mapBox.width) / 2;
-    final offsetY = (viewportSize.height - mapBox.height) / 2;
-    final cx = offsetX + normTarget.dx * mapBox.width;
-    final cy = offsetY + normTarget.dy * mapBox.height;
-    final tx = viewportSize.width / 2 - cx * zoom;
-    final ty = viewportSize.height / 2 - cy * zoom;
-    final matrix = Matrix4.identity()
-      ..translate(
-        tx.clamp(-viewportSize.width * (zoom - 1), 0.0),
-        ty.clamp(-viewportSize.height * (zoom - 1), 0.0),
-      )
-      ..scale(zoom);
-    _transformController.value = matrix;
+    _mapController.move(target, zoom);
   }
 
-  void _stepZoom(double factor) {
-    final currentScale = _transformController.value.getMaxScaleOnAxis();
-    final targetScale = (currentScale * factor).clamp(1.0, 7.0);
-    if ((targetScale - currentScale).abs() < 0.01) return;
-    if (targetScale <= 1.02) {
-      _transformController.value = Matrix4.identity();
-      return;
-    }
-    final ratio = targetScale / currentScale;
-    final cx = _lastViewportSize.width / 2;
-    final cy = _lastViewportSize.height / 2;
-    final focal = Matrix4.identity()
-      ..translate(cx, cy)
-      ..scale(ratio)
-      ..translate(-cx, -cy);
-    _transformController.value = focal * _transformController.value;
+  void _stepZoom(double delta) {
+    final nextZoom = (_currentZoom + delta).clamp(1.5, 16.0);
+    _mapController.move(_mapController.camera.center, nextZoom);
   }
 
-  Size _computeMapBoxSize(Size viewport) {
-    // On mobile portrait, render map wider than viewport so it fills vertically nicely & can pan/zoom cleanly
-    const aspect = 1200.0 / 620.0;
-    final maxW = viewport.width;
-    final maxH = viewport.height;
-    double boxW = maxW;
-    double boxH = boxW / aspect;
-    if (boxH > maxH) {
-      boxH = maxH;
-      boxW = boxH * aspect;
-    }
-    return Size(math.max(boxW, 300), math.max(boxH, 200));
-  }
-
-  bool _pointInPolygon(Offset p, List<Offset> poly) {
+  bool _pointInPolygonLatLng(LatLng p, List<LatLng> poly) {
     var inside = false;
     for (int i = 0, j = poly.length - 1; i < poly.length; j = i++) {
-      final xi = poly[i].dx, yi = poly[i].dy;
-      final xj = poly[j].dx, yj = poly[j].dy;
-      final intersect = ((yi > p.dy) != (yj > p.dy)) &&
-          (p.dx < (xj - xi) * (p.dy - yi) / ((yj - yi) == 0 ? 1e-9 : (yj - yi)) + xi);
+      final xi = poly[i].longitude, yi = poly[i].latitude;
+      final xj = poly[j].longitude, yj = poly[j].latitude;
+      final intersect = ((yi > p.latitude) != (yj > p.latitude)) &&
+          (p.longitude <
+              (xj - xi) * (p.latitude - yi) / ((yj - yi) == 0 ? 1e-9 : (yj - yi)) + xi);
       if (intersect) inside = !inside;
     }
     return inside;
   }
 
-  void _zoomToCanvasPoint(Offset scenePoint, Size mapBoxSize, double targetZoom) {
-    final zoom = targetZoom.clamp(1.0, 7.0);
-    final offsetX = (_lastViewportSize.width - mapBoxSize.width) / 2;
-    final offsetY = (_lastViewportSize.height - mapBoxSize.height) / 2;
-    final cx = offsetX + scenePoint.dx;
-    final cy = offsetY + scenePoint.dy;
-    final tx = _lastViewportSize.width / 2 - cx * zoom;
-    final ty = _lastViewportSize.height / 2 - cy * zoom;
-    final matrix = Matrix4.identity()
-      ..translate(
-        tx.clamp(-_lastViewportSize.width * (zoom - 1), 0.0),
-        ty.clamp(-_lastViewportSize.height * (zoom - 1), 0.0),
-      )
-      ..scale(zoom);
-    _transformController.value = matrix;
-  }
-
-  void _handleMapTap(TapUpDetails details, Size mapBoxSize, Map<String, CountryVisitStats> visitedByIso) {
+  void _handleMapTapLatLng(LatLng point, Map<String, CountryVisitStats> visitedByIso) {
     final shapes = _shapes;
     if (shapes == null) return;
 
-    // GestureDetector is inside InteractiveViewer, so localPosition is already in mapBoxSize coordinates.
-    final scenePoint = details.localPosition;
-    final normPoint = Offset(
-      (scenePoint.dx / mapBoxSize.width).clamp(0.0, 1.0),
-      (scenePoint.dy / mapBoxSize.height).clamp(0.0, 1.0),
-    );
-
-    final currentScale = _transformController.value.getMaxScaleOnAxis();
-    final clusters = _buildMapClusters(
-      shapes: shapes,
-      visitedByIso: visitedByIso,
-      canvasSize: mapBoxSize,
-      currentZoom: currentScale,
-    );
-
-    // 1. Check cluster/country badges first (generous mobile touch radius)
-    final tapRadiusCanvas = 26.0 / currentScale.clamp(1.0, 5.0);
-    _MapCluster? hitCluster;
-    double bestClusterDist = double.infinity;
-    for (final cl in clusters) {
-      final d = (cl.centerCanvas - scenePoint).distance;
-      if (d <= tapRadiusCanvas && d < bestClusterDist) {
-        bestClusterDist = d;
-        hitCluster = cl;
-      }
-    }
-    if (hitCluster != null) {
-      if (hitCluster.continentName != null) {
-        _focusContinent(hitCluster.continentName!, _lastViewportSize);
-        return;
-      }
-      if (hitCluster.countries.length > 1) {
-        _zoomToCanvasPoint(hitCluster.centerCanvas, mapBoxSize, math.max(currentScale * 1.85, 3.0));
-        return;
-      }
-      _openCountryDetails(hitCluster.countries.first);
-      return;
-    }
-
     for (final s in shapes) {
       if (!visitedByIso.containsKey(s.iso3)) continue;
-      for (final poly in s.polygonsNorm) {
-        if (_pointInPolygon(normPoint, poly)) {
+      for (final poly in s.polygonsLatLng) {
+        if (_pointInPolygonLatLng(point, poly)) {
           _openCountryDetails(visitedByIso[s.iso3]!);
           return;
         }
@@ -506,15 +416,15 @@ class _WorldMapTabState extends State<WorldMapTab> {
     }
 
     for (final s in shapes) {
-      for (final poly in s.polygonsNorm) {
-        if (_pointInPolygon(normPoint, poly)) {
+      for (final poly in s.polygonsLatLng) {
+        if (_pointInPolygonLatLng(point, poly)) {
           final meta = kCountriesByIso[s.iso3];
           final label = meta != null ? '${meta.flag} ${meta.nameFr}' : s.name;
           setState(() => _highlightedIso = s.iso3);
           ScaffoldMessenger.of(context).hideCurrentSnackBar();
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              backgroundColor: const Color(0xFFFFFFFF),
+              backgroundColor: const Color(0xFF1E293B),
               behavior: SnackBarBehavior.floating,
               content: Text(
                 '$label — aucun album ou média pour le moment',
@@ -626,9 +536,15 @@ class _WorldMapTabState extends State<WorldMapTab> {
                       children: [
                         _summaryPill(
                           Icons.public_rounded,
-                          '${widget.visitedCountries.length} pays',
+                          '${widget.visitedCountries.length} pays (${(widget.visitedCountries.length / 195 * 100).clamp(0, 100).toStringAsFixed(0)}%)',
                           const Color(0xFFF97316),
                         ),
+                        if (widget.geoPhotos.isNotEmpty)
+                          _summaryPill(
+                            Icons.gps_fixed_rounded,
+                            '${widget.geoPhotos.length} GPS',
+                            const Color(0xFF10B981),
+                          ),
                         if (!widget.isVideoMode)
                           _summaryPill(
                             Icons.photo_outlined,
@@ -707,7 +623,7 @@ class _WorldMapTabState extends State<WorldMapTab> {
                       child: ChoiceChip(
                         label: Text(cont),
                         selected: selected,
-                        onSelected: (_) => _focusContinent(cont, _lastViewportSize),
+                        onSelected: (_) => _focusContinent(cont),
                         labelStyle: TextStyle(
                           fontSize: 11.5,
                           fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
@@ -851,51 +767,90 @@ class _WorldMapTabState extends State<WorldMapTab> {
       );
     }
 
+    final shapeByIso = {for (final s in shapes) s.iso3: s};
+    final visitedPolygons = _buildVisitedPolygons(shapes, visitedByIso, _highlightedIso);
+    final routeLines = _showRoutes
+        ? _buildRoutePolylines(
+            visitedCountries: widget.visitedCountries,
+            shapeByIso: shapeByIso,
+            geoPhotos: widget.geoPhotos,
+          )
+        : const <Polyline>[];
+    final markers = _buildPolarstepsMarkers(
+      visitedByIso: visitedByIso,
+      shapeByIso: shapeByIso,
+      geoPhotos: widget.geoPhotos,
+      currentZoom: _currentZoom,
+      highlightedIso: _highlightedIso,
+      onTapContinent: _focusContinent,
+      onTapClusterZoom: (center) => _mapController.move(center, (_currentZoom + 1.8).clamp(3.0, 12.0)),
+      onTapCountry: (stats) {
+        final shape = shapeByIso[stats.meta.iso3];
+        if (shape != null && _currentZoom < 4.5) {
+          _mapController.move(shape.centerLatLng, 4.5);
+        }
+        _openCountryDetails(stats);
+      },
+      onTapGeoStep: (step) {
+        _mapController.move(step.center, math.max(_currentZoom, 10.0));
+        final matched = step.countryIso != null ? visitedByIso[step.countryIso] : null;
+        if (matched != null) {
+          _openCountryDetails(matched);
+        } else {
+          ScaffoldMessenger.of(context).hideCurrentSnackBar();
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              backgroundColor: const Color(0xFF1E293B),
+              behavior: SnackBarBehavior.floating,
+              content: Text(
+                '${step.label} · ${step.count} photo${step.count > 1 ? 's' : ''}',
+                style: const TextStyle(color: Colors.white, fontSize: 12),
+              ),
+              duration: const Duration(seconds: 2),
+            ),
+          );
+        }
+      },
+    );
+
+    final tileUrl = _isSatellite
+        ? 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'
+        : 'https://basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png';
+
     return Column(
       children: [
         Expanded(
           child: Stack(
             children: [
-              LayoutBuilder(
-                builder: (ctx, constraints) {
-                  _lastViewportSize = Size(constraints.maxWidth, constraints.maxHeight);
-                  final mapBoxSize = _computeMapBoxSize(_lastViewportSize);
-
-                  return Container(
-                    width: constraints.maxWidth,
-                    height: constraints.maxHeight,
-                    decoration: const BoxDecoration(
-                      gradient: RadialGradient(
-                        center: Alignment(0, -0.1),
-                        radius: 1.15,
-                        colors: [Color(0xFFE0F7FA), Color(0xFFBAE6FD)],
-                      ),
-                    ),
-                    child: InteractiveViewer(
-                      transformationController: _transformController,
-                      minScale: 1.0,
-                      maxScale: 7.0,
-                      boundaryMargin: const EdgeInsets.all(80),
-                      child: Center(
-                        child: GestureDetector(
-                          onTapUp: (details) => _handleMapTap(details, mapBoxSize, visitedByIso),
-                          child: SizedBox(
-                            width: mapBoxSize.width,
-                            height: mapBoxSize.height,
-                            child: CustomPaint(
-                              painter: _WorldMapPainter(
-                                shapes: shapes,
-                                visitedByIso: visitedByIso,
-                                highlightedIso: _highlightedIso,
-                                currentZoom: _currentZoom,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  );
-                },
+              FlutterMap(
+                mapController: _mapController,
+                options: MapOptions(
+                  initialCenter: const LatLng(22.0, 12.0),
+                  initialZoom: 2.2,
+                  minZoom: 1.5,
+                  maxZoom: 16.0,
+                  interactionOptions: const InteractionOptions(
+                    flags: InteractiveFlag.all & ~InteractiveFlag.rotate,
+                  ),
+                  onPositionChanged: (pos, hasGesture) {
+                    if ((pos.zoom - _currentZoom).abs() > 0.12) {
+                      setState(() => _currentZoom = pos.zoom);
+                    }
+                  },
+                  onTap: (_, latLng) => _handleMapTapLatLng(latLng, visitedByIso),
+                ),
+                children: [
+                  TileLayer(
+                    urlTemplate: tileUrl,
+                    userAgentPackageName: 'com.gallerie.mediasfamilly',
+                    maxZoom: 18,
+                  ),
+                  if (visitedPolygons.isNotEmpty)
+                    PolygonLayer(polygons: visitedPolygons),
+                  if (routeLines.isNotEmpty)
+                    PolylineLayer(polylines: routeLines),
+                  MarkerLayer(markers: markers),
+                ],
               ),
               Positioned(
                 right: 12,
@@ -904,32 +859,51 @@ class _WorldMapTabState extends State<WorldMapTab> {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     FloatingActionButton.small(
+                      heroTag: 'map_style_toggle',
+                      backgroundColor: _isSatellite
+                          ? const Color(0xFF0EA5E9)
+                          : Colors.white.withValues(alpha: 0.95),
+                      foregroundColor: _isSatellite ? Colors.white : const Color(0xFF1E293B),
+                      tooltip: _isSatellite ? 'Fond Plan (Voyager)' : 'Fond Satellite',
+                      onPressed: () => setState(() => _isSatellite = !_isSatellite),
+                      child: Icon(_isSatellite ? Icons.map_outlined : Icons.satellite_alt_rounded, size: 18),
+                    ),
+                    const SizedBox(height: 6),
+                    FloatingActionButton.small(
+                      heroTag: 'map_routes_toggle',
+                      backgroundColor: _showRoutes
+                          ? const Color(0xFFF97316)
+                          : Colors.white.withValues(alpha: 0.95),
+                      foregroundColor: _showRoutes ? Colors.white : const Color(0xFF1E293B),
+                      tooltip: _showRoutes ? 'Masquer l\'itinéraire' : 'Afficher l\'itinéraire',
+                      onPressed: () => setState(() => _showRoutes = !_showRoutes),
+                      child: const Icon(Icons.route_rounded, size: 18),
+                    ),
+                    const SizedBox(height: 6),
+                    FloatingActionButton.small(
                       heroTag: 'map_zoom_in',
-                      backgroundColor: Colors.white.withOpacity(0.95),
+                      backgroundColor: Colors.white.withValues(alpha: 0.95),
                       foregroundColor: const Color(0xFF1E293B),
                       tooltip: 'Zoomer',
-                      onPressed: () => _stepZoom(1.5),
+                      onPressed: () => _stepZoom(1.2),
                       child: const Icon(Icons.add, size: 18),
                     ),
                     const SizedBox(height: 6),
                     FloatingActionButton.small(
                       heroTag: 'map_zoom_out',
-                      backgroundColor: Colors.white.withOpacity(0.95),
+                      backgroundColor: Colors.white.withValues(alpha: 0.95),
                       foregroundColor: const Color(0xFF1E293B),
                       tooltip: 'Dézoomer',
-                      onPressed: () => _stepZoom(0.66),
+                      onPressed: () => _stepZoom(-1.2),
                       child: const Icon(Icons.remove, size: 18),
                     ),
                     const SizedBox(height: 6),
                     FloatingActionButton.small(
                       heroTag: 'map_reset_zoom',
-                      backgroundColor: Colors.white.withOpacity(0.95),
+                      backgroundColor: Colors.white.withValues(alpha: 0.95),
                       foregroundColor: const Color(0xFFF97316),
                       tooltip: 'Réinitialiser la vue',
-                      onPressed: () {
-                        setState(() => _selectedContinent = 'Monde');
-                        _transformController.value = Matrix4.identity();
-                      },
+                      onPressed: () => _focusContinent('Monde'),
                       child: const Icon(Icons.fit_screen_rounded, size: 18),
                     ),
                   ],
@@ -941,35 +915,40 @@ class _WorldMapTabState extends State<WorldMapTab> {
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                   decoration: BoxDecoration(
-                    color: const Color(0xFFFFF7E8).withOpacity(0.84),
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: Color(0xFFF1E6D2)),
+                    color: Colors.white.withValues(alpha: 0.92),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: const Color(0xFFE2E8F0)),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.08),
+                        blurRadius: 8,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
                   ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Container(
-                        width: 10,
-                        height: 10,
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF0EA5E9),
-                          borderRadius: BorderRadius.circular(3),
-                          boxShadow: [
-                            BoxShadow(
-                              color: const Color(0xFFF97316).withOpacity(0.6),
-                              blurRadius: 6,
-                            ),
-                          ],
+                        width: 9,
+                        height: 9,
+                        decoration: const BoxDecoration(
+                          color: Color(0xFFF97316),
+                          shape: BoxShape.circle,
                         ),
                       ),
                       const SizedBox(width: 6),
                       Text(
-                        _currentZoom < 1.55
-                            ? 'Vue Continents · Touchez un compteur pour zoomer'
-                            : (_currentZoom < 2.8
-                                ? 'Vue Régions · Zoomez pour diviser les groupes'
-                                : 'Pays visités · Touchez un pays pour les détails'),
-                        style: const TextStyle(fontSize: 11, color: Color(0xFF475569)),
+                        _currentZoom < 3.0
+                            ? 'Vue Monde · Touchez un groupe pour zoomer'
+                            : (_currentZoom >= 5.8 && widget.geoPhotos.isNotEmpty
+                                ? 'Étapes GPS & Pays · Touchez un pin'
+                                : 'Pays visités · Touchez une vignette'),
+                        style: const TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: Color(0xFF334155),
+                        ),
                       ),
                     ],
                   ),
@@ -995,18 +974,24 @@ class _WorldMapTabState extends State<WorldMapTab> {
               final isSelected = _highlightedIso == c.meta.iso3;
               return InkWell(
                 borderRadius: BorderRadius.circular(12),
-                onTap: () => _openCountryDetails(c),
+                onTap: () {
+                  final shape = shapeByIso[c.meta.iso3];
+                  if (shape != null) {
+                    _mapController.move(shape.centerLatLng, math.max(_currentZoom, 4.5));
+                  }
+                  _openCountryDetails(c);
+                },
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                   decoration: BoxDecoration(
                     color: isSelected
-                        ? const Color(0xFF0EA5E9).withOpacity(0.24)
-                        : const Color(0xFFF6EFE2).withOpacity(0.8),
+                        ? const Color(0xFF0EA5E9).withValues(alpha: 0.24)
+                        : const Color(0xFFF6EFE2).withValues(alpha: 0.8),
                     borderRadius: BorderRadius.circular(12),
                     border: Border.all(
                       color: isSelected
                           ? const Color(0xFFF97316)
-                          : const Color(0xFFF97316).withOpacity(0.28),
+                          : const Color(0xFFF97316).withValues(alpha: 0.28),
                     ),
                   ),
                   child: Row(
@@ -1023,7 +1008,7 @@ class _WorldMapTabState extends State<WorldMapTab> {
                             style: const TextStyle(
                               fontSize: 12,
                               fontWeight: FontWeight.w600,
-                              color: const Color(0xFF1E293B),
+                              color: Color(0xFF1E293B),
                             ),
                           ),
                           Text(
@@ -1449,275 +1434,455 @@ class _CountryDetailSheetState extends State<_CountryDetailSheet> {
   }
 }
 
-class _MapCluster {
-  final Offset centerCanvas;
-  final List<CountryVisitStats> countries;
-  final int totalMedia;
-  final String? continentName;
+class _GeoStepPin {
+  final LatLng center;
+  final String label;
+  final String? thumbUrl;
+  final int count;
+  final String? countryIso;
+  final String captureDate;
 
-  const _MapCluster({
-    required this.centerCanvas,
-    required this.countries,
-    required this.totalMedia,
-    this.continentName,
+  const _GeoStepPin({
+    required this.center,
+    required this.label,
+    this.thumbUrl,
+    required this.count,
+    this.countryIso,
+    this.captureDate = '',
   });
 }
 
-Offset _continentNormCenter(String continent) {
+LatLng _continentLatLngCenter(String continent) {
   switch (continent) {
     case 'Europe':
-      return _WorldMapTabState._project(12, 50);
+      return const LatLng(49.0, 12.0);
     case 'Afrique':
-      return _WorldMapTabState._project(18, 6);
+      return const LatLng(6.0, 18.0);
     case 'Amériques':
-      return _WorldMapTabState._project(-68, -4);
+      return const LatLng(12.0, -72.0);
     case 'Asie':
-      return _WorldMapTabState._project(88, 34);
+      return const LatLng(32.0, 88.0);
     case 'Océanie':
-      return _WorldMapTabState._project(138, -24);
+      return const LatLng(-24.0, 138.0);
     default:
-      return const Offset(0.5, 0.5);
+      return const LatLng(22.0, 12.0);
   }
 }
 
-List<_MapCluster> _buildMapClusters({
-  required List<_CountryGeoShape> shapes,
-  required Map<String, CountryVisitStats> visitedByIso,
-  required Size canvasSize,
-  required double currentZoom,
+List<Polygon> _buildVisitedPolygons(
+  List<_CountryGeoShape> shapes,
+  Map<String, CountryVisitStats> visitedByIso,
+  String? highlightedIso,
+) {
+  final polygons = <Polygon>[];
+  for (final s in shapes) {
+    if (!visitedByIso.containsKey(s.iso3)) continue;
+    final isHighlighted = s.iso3 == highlightedIso;
+    for (final pts in s.polygonsLatLng) {
+      polygons.add(
+        Polygon(
+          points: pts,
+          color: isHighlighted
+              ? const Color(0xFFFBBF24).withValues(alpha: 0.34)
+              : const Color(0xFF0EA5E9).withValues(alpha: 0.18),
+          borderColor: isHighlighted ? const Color(0xFFF97316) : Colors.white.withValues(alpha: 0.85),
+          borderStrokeWidth: isHighlighted ? 2.0 : 1.1,
+        ),
+      );
+    }
+  }
+  return polygons;
+}
+
+List<_GeoStepPin> _buildGeoSteps(List<MapGeoPhoto> geoPhotos) {
+  if (geoPhotos.isEmpty) return const [];
+  final Map<String, List<MapGeoPhoto>> buckets = {};
+  for (final p in geoPhotos) {
+    final day = p.captureDate.length >= 10 ? p.captureDate.substring(0, 10) : '';
+    final latKey = (p.latitude * 20).round(); // ~0.05 deg (~5 km)
+    final lonKey = (p.longitude * 20).round();
+    final key = '$day|$latKey|$lonKey';
+    buckets.putIfAbsent(key, () => []).add(p);
+  }
+
+  final steps = <_GeoStepPin>[];
+  for (final entry in buckets.values) {
+    double sumLat = 0;
+    double sumLon = 0;
+    String? thumb;
+    String? city;
+    String? country;
+    String dt = '';
+    for (final p in entry) {
+      sumLat += p.latitude;
+      sumLon += p.longitude;
+      thumb ??= p.thumbnailUrl;
+      city ??= (p.city != null && p.city!.isNotEmpty) ? p.city : null;
+      country ??= (p.country != null && p.country!.isNotEmpty) ? p.country : null;
+      if (dt.isEmpty && p.captureDate.isNotEmpty) dt = p.captureDate;
+    }
+    final iso = country != null ? matchCountryMeta(country)?.iso3 : null;
+    final label = city ?? country ?? 'Étape GPS';
+    steps.add(_GeoStepPin(
+      center: LatLng(sumLat / entry.length, sumLon / entry.length),
+      label: label,
+      thumbUrl: thumb,
+      count: entry.length,
+      countryIso: iso,
+      captureDate: dt,
+    ));
+  }
+  steps.sort((a, b) => a.captureDate.compareTo(b.captureDate));
+  return steps;
+}
+
+List<Polyline> _buildRoutePolylines({
+  required List<CountryVisitStats> visitedCountries,
+  required Map<String, _CountryGeoShape> shapeByIso,
+  required List<MapGeoPhoto> geoPhotos,
 }) {
-  // Level 1: Continent-level cumulative counters when zoomed out
-  if (currentZoom < 1.55) {
+  final pts = <LatLng>[];
+  if (geoPhotos.length >= 2) {
+    final steps = _buildGeoSteps(geoPhotos);
+    for (final s in steps) {
+      pts.add(s.center);
+    }
+  } else {
+    final sorted = [...visitedCountries]..sort((a, b) {
+        final ta = a.albums.isNotEmpty ? a.albums.first.sortTimestamp : 0;
+        final tb = b.albums.isNotEmpty ? b.albums.first.sortTimestamp : 0;
+        return ta.compareTo(tb);
+      });
+    for (final c in sorted) {
+      final shape = shapeByIso[c.meta.iso3];
+      if (shape != null) pts.add(shape.centerLatLng);
+    }
+  }
+
+  if (pts.length < 2) return const [];
+  return [
+    Polyline(
+      points: pts,
+      color: Colors.white.withValues(alpha: 0.85),
+      strokeWidth: 4.5,
+    ),
+    Polyline(
+      points: pts,
+      color: const Color(0xFFF97316),
+      strokeWidth: 2.5,
+    ),
+  ];
+}
+
+String? _pickCountryThumb(CountryVisitStats stats) {
+  for (final p in stats.slideshowPhotos) {
+    if (p.thumbnailUrl != null) return p.thumbnailUrl;
+  }
+  for (final a in stats.albums) {
+    if (a.coverThumbUrl != null) return a.coverThumbUrl;
+  }
+  return stats.discoveryAlbum?.coverThumbUrl;
+}
+
+List<Marker> _buildPolarstepsMarkers({
+  required Map<String, CountryVisitStats> visitedByIso,
+  required Map<String, _CountryGeoShape> shapeByIso,
+  required List<MapGeoPhoto> geoPhotos,
+  required double currentZoom,
+  required String? highlightedIso,
+  required void Function(String continent) onTapContinent,
+  required void Function(LatLng center) onTapClusterZoom,
+  required void Function(CountryVisitStats stats) onTapCountry,
+  required void Function(_GeoStepPin step) onTapGeoStep,
+}) {
+  // Zoom < 3.0 : Continent summary clusters
+  if (currentZoom < 3.0) {
     final Map<String, List<CountryVisitStats>> byContinent = {};
     for (final c in visitedByIso.values) {
       byContinent.putIfAbsent(c.meta.continent, () => []).add(c);
     }
     return byContinent.entries.map((entry) {
-      final norm = _continentNormCenter(entry.key);
       final total = entry.value.fold<int>(0, (acc, c) => acc + c.totalMedia);
-      return _MapCluster(
-        centerCanvas: Offset(norm.dx * canvasSize.width, norm.dy * canvasSize.height),
-        countries: entry.value,
-        totalMedia: total,
-        continentName: entry.key,
+      final center = _continentLatLngCenter(entry.key);
+      return Marker(
+        point: center,
+        width: 150,
+        height: 40,
+        child: GestureDetector(
+          onTap: () => onTapContinent(entry.key),
+          child: Center(
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 6),
+              decoration: BoxDecoration(
+                color: const Color(0xFF0E7490).withValues(alpha: 0.94),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: Colors.white, width: 2),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.22),
+                    blurRadius: 8,
+                    offset: const Offset(0, 3),
+                  ),
+                ],
+              ),
+              child: Text(
+                '${entry.key} (${entry.value.length}) · $total',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w700,
+                ),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ),
+        ),
       );
     }).toList();
   }
 
-  // Gather individual country positions sorted by media count descending
-  final visitedShapes = shapes.where((s) => visitedByIso.containsKey(s.iso3)).toList()
+  // Zoom >= 5.8 and GPS steps exist : show GPS step photo pins + fallback countries without GPS
+  if (currentZoom >= 5.8 && geoPhotos.isNotEmpty) {
+    final steps = _buildGeoSteps(geoPhotos);
+    final markers = <Marker>[];
+    final isosWithGps = <String>{};
+    for (final s in steps) {
+      if (s.countryIso != null) isosWithGps.add(s.countryIso!);
+      markers.add(
+        Marker(
+          point: s.center,
+          width: 60,
+          height: 60,
+          child: GestureDetector(
+            onTap: () => onTapGeoStep(s),
+            child: _PolarstepsPhotoPin(
+              thumbUrl: s.thumbUrl,
+              fallbackText: '📍',
+              count: s.count,
+              isHighlighted: false,
+            ),
+          ),
+        ),
+      );
+    }
+    for (final entry in visitedByIso.entries) {
+      if (isosWithGps.contains(entry.key)) continue;
+      final shape = shapeByIso[entry.key];
+      if (shape == null) continue;
+      final stats = entry.value;
+      markers.add(
+        Marker(
+          point: shape.centerLatLng,
+          width: 64,
+          height: 64,
+          child: GestureDetector(
+            onTap: () => onTapCountry(stats),
+            child: _PolarstepsPhotoPin(
+              thumbUrl: _pickCountryThumb(stats),
+              fallbackText: stats.meta.flag,
+              badgeText: stats.meta.flag,
+              count: stats.totalMedia,
+              isHighlighted: highlightedIso == stats.meta.iso3,
+            ),
+          ),
+        ),
+      );
+    }
+    return markers;
+  }
+
+  // Zoom 3.0..5.8 (or no GPS yet): Polarsteps circular photo pins per country (with spatial merge if < threshold)
+  final mergeDeg = 18.0 / currentZoom;
+  final visitedShapes = shapeByIso.values
+      .where((s) => visitedByIso.containsKey(s.iso3))
+      .toList()
     ..sort((a, b) => visitedByIso[b.iso3]!.totalMedia.compareTo(visitedByIso[a.iso3]!.totalMedia));
 
-  // Level 3: Individual country counters when zoomed in >= 2.8x
-  if (currentZoom >= 2.8) {
-    return visitedShapes.map((s) {
-      final stats = visitedByIso[s.iso3]!;
-      return _MapCluster(
-        centerCanvas: Offset(s.centerNorm.dx * canvasSize.width, s.centerNorm.dy * canvasSize.height),
-        countries: [stats],
-        totalMedia: stats.totalMedia,
-      );
-    }).toList();
-  }
-
-  // Level 2: Dynamic spatial clustering between 1.55x and 2.8x — nearby countries merge & sum!
-  final mergeRadiusCanvas = (canvasSize.width < 550 ? 32.0 : 28.0) / currentZoom;
-  final clusters = <({Offset sumPos, List<CountryVisitStats> list, int total})>[];
-
+  final clusters = <({double sumLat, double sumLon, List<CountryVisitStats> list})>[];
   for (final s in visitedShapes) {
     final stats = visitedByIso[s.iso3]!;
-    final pos = Offset(s.centerNorm.dx * canvasSize.width, s.centerNorm.dy * canvasSize.height);
     int targetIdx = -1;
     double bestDist = double.infinity;
     for (int i = 0; i < clusters.length; i++) {
-      final clCenter = clusters[i].sumPos / clusters[i].list.length.toDouble();
-      final d = (clCenter - pos).distance;
-      if (d <= mergeRadiusCanvas && d < bestDist) {
+      final cLat = clusters[i].sumLat / clusters[i].list.length;
+      final cLon = clusters[i].sumLon / clusters[i].list.length;
+      final d = math.sqrt(
+        math.pow(cLat - s.centerLatLng.latitude, 2) +
+            math.pow(cLon - s.centerLatLng.longitude, 2),
+      );
+      if (d <= mergeDeg && d < bestDist) {
         bestDist = d;
         targetIdx = i;
       }
     }
     if (targetIdx == -1) {
-      clusters.add((sumPos: pos, list: [stats], total: stats.totalMedia));
+      clusters.add((
+        sumLat: s.centerLatLng.latitude,
+        sumLon: s.centerLatLng.longitude,
+        list: [stats],
+      ));
     } else {
       final prev = clusters[targetIdx];
       clusters[targetIdx] = (
-        sumPos: prev.sumPos + pos,
+        sumLat: prev.sumLat + s.centerLatLng.latitude,
+        sumLon: prev.sumLon + s.centerLatLng.longitude,
         list: [...prev.list, stats],
-        total: prev.total + stats.totalMedia,
       );
     }
   }
 
-  return clusters
-      .map(
-        (cl) => _MapCluster(
-          centerCanvas: cl.sumPos / cl.list.length.toDouble(),
-          countries: cl.list,
-          totalMedia: cl.total,
+  return clusters.map((cl) {
+    final center = LatLng(cl.sumLat / cl.list.length, cl.sumLon / cl.list.length);
+    if (cl.list.length == 1) {
+      final stats = cl.list.first;
+      return Marker(
+        point: center,
+        width: 64,
+        height: 64,
+        child: GestureDetector(
+          onTap: () => onTapCountry(stats),
+          child: _PolarstepsPhotoPin(
+            thumbUrl: _pickCountryThumb(stats),
+            fallbackText: stats.meta.flag,
+            badgeText: stats.meta.flag,
+            count: stats.totalMedia,
+            isHighlighted: highlightedIso == stats.meta.iso3,
+          ),
         ),
-      )
-      .toList();
+      );
+    }
+    final total = cl.list.fold<int>(0, (acc, c) => acc + c.totalMedia);
+    final flags = cl.list.take(3).map((e) => e.meta.flag).join();
+    return Marker(
+      point: center,
+      width: 110,
+      height: 38,
+      child: GestureDetector(
+        onTap: () => onTapClusterZoom(center),
+        child: Center(
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+            decoration: BoxDecoration(
+              color: const Color(0xFF0E7490).withValues(alpha: 0.94),
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(color: Colors.white, width: 2),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.2),
+                  blurRadius: 6,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            ),
+            child: Text(
+              '$flags · $total',
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+              ),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ),
+      ),
+    );
+  }).toList();
 }
 
-class _WorldMapPainter extends CustomPainter {
-  final List<_CountryGeoShape> shapes;
-  final Map<String, CountryVisitStats> visitedByIso;
-  final String? highlightedIso;
-  final double currentZoom;
+class _PolarstepsPhotoPin extends StatelessWidget {
+  final String? thumbUrl;
+  final String fallbackText;
+  final String? badgeText;
+  final int count;
+  final bool isHighlighted;
 
-  _WorldMapPainter({
-    required this.shapes,
-    required this.visitedByIso,
-    this.highlightedIso,
-    this.currentZoom = 1.0,
+  const _PolarstepsPhotoPin({
+    this.thumbUrl,
+    required this.fallbackText,
+    this.badgeText,
+    required this.count,
+    this.isHighlighted = false,
   });
 
   @override
-  void paint(Canvas canvas, Size size) {
-    final gridPaint = Paint()
-      ..color = Color(0xFF0284C7).withOpacity(0.08)
-      ..strokeWidth = 0.7;
-    for (int i = 1; i < 6; i++) {
-      final y = size.height * (i / 6);
-      canvas.drawLine(Offset(0, y), Offset(size.width, y), gridPaint);
-    }
-    for (int i = 1; i < 12; i++) {
-      final x = size.width * (i / 12);
-      canvas.drawLine(Offset(x, 0), Offset(x, size.height), gridPaint);
-    }
-
-    final unvisitedFill = Paint()
-      ..color = const Color(0xFFF3ECE0)
-      ..style = PaintingStyle.fill;
-    final unvisitedStroke = Paint()
-      ..color = const Color(0xFFD6C7B2)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 0.65;
-
-    final visitedGlow = Paint()
-      ..color = const Color(0xFFFBBF24).withOpacity(0.28)
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 5.5)
-      ..style = PaintingStyle.fill;
-    final visitedFill = Paint()
-      ..color = const Color(0xFF0EA5E9)
-      ..style = PaintingStyle.fill;
-    final visitedHighlightFill = Paint()
-      ..color = const Color(0xFFFBBF24)
-      ..style = PaintingStyle.fill;
-    final visitedStroke = Paint()
-      ..color = const Color(0xFFFFFFFF)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.1;
-
-    for (final s in shapes) {
-      if (visitedByIso.containsKey(s.iso3)) continue;
-      final path = _buildPath(s, size);
-      canvas.drawPath(path, unvisitedFill);
-      canvas.drawPath(path, unvisitedStroke);
-    }
-
-    for (final s in shapes) {
-      if (!visitedByIso.containsKey(s.iso3)) continue;
-      final path = _buildPath(s, size);
-      canvas.drawPath(path, visitedGlow);
-      canvas.drawPath(
-        path,
-        s.iso3 == highlightedIso ? visitedHighlightFill : visitedFill,
-      );
-      canvas.drawPath(path, visitedStroke);
-    }
-
-    final clusters = _buildMapClusters(
-      shapes: shapes,
-      visitedByIso: visitedByIso,
-      canvasSize: size,
-      currentZoom: currentZoom,
-    );
-
-    final invScale = 1.0 / math.sqrt(currentZoom.clamp(1.0, 6.0));
-    final singleBg = Paint()..color = Colors.white.withOpacity(0.95);
-    final singleBorder = Paint()
-      ..color = const Color(0xFFFBBF24)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.0 * invScale;
-
-    final clusterBg = Paint()..color = const Color(0xFF0E7490).withOpacity(0.95);
-    final clusterRing = Paint()
-      ..color = const Color(0xFFFBBF24).withOpacity(0.35)
-      ..style = PaintingStyle.fill;
-    final clusterBorder = Paint()
-      ..color = const Color(0xFFFDE68A)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.1 * invScale;
-
-    for (final cl in clusters) {
-      final c = cl.centerCanvas;
-      final isCluster = cl.continentName != null || cl.countries.length > 1;
-      final String label;
-      if (cl.continentName != null) {
-        label = '🌴 ${cl.continentName} (${cl.countries.length}) · ${cl.totalMedia}';
-      } else if (cl.countries.length > 1) {
-        final flags = cl.countries.take(3).map((e) => e.meta.flag).join();
-        final extra = cl.countries.length > 3 ? '+${cl.countries.length - 3}' : '';
-        label = '$flags$extra · ${cl.totalMedia}';
-      } else {
-        label = '${cl.countries.first.meta.flag} ${cl.totalMedia}';
-      }
-
-      final tp = TextPainter(
-        text: TextSpan(
-          text: label,
-          style: TextStyle(
-            fontSize: (isCluster ? 8.2 : 7.8) * invScale,
-            fontWeight: FontWeight.w700,
-            color: isCluster ? Colors.white : const Color(0xFF1E293B),
+  Widget build(BuildContext context) {
+    return Stack(
+      clipBehavior: Clip.none,
+      alignment: Alignment.center,
+      children: [
+        Container(
+          width: 46,
+          height: 46,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: const Color(0xFFF8FAFC),
+            border: Border.all(
+              color: isHighlighted ? const Color(0xFFF97316) : Colors.white,
+              width: 3,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.28),
+                blurRadius: 8,
+                offset: const Offset(0, 3),
+              ),
+            ],
+          ),
+          child: ClipOval(
+            child: thumbUrl != null
+                ? Image.network(
+                    thumbUrl!,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, __, ___) => Center(
+                      child: Text(fallbackText, style: const TextStyle(fontSize: 20)),
+                    ),
+                  )
+                : Center(
+                    child: Text(fallbackText, style: const TextStyle(fontSize: 20)),
+                  ),
           ),
         ),
-        textDirection: TextDirection.ltr,
-      )..layout();
-
-      final pillW = math.max((isCluster ? 22.0 : 14.0) * invScale, tp.width + 8.0 * invScale);
-      final pillH = (isCluster ? 14.0 : 11.0) * invScale;
-      final rect = RRect.fromRectAndRadius(
-        Rect.fromCenter(center: c, width: pillW, height: pillH),
-        Radius.circular(7.0 * invScale),
-      );
-
-      if (isCluster) {
-        final outerRect = RRect.fromRectAndRadius(
-          Rect.fromCenter(center: c, width: pillW + 4.0 * invScale, height: pillH + 4.0 * invScale),
-          Radius.circular(9.0 * invScale),
-        );
-        canvas.drawRRect(outerRect, clusterRing);
-        canvas.drawRRect(rect, clusterBg);
-        canvas.drawRRect(rect, clusterBorder);
-      } else {
-        canvas.drawRRect(rect, singleBg);
-        canvas.drawRRect(rect, singleBorder);
-      }
-      tp.paint(canvas, Offset(c.dx - tp.width / 2, c.dy - tp.height / 2));
-    }
-  }
-
-  Path _buildPath(_CountryGeoShape shape, Size size) {
-    final path = Path();
-    for (final poly in shape.polygonsNorm) {
-      if (poly.isEmpty) continue;
-      path.moveTo(poly[0].dx * size.width, poly[0].dy * size.height);
-      for (int i = 1; i < poly.length; i++) {
-        path.lineTo(poly[i].dx * size.width, poly[i].dy * size.height);
-      }
-      path.close();
-    }
-    return path;
-  }
-
-  @override
-  bool shouldRepaint(covariant _WorldMapPainter oldDelegate) {
-    return oldDelegate.visitedByIso != visitedByIso ||
-        oldDelegate.highlightedIso != highlightedIso ||
-        oldDelegate.shapes != shapes ||
-        (oldDelegate.currentZoom - currentZoom).abs() > 0.05;
+        if (badgeText != null)
+          Positioned(
+            left: 2,
+            bottom: 2,
+            child: Container(
+              padding: const EdgeInsets.all(2),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                shape: BoxShape.circle,
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.16),
+                    blurRadius: 3,
+                  ),
+                ],
+              ),
+              child: Text(badgeText!, style: const TextStyle(fontSize: 10)),
+            ),
+          ),
+        Positioned(
+          right: 0,
+          top: 2,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF97316),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: Colors.white, width: 1.4),
+            ),
+            child: Text(
+              count > 999 ? '${(count / 1000).toStringAsFixed(1)}k' : '$count',
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 9.5,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
   }
 }

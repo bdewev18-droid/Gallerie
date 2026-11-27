@@ -88,6 +88,8 @@ class PhotoItem {
   final String? cameraModel;
   final String? country;
   final String? city;
+  final double? latitude;
+  final double? longitude;
   final List<String> albums;
   final String? addedByName;
   final String? addedByEmail;
@@ -106,6 +108,8 @@ class PhotoItem {
     this.cameraModel,
     this.country,
     this.city,
+    this.latitude,
+    this.longitude,
     required this.albums,
     this.addedByName,
     this.addedByEmail,
@@ -126,6 +130,8 @@ class PhotoItem {
       cameraModel: json['cam'] as String?,
       country: json['co'] as String?,
       city: json['ci'] as String?,
+      latitude: (json['lat'] as num?)?.toDouble(),
+      longitude: (json['lon'] as num?)?.toDouble(),
       albums: (json['al'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [],
     );
   }
@@ -2550,9 +2556,24 @@ class _HomeScreenState extends State<HomeScreen> {
     final totalP = visited.fold<int>(0, (acc, c) => acc + c.photoCount);
     final totalV = visited.fold<int>(0, (acc, c) => acc + c.videoCount);
     final mediaPool = videosOnly ? _videosOnly : _photosOnly;
+    final geoPhotos = mediaPool
+        .where((m) => m.latitude != null && m.longitude != null)
+        .map(
+          (m) => MapGeoPhoto(
+            id: m.id,
+            latitude: m.latitude!,
+            longitude: m.longitude!,
+            country: m.country,
+            city: m.city,
+            captureDate: m.captureDate,
+            thumbnailUrl: m.thumbnailUrl,
+          ),
+        )
+        .toList(growable: false);
 
     return WorldMapTab(
       visitedCountries: visited,
+      geoPhotos: geoPhotos,
       totalPhotos: totalP,
       totalVideos: totalV,
       isVideoMode: videosOnly,
