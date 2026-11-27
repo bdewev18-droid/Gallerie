@@ -769,7 +769,7 @@ class _WorldMapTabState extends State<WorldMapTab> {
 
     final shapeByIso = {for (final s in shapes) s.iso3: s};
     final visitedPolygons = _buildVisitedPolygons(shapes, visitedByIso, _highlightedIso);
-    final routeLines = _showRoutes
+    final routeLines = (_showRoutes && (widget.geoPhotos.length >= 2 || _currentZoom >= 4.0))
         ? _buildRoutePolylines(
             visitedCountries: widget.visitedCountries,
             shapeByIso: shapeByIso,
@@ -815,7 +815,7 @@ class _WorldMapTabState extends State<WorldMapTab> {
 
     final tileUrl = _isSatellite
         ? 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'
-        : 'https://basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png';
+        : 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}';
 
     return Column(
       children: [
@@ -1595,46 +1595,49 @@ List<Marker> _buildPolarstepsMarkers({
   required void Function(CountryVisitStats stats) onTapCountry,
   required void Function(_GeoStepPin step) onTapGeoStep,
 }) {
-  // Zoom < 3.0 : Continent summary clusters
-  if (currentZoom < 3.0) {
+  // Zoom < 2.5 : Continent summary clusters with Polarsteps photo pin
+  if (currentZoom < 2.5) {
     final Map<String, List<CountryVisitStats>> byContinent = {};
     for (final c in visitedByIso.values) {
       byContinent.putIfAbsent(c.meta.continent, () => []).add(c);
     }
     return byContinent.entries.map((entry) {
-      final total = entry.value.fold<int>(0, (acc, c) => acc + c.totalMedia);
+      final list = [...entry.value]..sort((a, b) => b.totalMedia.compareTo(a.totalMedia));
+      final total = list.fold<int>(0, (acc, c) => acc + c.totalMedia);
       final center = _continentLatLngCenter(entry.key);
+      final thumb = _pickCountryThumb(list.first);
       return Marker(
         point: center,
-        width: 150,
-        height: 40,
+        width: 145,
+        height: 68,
         child: GestureDetector(
           onTap: () => onTapContinent(entry.key),
-          child: Center(
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 6),
-              decoration: BoxDecoration(
-                color: const Color(0xFF0E7490).withValues(alpha: 0.94),
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: Colors.white, width: 2),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.22),
-                    blurRadius: 8,
-                    offset: const Offset(0, 3),
-                  ),
-                ],
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _PolarstepsPhotoPin(
+                thumbUrl: thumb,
+                fallbackText: list.first.meta.flag,
+                count: total,
+                isHighlighted: false,
               ),
-              child: Text(
-                '${entry.key} (${entry.value.length}) · $total',
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 11.5,
-                  fontWeight: FontWeight.w700,
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF0E7490).withValues(alpha: 0.92),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: Colors.white, width: 1.2),
                 ),
-                overflow: TextOverflow.ellipsis,
+                child: Text(
+                  '${entry.key} (${list.length})',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 9.5,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
               ),
-            ),
+            ],
           ),
         ),
       );
