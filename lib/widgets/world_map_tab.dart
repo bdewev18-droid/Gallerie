@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
+import 'world_wonders.dart';
 
 class WorldCountryMeta {
   final String iso3;
@@ -269,6 +270,11 @@ class _CountryGeoShape {
 class WorldMapTab extends StatefulWidget {
   final List<CountryVisitStats> visitedCountries;
   final List<MapGeoPhoto> geoPhotos;
+  final List<String> availableYears;
+  final String? selectedYear;
+  final void Function(String? year)? onYearChanged;
+  final List<WonderAlbumOption> wonderAlbums;
+  final List<WonderPhotoPreview> Function(List<String> albumIds, WorldWonder wonder)? onFetchWonderPhotos;
   final int totalPhotos;
   final int totalVideos;
   final bool isVideoMode;
@@ -280,6 +286,11 @@ class WorldMapTab extends StatefulWidget {
     super.key,
     required this.visitedCountries,
     this.geoPhotos = const [],
+    this.availableYears = const [],
+    this.selectedYear,
+    this.onYearChanged,
+    this.wonderAlbums = const [],
+    this.onFetchWonderPhotos,
     required this.totalPhotos,
     required this.totalVideos,
     this.isVideoMode = false,
@@ -297,16 +308,141 @@ class _WorldMapTabState extends State<WorldMapTab> {
   List<_CountryGeoShape>? _shapes;
   final MapController _mapController = MapController();
   double _currentZoom = 2.2;
-  String _selectedContinent = 'Monde';
+  String _wonderFilter = 'none'; // 'none', 'all', 'modern', 'ancient', 'visited'
+  Map<String, WonderUserState> _wonderStates = {};
   String? _highlightedIso;
   bool _showListMode = false;
   bool _isSatellite = false;
-  bool _showRoutes = true;
+  final bool _showRoutes = false;
 
   @override
   void initState() {
     super.initState();
     _loadGeoJson();
+    _loadWonderStates();
+  }
+
+  Future<void> _loadWonderStates() async {
+    final loaded = await WondersStorage.load();
+    if (mounted) setState(() => _wonderStates = loaded);
+  }
+
+  List<WonderEvaluation> _evaluateWonders() {
+    final albumsById = {for (final a in widget.wonderAlbums) a.id: a};
+    return kWorldWonders.map((w) {
+      final userState = _wonderStates[w.id];
+      String? linkedId = userState?.assignedAlbumId;
+      String? linkedName = linkedId != null ? albumsById[linkedId]?.name : null;
+
+      // Auto-match album by keyword if none manually assigned
+      if (linkedId == null) {
+        for (final alb in widget.wonderAlbums) {
+          final low = alb.name.toLowerCase();
+          if (w.keywords.any((kw) => low.contains(kw))) {
+            linkedId = alb.id;
+            linkedName = alb.name;
+            break;
+          }
+        }
+      }
+
+      // Check GPS proximity (~25 km)
+      final hasGpsMatch = widget.geoPhotos.any(
+        (p) => haversineKm(p.latitude, p.longitude, w.lat, w.lon) <= 25.0,
+      );
+
+      String? source;
+      bool visited = false;
+      if (userState?.manualVisited == true) {
+        visited = true;
+        source = userState?.assignedAlbumId != null ? 'Album' : 'Manuel';
+      } else if (hasGpsMatch) {
+        visited = true;
+        source = 'GPS';
+      } else if (linkedId != null && userState?.manualVisited != false) {
+        visited = true;
+        source = 'Album';
+      }
+
+      final photos = widget.onFetchWonderPhotos != null
+          ? widget.onFetchWonderPhotos!(linkedId != null ? [linkedId] : const [], w)
+          : const <WonderPhotoPreview>[];
+
+      return WonderEvaluation(
+        wonder: w,
+        isVisited: visited,
+        validationSource: source,
+        linkedAlbumId: linkedId,
+        linkedAlbumName: linkedName,
+        photos: photos,
+      );
+    }).toList();
+  }
+
+  void _openWonderDetails(WonderEvaluation eval) {
+    _mapController.move(LatLng(eval.wonder.lat, eval.wonder.lon), math.max(_currentZoom, 5.0));
+    final isCompact = MediaQuery.of(context).size.width < 700;
+
+    void handleUpdate(WonderUserState nextState) {
+      setState(() => _wonderStates[eval.wonder.id] = nextState);
+      WondersStorage.save(_wonderStates);
+    }
+
+    if (isCompact) {
+      showModalBottomSheet<void>(
+        context: context,
+        isScrollControlled: true,
+        backgroundColor: Colors.white,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        ),
+        builder: (ctx) => DraggableScrollableSheet(
+          initialChildSize: 0.78,
+          minChildSize: 0.45,
+          maxChildSize: 0.94,
+          expand: false,
+          builder: (_, scrollCtrl) => WonderDetailSheet(
+            evaluation: eval,
+            availableAlbums: widget.wonderAlbums,
+            scrollController: scrollCtrl,
+            onUpdateState: (s) {
+              handleUpdate(s);
+              Navigator.of(ctx).pop();
+            },
+            onOpenAlbum: (id) {
+              Navigator.of(ctx).pop();
+              widget.onOpenAlbum(id);
+            },
+            onClose: () => Navigator.of(ctx).pop(),
+          ),
+        ),
+      );
+    } else {
+      showDialog<void>(
+        context: context,
+        builder: (ctx) => Dialog(
+          backgroundColor: Colors.white,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 540, maxHeight: 680),
+            child: WonderDetailSheet(
+              evaluation: eval,
+              availableAlbums: widget.wonderAlbums,
+              scrollController: ScrollController(),
+              onUpdateState: (s) {
+                handleUpdate(s);
+                Navigator.of(ctx).pop();
+              },
+              onOpenAlbum: (id) {
+                Navigator.of(ctx).pop();
+                widget.onOpenAlbum(id);
+              },
+              onClose: () => Navigator.of(ctx).pop(),
+            ),
+          ),
+        ),
+      );
+    }
   }
 
   Future<void> _loadGeoJson() async {
@@ -351,7 +487,6 @@ class _WorldMapTabState extends State<WorldMapTab> {
   }
 
   void _focusContinent(String continent) {
-    setState(() => _selectedContinent = continent);
     if (_showListMode) return;
     final LatLng target;
     final double zoom;
@@ -510,9 +645,15 @@ class _WorldMapTabState extends State<WorldMapTab> {
     final visitedByIso = {
       for (final c in widget.visitedCountries) c.meta.iso3: c,
     };
-    final filteredCountries = _selectedContinent == 'Monde'
-        ? widget.visitedCountries
-        : widget.visitedCountries.where((c) => c.meta.continent == _selectedContinent).toList();
+    final allWonders = _evaluateWonders();
+    final visitedWondersCount = allWonders.where((e) => e.isVisited).length;
+    final wondersPct = (visitedWondersCount / kWorldWonders.length * 100).round();
+    final filteredWonders = switch (_wonderFilter) {
+      'modern' => allWonders.where((e) => e.wonder.category == WonderCategory.modern).toList(),
+      'ancient' => allWonders.where((e) => e.wonder.category == WonderCategory.ancient).toList(),
+      'visited' => allWonders.where((e) => e.isVisited).toList(),
+      _ => allWonders,
+    };
     final isCompact = MediaQuery.of(context).size.width < 700;
 
     return Column(
@@ -536,8 +677,19 @@ class _WorldMapTabState extends State<WorldMapTab> {
                       children: [
                         _summaryPill(
                           Icons.public_rounded,
-                          '${widget.visitedCountries.length} pays (${(widget.visitedCountries.length / 195 * 100).clamp(0, 100).toStringAsFixed(0)}%)',
+                          '${widget.visitedCountries.length} pays',
                           const Color(0xFFF97316),
+                        ),
+                        InkWell(
+                          borderRadius: BorderRadius.circular(20),
+                          onTap: () => setState(() {
+                            _wonderFilter = _wonderFilter == 'none' ? 'all' : 'none';
+                          }),
+                          child: _summaryPill(
+                            Icons.account_balance_rounded,
+                            '$visitedWondersCount/14 Merveilles ($wondersPct%)',
+                            const Color(0xFFD97706),
+                          ),
                         ),
                         if (widget.geoPhotos.isNotEmpty)
                           _summaryPill(
@@ -569,9 +721,9 @@ class _WorldMapTabState extends State<WorldMapTab> {
                       child: Container(
                         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
                         decoration: BoxDecoration(
-                          color: Color(0xFFF6EFE2),
+                          color: const Color(0xFFF6EFE2),
                           borderRadius: BorderRadius.circular(10),
-                          border: Border.all(color: Color(0xFFEBDDC6)),
+                          border: Border.all(color: const Color(0xFFEBDDC6)),
                         ),
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
@@ -585,7 +737,7 @@ class _WorldMapTabState extends State<WorldMapTab> {
                               const SizedBox(width: 6),
                               Text(
                                 _showListMode ? 'Carte' : 'Liste',
-                                style: const TextStyle(fontSize: 12, color: const Color(0xFF1E293B)),
+                                style: const TextStyle(fontSize: 12, color: Color(0xFF1E293B)),
                               ),
                             ],
                           ],
@@ -616,23 +768,38 @@ class _WorldMapTabState extends State<WorldMapTab> {
               SingleChildScrollView(
                 scrollDirection: Axis.horizontal,
                 child: Row(
-                  children: ['Monde', 'Europe', 'Afrique', 'Amériques', 'Asie', 'Océanie'].map((cont) {
-                    final selected = _selectedContinent == cont;
+                  children: [
+                    ('none', '🌍 Carte Pays'),
+                    ('all', '🏛️ Merveilles (14)'),
+                    ('modern', '✨ Nouvelles (7)'),
+                    ('ancient', '🏺 Antiques (7)'),
+                    ('visited', '✅ Visitées ($visitedWondersCount)'),
+                  ].map((item) {
+                    final key = item.$1;
+                    final label = item.$2;
+                    final selected = _wonderFilter == key;
                     return Padding(
                       padding: const EdgeInsets.only(right: 6),
                       child: ChoiceChip(
-                        label: Text(cont),
+                        label: Text(label),
                         selected: selected,
-                        onSelected: (_) => _focusContinent(cont),
+                        onSelected: (_) {
+                          setState(() => _wonderFilter = key);
+                          if (key != 'none' && !_showListMode) {
+                            _mapController.move(const LatLng(22.0, 12.0), 2.0);
+                          }
+                        },
                         labelStyle: TextStyle(
                           fontSize: 11.5,
                           fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
                           color: selected ? Colors.white : const Color(0xFF475569),
                         ),
                         backgroundColor: const Color(0xFFF6EFE2),
-                        selectedColor: const Color(0xFFF97316),
+                        selectedColor: key == 'none' ? const Color(0xFFF97316) : const Color(0xFFD97706),
                         side: BorderSide(
-                          color: selected ? const Color(0xFFF97316) : const Color(0xFFEBDDC6),
+                          color: selected
+                              ? (key == 'none' ? const Color(0xFFF97316) : const Color(0xFFD97706))
+                              : const Color(0xFFEBDDC6),
                         ),
                         visualDensity: VisualDensity.compact,
                         padding: const EdgeInsets.symmetric(horizontal: 6),
@@ -646,8 +813,15 @@ class _WorldMapTabState extends State<WorldMapTab> {
         ),
         Expanded(
           child: _showListMode
-              ? _buildCountryListView(filteredCountries)
-              : _buildInteractiveMap(visitedByIso, filteredCountries, isCompact),
+              ? (_wonderFilter != 'none'
+                  ? _buildWondersListView(filteredWonders)
+                  : _buildCountryListView(widget.visitedCountries))
+              : _buildInteractiveMap(
+                  visitedByIso,
+                  widget.visitedCountries,
+                  filteredWonders,
+                  isCompact,
+                ),
         ),
       ],
     );
@@ -755,9 +929,182 @@ class _WorldMapTabState extends State<WorldMapTab> {
     );
   }
 
+  Widget _buildWondersListView(List<WonderEvaluation> wonders) {
+    if (wonders.isEmpty) {
+      return const Center(
+        child: Text(
+          'Aucune merveille dans cette catégorie.',
+          style: TextStyle(color: Color(0xFF64748B)),
+        ),
+      );
+    }
+    return ListView.separated(
+      padding: const EdgeInsets.all(14),
+      itemCount: wonders.length,
+      separatorBuilder: (_, __) => const SizedBox(height: 10),
+      itemBuilder: (_, idx) {
+        final eval = wonders[idx];
+        final w = eval.wonder;
+        return Material(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(14),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(14),
+            onTap: () => _openWonderDetails(eval),
+            child: Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(
+                  color: eval.isVisited
+                      ? const Color(0xFF10B981).withValues(alpha: 0.45)
+                      : const Color(0xFFE2E8F0),
+                ),
+              ),
+              child: Row(
+                children: [
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(10),
+                    child: SizedBox(
+                      width: 64,
+                      height: 64,
+                      child: Image.network(
+                        w.imageUrl,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) => Container(
+                          color: const Color(0xFFF1F5F9),
+                          child: Center(child: Text(w.flag, style: const TextStyle(fontSize: 24))),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                '${w.flag} ${w.name}',
+                                style: const TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w700,
+                                  color: Color(0xFF1E293B),
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            Icon(
+                              eval.isVisited ? Icons.check_circle_rounded : Icons.radio_button_unchecked,
+                              size: 18,
+                              color: eval.isVisited ? const Color(0xFF10B981) : const Color(0xFF94A3B8),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          '${w.locationName} · ${w.era}',
+                          style: const TextStyle(fontSize: 11.5, color: Color(0xFF64748B)),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          eval.isVisited
+                              ? 'Visitée (${eval.validationSource})${eval.photos.isNotEmpty ? ' · ${eval.photos.length} photos' : ''}'
+                              : (w.category == WonderCategory.modern ? 'Merveille Moderne' : 'Merveille Antique'),
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                            color: eval.isVisited ? const Color(0xFF059669) : const Color(0xFFD97706),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildYearSliderBar() {
+    final years = widget.availableYears;
+    if (years.isEmpty || widget.onYearChanged == null) return const SizedBox.shrink();
+    final totalSteps = years.length; // 0 = Toutes, 1..N = years
+    final currentIdx = widget.selectedYear == null
+        ? 0
+        : (years.indexOf(widget.selectedYear!) + 1).clamp(0, totalSteps);
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+      decoration: const BoxDecoration(
+        color: Color(0xFFFFFFFF),
+        border: Border(top: BorderSide(color: Color(0xFFF1E6D2))),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.history_rounded, size: 16, color: Color(0xFFF97316)),
+          const SizedBox(width: 6),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+            decoration: BoxDecoration(
+              color: currentIdx == 0
+                  ? const Color(0xFFF1F5F9)
+                  : const Color(0xFFF97316).withValues(alpha: 0.14),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Text(
+              currentIdx == 0 ? 'Toutes' : years[currentIdx - 1],
+              style: TextStyle(
+                fontSize: 11.5,
+                fontWeight: FontWeight.w700,
+                color: currentIdx == 0 ? const Color(0xFF475569) : const Color(0xFFF97316),
+              ),
+            ),
+          ),
+          Expanded(
+            child: SliderTheme(
+              data: SliderTheme.of(context).copyWith(
+                trackHeight: 3,
+                thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 7),
+                overlayShape: const RoundSliderOverlayShape(overlayRadius: 14),
+              ),
+              child: Slider(
+                value: currentIdx.toDouble(),
+                min: 0,
+                max: totalSteps.toDouble(),
+                divisions: totalSteps,
+                activeColor: const Color(0xFFF97316),
+                inactiveColor: const Color(0xFFE2E8F0),
+                onChanged: (val) {
+                  final idx = val.round();
+                  widget.onYearChanged!(idx == 0 ? null : years[idx - 1]);
+                },
+              ),
+            ),
+          ),
+          if (currentIdx != 0)
+            InkWell(
+              onTap: () => widget.onYearChanged!(null),
+              child: const Padding(
+                padding: EdgeInsets.all(4),
+                child: Icon(Icons.close_rounded, size: 16, color: Color(0xFF64748B)),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildInteractiveMap(
     Map<String, CountryVisitStats> visitedByIso,
     List<CountryVisitStats> filteredCountries,
+    List<WonderEvaluation> filteredWonders,
     bool isCompact,
   ) {
     final shapes = _shapes;
@@ -776,7 +1123,10 @@ class _WorldMapTabState extends State<WorldMapTab> {
             geoPhotos: widget.geoPhotos,
           )
         : const <Polyline>[];
-    final markers = _buildPolarstepsMarkers(
+    final isWondersMode = _wonderFilter != 'none';
+    final markers = isWondersMode
+        ? _buildWonderMapMarkers(filteredWonders, _openWonderDetails)
+        : _buildPolarstepsMarkers(
       visitedByIso: visitedByIso,
       shapeByIso: shapeByIso,
       geoPhotos: widget.geoPhotos,
@@ -870,17 +1220,6 @@ class _WorldMapTabState extends State<WorldMapTab> {
                     ),
                     const SizedBox(height: 6),
                     FloatingActionButton.small(
-                      heroTag: 'map_routes_toggle',
-                      backgroundColor: _showRoutes
-                          ? const Color(0xFFF97316)
-                          : Colors.white.withValues(alpha: 0.95),
-                      foregroundColor: _showRoutes ? Colors.white : const Color(0xFF1E293B),
-                      tooltip: _showRoutes ? 'Masquer l\'itinéraire' : 'Afficher l\'itinéraire',
-                      onPressed: () => setState(() => _showRoutes = !_showRoutes),
-                      child: const Icon(Icons.route_rounded, size: 18),
-                    ),
-                    const SizedBox(height: 6),
-                    FloatingActionButton.small(
                       heroTag: 'map_zoom_in',
                       backgroundColor: Colors.white.withValues(alpha: 0.95),
                       foregroundColor: const Color(0xFF1E293B),
@@ -939,11 +1278,13 @@ class _WorldMapTabState extends State<WorldMapTab> {
                       ),
                       const SizedBox(width: 6),
                       Text(
-                        _currentZoom < 3.0
-                            ? 'Vue Monde · Touchez un groupe pour zoomer'
-                            : (_currentZoom >= 5.8 && widget.geoPhotos.isNotEmpty
-                                ? 'Étapes GPS & Pays · Touchez un pin'
-                                : 'Pays visités · Touchez une vignette'),
+                        isWondersMode
+                            ? 'Merveilles du Monde · Touchez une icône pour découvrir'
+                            : (_currentZoom < 3.0
+                                ? 'Vue Monde · Touchez un groupe pour zoomer'
+                                : (_currentZoom >= 5.8 && widget.geoPhotos.isNotEmpty
+                                    ? 'Étapes GPS & Pays · Touchez un pin'
+                                    : 'Pays visités · Touchez une vignette')),
                         style: const TextStyle(
                           fontSize: 11,
                           fontWeight: FontWeight.w600,
@@ -957,6 +1298,7 @@ class _WorldMapTabState extends State<WorldMapTab> {
             ],
           ),
         ),
+        if (!isWondersMode) _buildYearSliderBar(),
         Container(
           height: isCompact ? 62 : 66,
           padding: const EdgeInsets.symmetric(vertical: 8),
@@ -964,7 +1306,66 @@ class _WorldMapTabState extends State<WorldMapTab> {
             color: Color(0xFFFFF7E8),
             border: Border(top: BorderSide(color: Color(0xFFF1E6D2))),
           ),
-          child: ListView.separated(
+          child: isWondersMode
+              ? ListView.separated(
+                  scrollDirection: Axis.horizontal,
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  itemCount: filteredWonders.length,
+                  separatorBuilder: (_, __) => const SizedBox(width: 8),
+                  itemBuilder: (_, idx) {
+                    final eval = filteredWonders[idx];
+                    final w = eval.wonder;
+                    return InkWell(
+                      borderRadius: BorderRadius.circular(12),
+                      onTap: () => _openWonderDetails(eval),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                        decoration: BoxDecoration(
+                          color: eval.isVisited
+                              ? const Color(0xFF10B981).withValues(alpha: 0.14)
+                              : const Color(0xFFF6EFE2).withValues(alpha: 0.85),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: eval.isVisited
+                                ? const Color(0xFF10B981)
+                                : const Color(0xFFD97706).withValues(alpha: 0.35),
+                          ),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(w.flag, style: const TextStyle(fontSize: 17)),
+                            const SizedBox(width: 7),
+                            Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  w.name,
+                                  style: const TextStyle(
+                                    fontSize: 11.5,
+                                    fontWeight: FontWeight.w700,
+                                    color: Color(0xFF1E293B),
+                                  ),
+                                ),
+                                Text(
+                                  eval.isVisited
+                                      ? '✅ ${eval.validationSource}'
+                                      : (w.category == WonderCategory.modern ? '✨ Moderne' : '🏺 Antique'),
+                                  style: TextStyle(
+                                    fontSize: 10,
+                                    color: eval.isVisited ? const Color(0xFF059669) : const Color(0xFFD97706),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                )
+              : ListView.separated(
             scrollDirection: Axis.horizontal,
             padding: const EdgeInsets.symmetric(horizontal: 12),
             itemCount: filteredCountries.length,
@@ -1888,4 +2289,86 @@ class _PolarstepsPhotoPin extends StatelessWidget {
       ],
     );
   }
+}
+
+List<Marker> _buildWonderMapMarkers(
+  List<WonderEvaluation> wonders,
+  void Function(WonderEvaluation eval) onTapWonder,
+) {
+  return wonders.map((eval) {
+    final w = eval.wonder;
+    final userThumb = eval.photos.isNotEmpty ? eval.photos.first.thumbnailUrl : null;
+    final pinImage = userThumb ?? w.imageUrl;
+    return Marker(
+      point: LatLng(w.lat, w.lon),
+      width: 66,
+      height: 66,
+      child: GestureDetector(
+        onTap: () => onTapWonder(eval),
+        child: Stack(
+          clipBehavior: Clip.none,
+          alignment: Alignment.center,
+          children: [
+            Container(
+              width: 48,
+              height: 48,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: const Color(0xFFF8FAFC),
+                border: Border.all(
+                  color: eval.isVisited ? const Color(0xFF10B981) : const Color(0xFFD97706),
+                  width: 3,
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.28),
+                    blurRadius: 8,
+                    offset: const Offset(0, 3),
+                  ),
+                ],
+              ),
+              child: ClipOval(
+                child: Image.network(
+                  pinImage,
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) => Center(
+                    child: Text(w.flag, style: const TextStyle(fontSize: 20)),
+                  ),
+                ),
+              ),
+            ),
+            Positioned(
+              left: 2,
+              bottom: 2,
+              child: Container(
+                padding: const EdgeInsets.all(2),
+                decoration: const BoxDecoration(
+                  color: Colors.white,
+                  shape: BoxShape.circle,
+                ),
+                child: Text(w.flag, style: const TextStyle(fontSize: 10)),
+              ),
+            ),
+            Positioned(
+              right: 0,
+              top: 2,
+              child: Container(
+                padding: const EdgeInsets.all(2.5),
+                decoration: BoxDecoration(
+                  color: eval.isVisited ? const Color(0xFF10B981) : const Color(0xFFD97706),
+                  shape: BoxShape.circle,
+                  border: Border.all(color: Colors.white, width: 1.4),
+                ),
+                child: Icon(
+                  eval.isVisited ? Icons.check_rounded : Icons.account_balance_rounded,
+                  size: 10,
+                  color: Colors.white,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }).toList();
 }

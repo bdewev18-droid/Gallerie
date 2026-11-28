@@ -8,9 +8,10 @@ import 'package:url_launcher/url_launcher.dart';
 import 'services/app_update_service.dart';
 import 'services/cloud_sync_service.dart';
 import 'widgets/world_map_tab.dart';
+import 'widgets/world_wonders.dart';
 
-const int appBuildNumber = 24;
-const String appVersionLabel = "1.0.23";
+const int appBuildNumber = 26;
+const String appVersionLabel = "1.0.25";
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -273,6 +274,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   int _mediaMode = 0; // 0 = Photos, 1 = Vidéos
   int _currentIndex = 0; // 0 = La carte, 1 = Galerie, 2 = Thématiques, 3 = Années, 4 = Recherche
+  String? _mapFilterYear;
   bool _showPreHome = true;
   RemoteAppVersion? _pendingUpdate;
   bool _isCheckingUpdate = true;
@@ -2335,8 +2337,14 @@ class _HomeScreenState extends State<HomeScreen> {
     return ranges;
   }
 
-  List<CountryVisitStats> _computeVisitedCountryStats({bool videosOnly = false}) {
-    final mediaPool = videosOnly ? _videosOnly : _photosOnly;
+  List<CountryVisitStats> _computeVisitedCountryStats({
+    bool videosOnly = false,
+    String? filterYear,
+  }) {
+    final basePool = videosOnly ? _videosOnly : _photosOnly;
+    final mediaPool = filterYear == null
+        ? basePool
+        : basePool.where((m) => m.year == filterYear).toList();
     final Map<String, Set<int>> photoIdsByIso = {};
     final Map<String, Set<int>> videoIdsByIso = {};
     final Map<String, CountryAlbumSummary> discoveryByIso = {};
@@ -2552,11 +2560,23 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildWorldMapTab({bool videosOnly = false}) {
-    final visited = _computeVisitedCountryStats(videosOnly: videosOnly);
+    final visited = _computeVisitedCountryStats(
+      videosOnly: videosOnly,
+      filterYear: _mapFilterYear,
+    );
     final totalP = visited.fold<int>(0, (acc, c) => acc + c.photoCount);
     final totalV = visited.fold<int>(0, (acc, c) => acc + c.videoCount);
-    final mediaPool = videosOnly ? _videosOnly : _photosOnly;
-    final geoPhotos = mediaPool
+    final basePool = videosOnly ? _videosOnly : _photosOnly;
+    final availableYears = basePool
+        .map((m) => m.year)
+        .where((y) => y.isNotEmpty && y != 'unknown_date' && int.tryParse(y) != null)
+        .toSet()
+        .toList()
+      ..sort();
+    final filteredPool = _mapFilterYear == null
+        ? basePool
+        : basePool.where((m) => m.year == _mapFilterYear).toList();
+    final geoPhotos = filteredPool
         .where((m) => m.latitude != null && m.longitude != null)
         .map(
           (m) => MapGeoPhoto(
@@ -2570,10 +2590,47 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         )
         .toList(growable: false);
+    final wonderAlbums = _nodesById.values
+        .where((n) => n.totalCount > 0)
+        .map((n) => WonderAlbumOption(id: n.id, name: n.name, count: n.totalCount))
+        .toList()
+      ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
 
     return WorldMapTab(
       visitedCountries: visited,
       geoPhotos: geoPhotos,
+      availableYears: availableYears,
+      selectedYear: _mapFilterYear,
+      onYearChanged: (y) => setState(() => _mapFilterYear = y),
+      wonderAlbums: wonderAlbums,
+      onFetchWonderPhotos: (albumIds, wonder) {
+        final expandedIds = albumIds
+            .expand((id) {
+              final node = _nodesById[id];
+              return node != null && node.isFolder ? _getAllDescendantAlbumIds(id) : {id};
+            })
+            .toSet();
+        final matched = <WonderPhotoPreview>[];
+        for (final m in basePool) {
+          final inAlbum = expandedIds.isNotEmpty && m.albums.any((a) => expandedIds.contains(a));
+          final nearGps = m.latitude != null &&
+              m.longitude != null &&
+              haversineKm(m.latitude!, m.longitude!, wonder.lat, wonder.lon) <= 25.0;
+          if (inAlbum || nearGps) {
+            matched.add(
+              WonderPhotoPreview(
+                id: m.id,
+                filename: m.filename,
+                thumbnailUrl: m.thumbnailUrl,
+                largePreviewUrl: m.largePreviewUrl,
+                captureDate: m.captureDate,
+              ),
+            );
+            if (matched.length >= 25) break;
+          }
+        }
+        return matched;
+      },
       totalPhotos: totalP,
       totalVideos: totalV,
       isVideoMode: videosOnly,
@@ -2593,7 +2650,7 @@ class _HomeScreenState extends State<HomeScreen> {
           return n != null && n.isFolder ? _getAllDescendantAlbumIds(id) : {id};
         }).toSet();
 
-        final countryMedia = mediaPool.where((m) {
+        final countryMedia = basePool.where((m) {
           if (m.albums.any((a) => matchingAlbumIds.contains(a))) return true;
           final rawCountry = m.country?.trim();
           if (rawCountry != null && rawCountry.isNotEmpty) {
