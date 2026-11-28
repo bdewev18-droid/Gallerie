@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
+import 'travel_journal.dart';
 import 'world_wonders.dart';
 
 class WorldCountryMeta {
@@ -310,6 +311,7 @@ class _WorldMapTabState extends State<WorldMapTab> {
   double _currentZoom = 2.2;
   String _wonderFilter = 'none'; // 'none', 'all', 'modern', 'ancient', 'visited'
   Map<String, WonderUserState> _wonderStates = {};
+  List<TravelJournalEntry> _journalEntries = [];
   String? _highlightedIso;
   bool _showListMode = false;
   bool _isSatellite = false;
@@ -320,6 +322,108 @@ class _WorldMapTabState extends State<WorldMapTab> {
     super.initState();
     _loadGeoJson();
     _loadWonderStates();
+    _loadJournalEntries();
+  }
+
+  Future<void> _loadJournalEntries() async {
+    final entries = await TravelJournalStorage.load();
+    if (mounted) setState(() => _journalEntries = entries);
+  }
+
+  Future<void> _openJournalEditor({
+    required String countryIso,
+    required String countryName,
+    required String countryFlag,
+    List<JournalAlbumRef> countryAlbums = const [],
+    TravelJournalEntry? existing,
+  }) async {
+    final result = await showDialog<TravelJournalEntry>(
+      context: context,
+      builder: (_) => TravelJournalEditorDialog(
+        countryIso: countryIso,
+        countryName: countryName,
+        countryFlag: countryFlag,
+        countryAlbums: countryAlbums,
+        existing: existing,
+      ),
+    );
+    if (result == null) return;
+    setState(() {
+      final idx = _journalEntries.indexWhere((e) => e.id == result.id);
+      if (idx >= 0) {
+        _journalEntries[idx] = result;
+      } else {
+        _journalEntries.insert(0, result);
+      }
+      _journalEntries.sort((a, b) => b.createdAtMs.compareTo(a.createdAtMs));
+    });
+    await TravelJournalStorage.save(_journalEntries);
+  }
+
+  void _openJournalTimeline() {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => StatefulBuilder(
+          builder: (ctx, setPageState) => TravelJournalTimelineSheet(
+            entries: _journalEntries,
+            onOpenAlbum: widget.onOpenAlbum,
+            onFocusCountry: (iso) {
+              final match = widget.visitedCountries.where((c) => c.meta.iso3 == iso).firstOrNull;
+              if (match != null) {
+                final shape = _shapes?.where((s) => s.iso3 == iso).firstOrNull;
+                if (shape != null) _mapController.move(shape.centerLatLng, 4.5);
+                _openCountryDetails(match);
+              }
+            },
+            onEditEntry: (entry) async {
+              final match = widget.visitedCountries.where((c) => c.meta.iso3 == entry.countryIso).firstOrNull;
+              final albums = match?.albums
+                      .map((a) => JournalAlbumRef(
+                            id: a.albumId,
+                            name: a.name,
+                            coverThumbUrl: a.coverThumbUrl,
+                            dateRange: a.dateRange ?? a.dateHint,
+                          ))
+                      .toList() ??
+                  const <JournalAlbumRef>[];
+              await _openJournalEditor(
+                countryIso: entry.countryIso,
+                countryName: entry.countryName,
+                countryFlag: entry.countryFlag,
+                countryAlbums: albums,
+                existing: entry,
+              );
+              setPageState(() {});
+            },
+            onDeleteEntry: (id) async {
+              setState(() => _journalEntries.removeWhere((e) => e.id == id));
+              await TravelJournalStorage.save(_journalEntries);
+              setPageState(() {});
+            },
+            onAddNewEntry: () async {
+              final firstCountry = widget.visitedCountries.isNotEmpty
+                  ? widget.visitedCountries.first
+                  : null;
+              await _openJournalEditor(
+                countryIso: firstCountry?.meta.iso3 ?? 'FRA',
+                countryName: firstCountry?.meta.nameFr ?? 'France',
+                countryFlag: firstCountry?.meta.flag ?? '🇫🇷',
+                countryAlbums: firstCountry?.albums
+                        .map((a) => JournalAlbumRef(
+                              id: a.albumId,
+                              name: a.name,
+                              coverThumbUrl: a.coverThumbUrl,
+                              dateRange: a.dateRange ?? a.dateHint,
+                            ))
+                        .toList() ??
+                    const [],
+              );
+              setPageState(() {});
+            },
+          ),
+        ),
+      ),
+    );
   }
 
   Future<void> _loadWonderStates() async {
@@ -597,6 +701,23 @@ class _WorldMapTabState extends State<WorldMapTab> {
           expand: false,
           builder: (_, scrollCtrl) => _CountryDetailSheet(
             stats: stats,
+            journalEntries: _journalEntries.where((e) => e.countryIso == stats.meta.iso3).toList(),
+            onAddJournalEntry: () {
+              Navigator.of(ctx).pop();
+              _openJournalEditor(
+                countryIso: stats.meta.iso3,
+                countryName: stats.meta.nameFr,
+                countryFlag: stats.meta.flag,
+                countryAlbums: stats.albums
+                    .map((a) => JournalAlbumRef(
+                          id: a.albumId,
+                          name: a.name,
+                          coverThumbUrl: a.coverThumbUrl,
+                          dateRange: a.dateRange ?? a.dateHint,
+                        ))
+                    .toList(),
+              );
+            },
             scrollController: scrollCtrl,
             onOpenAlbum: (id) {
               Navigator.of(ctx).pop();
@@ -623,6 +744,23 @@ class _WorldMapTabState extends State<WorldMapTab> {
             constraints: const BoxConstraints(maxWidth: 540, maxHeight: 680),
             child: _CountryDetailSheet(
               stats: stats,
+              journalEntries: _journalEntries.where((e) => e.countryIso == stats.meta.iso3).toList(),
+              onAddJournalEntry: () {
+                Navigator.of(ctx).pop();
+                _openJournalEditor(
+                  countryIso: stats.meta.iso3,
+                  countryName: stats.meta.nameFr,
+                  countryFlag: stats.meta.flag,
+                  countryAlbums: stats.albums
+                      .map((a) => JournalAlbumRef(
+                            id: a.albumId,
+                            name: a.name,
+                            coverThumbUrl: a.coverThumbUrl,
+                            dateRange: a.dateRange ?? a.dateHint,
+                          ))
+                      .toList(),
+                );
+              },
               scrollController: ScrollController(),
               onOpenAlbum: (id) {
                 Navigator.of(ctx).pop();
@@ -689,6 +827,15 @@ class _WorldMapTabState extends State<WorldMapTab> {
                             Icons.account_balance_rounded,
                             '$visitedWondersCount/14 Merveilles ($wondersPct%)',
                             const Color(0xFFD97706),
+                          ),
+                        ),
+                        InkWell(
+                          borderRadius: BorderRadius.circular(20),
+                          onTap: _openJournalTimeline,
+                          child: _summaryPill(
+                            Icons.menu_book_rounded,
+                            '${_journalEntries.length} récit${_journalEntries.length > 1 ? 's' : ''}',
+                            const Color(0xFF0E7490),
                           ),
                         ),
                         if (widget.geoPhotos.isNotEmpty)
@@ -1432,6 +1579,8 @@ class _WorldMapTabState extends State<WorldMapTab> {
 
 class _CountryDetailSheet extends StatefulWidget {
   final CountryVisitStats stats;
+  final List<TravelJournalEntry> journalEntries;
+  final VoidCallback onAddJournalEntry;
   final ScrollController scrollController;
   final void Function(String albumId) onOpenAlbum;
   final VoidCallback onOpenCountryMedia;
@@ -1439,6 +1588,8 @@ class _CountryDetailSheet extends StatefulWidget {
 
   const _CountryDetailSheet({
     required this.stats,
+    this.journalEntries = const [],
+    required this.onAddJournalEntry,
     required this.scrollController,
     required this.onOpenAlbum,
     required this.onOpenCountryMedia,
@@ -1662,6 +1813,75 @@ class _CountryDetailSheetState extends State<_CountryDetailSheet> {
                 ),
               ],
 
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    'CARNET DE VOYAGE (${widget.journalEntries.length})',
+                    style: const TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 1.0,
+                      color: Color(0xFF64748B),
+                    ),
+                  ),
+                  TextButton.icon(
+                    onPressed: widget.onAddJournalEntry,
+                    icon: const Icon(Icons.edit_note_rounded, size: 16, color: Color(0xFFF97316)),
+                    label: const Text(
+                      'Écrire un récit',
+                      style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: Color(0xFFF97316)),
+                    ),
+                  ),
+                ],
+              ),
+              if (widget.journalEntries.isNotEmpty)
+                ...widget.journalEntries.map(
+                  (entry) => Container(
+                    width: double.infinity,
+                    margin: const EdgeInsets.only(bottom: 8),
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFFF7E8),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: const Color(0xFFF1E6D2)),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                entry.title,
+                                style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFF1E293B)),
+                              ),
+                            ),
+                            Text(
+                              '${transportEmoji(entry.transport)} ${moodEmoji(entry.mood)}',
+                              style: const TextStyle(fontSize: 12),
+                            ),
+                          ],
+                        ),
+                        if (entry.dateLabel.isNotEmpty)
+                          Text(
+                            entry.dateLabel,
+                            style: const TextStyle(fontSize: 11, color: Color(0xFFF97316), fontWeight: FontWeight.w600),
+                          ),
+                        if (entry.story.isNotEmpty) ...[
+                          const SizedBox(height: 4),
+                          Text(
+                            entry.story,
+                            maxLines: 3,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(fontSize: 12, color: Color(0xFF475569)),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ),
+              const SizedBox(height: 12),
               Row(
                 children: [
                   const Text(
