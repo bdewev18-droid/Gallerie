@@ -10,8 +10,8 @@ import 'services/cloud_sync_service.dart';
 import 'widgets/world_map_tab.dart';
 import 'widgets/world_wonders.dart';
 
-const int appBuildNumber = 27;
-const String appVersionLabel = "1.0.26";
+const int appBuildNumber = 28;
+const String appVersionLabel = "1.0.27";
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
